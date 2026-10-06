@@ -43,7 +43,7 @@ createApp({
         const appVersion = ref('v2.20260906.01');
 
         // ─── 導航與分頁狀態 ───
-        const currentTab = ref('stocks'); // 預設開啟個股戰報
+        const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
         const stockSubTab = ref('starred'); // 預設特別關注分頁
         const starredSubFilter = ref('全部'); // 特別關注子過濾 (全部 / 買 / 賣)
         const stockSearchQuery = ref('');
@@ -352,10 +352,16 @@ createApp({
                 const chartDom = document.getElementById('assetChart');
                 if (!chartDom) return;
                 
-                const isDark = theme.value === 'dark';
-                if (!chartInstance) {
-                    chartInstance = echarts.init(chartDom, isDark ? 'dark' : null, { renderer: 'canvas' });
+                // 銷毀舊有實例，防止切換分頁後 DOM 脫節
+                if (chartInstance) {
+                    try {
+                        chartInstance.dispose();
+                    } catch (e) {}
+                    chartInstance = null;
                 }
+
+                const isDark = theme.value === 'dark';
+                chartInstance = echarts.init(chartDom, isDark ? 'dark' : null, { renderer: 'canvas' });
 
                 const chartData = holdingStocks.value.map(s => ({
                     name: `${s.name} (${s.code})`,
@@ -402,13 +408,16 @@ createApp({
                     ]
                 };
                 chartInstance.setOption(option);
+                chartInstance.resize();
             });
         };
 
         // 當切換到資產總覽分頁時重新繪製圖表
         watch(currentTab, (newTab) => {
             if (newTab === 'dashboard') {
-                setTimeout(renderAssetChart, 100);
+                nextTick(() => {
+                    setTimeout(renderAssetChart, 50);
+                });
             }
         });
 
