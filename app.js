@@ -60,8 +60,8 @@ createApp({
         const dbInfoText = ref('未載入 (示範模式)');
         const dbFileInput = ref(null);
 
-        // ─── Google 帳號與雲端狀態 (100% 對齊地端 gdrive_sync.py) ───
-        const DEFAULT_CLIENT_ID = '790121467016-d428dh1276viiqv5ihhbdbsgnvv9u9ps.apps.googleusercontent.com';
+        // ─── Google 帳號與雲端狀態 (已對齊 Google Web Application Client ID) ───
+        const DEFAULT_CLIENT_ID = '790121467016-vpncpfbmsrnldq9fhpiig36cp8b36oub.apps.googleusercontent.com';
         const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || DEFAULT_CLIENT_ID);
         let tokenClient = null;
         const googleAccessToken = ref(localStorage.getItem('sentinel_gdrive_token') || '');
