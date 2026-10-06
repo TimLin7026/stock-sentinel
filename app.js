@@ -693,7 +693,7 @@ createApp({
             renderAssetChart();
         });
 
-        // ─── 卡片展開 / 收合控制 (手風琴模式：同時只展開一檔個股 + 平滑自動滾動定位) ───
+        // ─── 卡片展開 / 收合控制 (手風琴模式：同時只展開一檔個股 + 精準自動滾動定錨) ───
         const isExpanded = (uid) => expandedStockUids.value.has(uid);
         const toggleStockExpand = (uid) => {
             if (expandedStockUids.value.has(uid)) {
@@ -702,20 +702,17 @@ createApp({
                 expandedStockUids.value.clear();
                 expandedStockUids.value.add(uid);
 
-                // 展開後自動重新平滑定位至該卡片頂端 (避開 Sticky 導航列)
+                // 展開後自動精密平滑定錨至該卡片頂端 (自動對齊 scroll-mt-[68px] 留白)
                 nextTick(() => {
                     setTimeout(() => {
                         const cardEl = document.getElementById(`stock-card-${uid}`);
                         if (cardEl) {
-                            const headerOffset = 64; // 頂部導航列高度 + 留白安全距離
-                            const elementPosition = cardEl.getBoundingClientRect().top;
-                            const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
-                            window.scrollTo({
-                                top: Math.max(0, offsetPosition),
-                                behavior: 'smooth'
+                            cardEl.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
                             });
                         }
-                    }, 120);
+                    }, 50);
                 });
             }
         };
