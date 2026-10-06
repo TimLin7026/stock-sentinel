@@ -322,16 +322,9 @@
                                     </div>
                                 </div>
 
-                                <!-- 底部操作工具列 (對齊地端：▲關注買 / ▼關注賣 / ➕記帳) -->
-                                <div :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'" class="pt-1 flex justify-between items-center border-t">
-                                    <button @click.stop="cycleFocusStatus(stock)" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' : 'bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 shadow-sm'" class="px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1 transition">
-                                        <span v-if="stock.focusStatus === '買'" class="triangle-buy">▲</span>
-                                        <span v-else-if="stock.focusStatus === '賣'" class="triangle-sell">▼</span>
-                                        <span v-else>⭐</span>
-                                        <span>切換關注</span>
-                                    </button>
-
-                                    <button @click.stop="openTradeModal(stock)" class="bg-sky-600 hover:bg-sky-500 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center shadow">
+                                <!-- 底部操作工具列 (對齊地端：➕記帳) -->
+                                <div :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'" class="pt-1 flex justify-end items-center border-t">
+                                    <button @click.stop="openTradeModal(stock)" class="w-full bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center shadow">
                                         <i class="fa-solid fa-plus mr-1.5"></i>錄入交易
                                     </button>
                                 </div>
@@ -525,25 +518,25 @@
                 </div>
 
                 <div class="space-y-3 text-xs">
-                    <!-- 動作選擇 -->
+                    <!-- 動作選擇 (僅買進 / 賣出) -->
                     <div>
                         <label :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="block mb-1 font-semibold">交易動作</label>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button v-for="act in ['買進', '賣出', '現金股利']" :key="act" @click="tradeForm.action = act"
-                                    :class="tradeForm.action === act ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
-                                    class="py-2 rounded-xl border transition text-center">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button v-for="act in ['買進', '賣出']" :key="act" @click="tradeForm.action = act"
+                                    :class="tradeForm.action === act ? (act === '買進' ? 'bg-rose-600 text-white font-bold shadow' : 'bg-emerald-600 text-white font-bold shadow') : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
+                                    class="py-2.5 rounded-xl border transition text-center font-bold">
                                 {{ act }}
                             </button>
                         </div>
                     </div>
 
-                    <!-- 證券商選擇 -->
+                    <!-- 證券商選擇 (100% 只顯示 DB 內有的真實券商) -->
                     <div>
                         <label :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="block mb-1 font-semibold">證券商</label>
                         <div class="flex flex-wrap gap-1.5 mb-1.5">
-                            <button v-for="b in commonBrokers" :key="b" @click="tradeForm.broker = b"
+                            <button v-for="b in activeBrokers" :key="b" @click="tradeForm.broker = b"
                                     :class="tradeForm.broker === b ? 'bg-sky-600 text-white font-bold border-sky-500' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
-                                    class="px-2.5 py-1 rounded-lg border text-[11px] transition">
+                                    class="px-3 py-1 rounded-lg border text-[11px] transition">
                                 {{ b }}
                             </button>
                         </div>
