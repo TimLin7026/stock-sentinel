@@ -15,6 +15,12 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <!-- ECharts CDN -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- WebAssembly SQLite (sql.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <!-- IndexedDB 離線儲存 (localforage) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <!-- Google Identity Services (GIS OAuth 2.0) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -404,7 +410,7 @@
                             </div>
                             <div>
                                 <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-sm font-bold">Google 雲端同步中樞</h3>
-                                <p class="text-xs text-slate-400">{{ googleUser.email || '尚未登入 Google 帳號' }}</p>
+                                <p class="text-xs text-slate-400">{{ googleUser.email || (googleUser.isLoggedIn ? '已連結 Google 帳號' : '尚未連結 Google 帳號') }}</p>
                             </div>
                         </div>
                         <!-- 系統版本徽章 -->
@@ -413,8 +419,14 @@
                         </span>
                     </div>
 
+                    <!-- 同步中/載入中狀態條 -->
+                    <div v-if="syncStatus.loading" class="bg-sky-500/10 border border-sky-500/30 rounded-xl p-2.5 flex items-center space-x-2 text-xs text-sky-400 animate-pulse">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                        <span>{{ syncStatus.message || '正在處理雲端同步...' }}</span>
+                    </div>
+
                     <!-- 登入 / 登出按鈕 -->
-                    <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition">
+                    <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin" :disabled="syncStatus.loading" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition disabled:opacity-50">
                         <i class="fa-solid fa-link"></i>
                         <span>立即連結 Google 帳號進行 Drive 授權</span>
                     </button>
@@ -426,26 +438,47 @@
 
                 <!-- 雲端同步操作區 -->
                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
-                    <h3 :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-xs font-bold flex items-center">
-                        <i class="fa-solid fa-arrows-rotate text-sky-500 mr-2"></i>資料庫同步操作
+                    <h3 :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-xs font-bold flex items-center justify-between">
+                        <span><i class="fa-solid fa-arrows-rotate text-sky-500 mr-2"></i>資料庫同步操作</span>
+                        <span v-if="isDbLoaded" class="text-[10px] text-emerald-400 font-normal"><i class="fa-solid fa-circle-check mr-1"></i>真實 SQLite 已載入</span>
+                        <span v-else class="text-[10px] text-amber-400 font-normal"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>示範資料庫模式</span>
                     </h3>
 
                     <div class="grid grid-cols-2 gap-2">
-                        <button @click="triggerSync('sync')" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm">
+                        <button @click="triggerSync('sync')" :disabled="syncStatus.loading || !googleUser.isLoggedIn" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm disabled:opacity-50">
                             <div class="text-sky-600 dark:text-sky-400 font-bold text-xs mb-0.5"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>雙向智慧合流</div>
                             <div class="text-[10px] text-slate-400">合併手機與雲端最新記錄</div>
                         </button>
-                        <button @click="triggerSync('download')" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm">
+                        <button @click="triggerSync('download')" :disabled="syncStatus.loading || !googleUser.isLoggedIn" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm disabled:opacity-50">
                             <div class="text-emerald-600 dark:text-emerald-400 font-bold text-xs mb-0.5"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>下載覆蓋本地</div>
                             <div class="text-[10px] text-slate-400">以雲端 sentinel_vault.db 為準</div>
                         </button>
                     </div>
 
+                    <!-- 本機手動備援操作 (匯入 / 匯出) -->
+                    <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                        <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
+                            📁 本機手動備援管理 (無需連網)：
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="triggerFileInput" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
+                                <i class="fa-solid fa-file-import text-amber-500"></i>
+                                <span>匯入 .db 檔案</span>
+                            </button>
+                            <input type="file" ref="dbFileInput" @change="handleDbFileSelected" accept=".db" class="hidden">
+
+                            <button @click="exportDatabaseFile" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
+                                <i class="fa-solid fa-download text-emerald-500"></i>
+                                <span>匯出備份 .db</span>
+                            </button>
+                        </div>
+                    </div>
+
                     <div :class="theme === 'dark' ? 'border-slate-800/80 text-slate-400' : 'border-slate-200 text-slate-600'" class="pt-2 border-t text-[11px] space-y-1">
                         <div>• <b>系統版號：</b> <span class="font-mono font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ appVersion }}</span> <span class="text-[10px] text-slate-400">(PWA 行動戰情版)</span></div>
                         <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">鈔能戰情室_雲端同步中樞</code></div>
-                        <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '2026-10-06 11:45:00' }}</span></div>
-                        <div>• <b>資料庫大小：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">118 KB (SQLite)</span></div>
+                        <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '尚未同步' }}</span></div>
+                        <div>• <b>資料庫狀態：</b> <span :class="isDbLoaded ? 'text-emerald-400 font-bold' : 'text-amber-400'">{{ dbInfoText }}</span></div>
                     </div>
                 </div>
 
@@ -453,10 +486,10 @@
                 <div :class="theme === 'dark' ? 'bg-slate-900/60 border-slate-800/60 text-slate-400' : 'bg-slate-100/80 border-slate-200 text-slate-600'" class="border rounded-2xl p-3 text-[11px] space-y-1">
                     <div class="flex justify-between items-center font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
                         <span>🛡️ 鈔能戰情室・行動戰情中樞</span>
-                        <span class="font-mono text-[10px] px-1.5 py-0.2 rounded" :class="theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'">Release</span>
+                        <span class="font-mono text-[10px] px-1.5 py-0.2 rounded" :class="theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'">SQLite WASM</span>
                     </div>
                     <div class="text-[10px] text-slate-500 leading-tight">
-                        核心架構：Serverless SQLite (WASM) · Google Drive Sync · GitHub Pages
+                        核心引擎：WebAssembly SQLite (sql.js) · Google Drive REST API · IndexedDB
                     </div>
                 </div>
             </section>

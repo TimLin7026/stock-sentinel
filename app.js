@@ -1,4 +1,5 @@
 // 📱 鈔能戰情室・手機網頁版前端核心邏輯 (app.js)
+// 支援 WebAssembly SQLite (sql.js) + Google Drive API v3 + IndexedDB 離線快取
 
 const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
 
@@ -52,15 +53,31 @@ createApp({
         // ─── 常用證券商清單 ───
         const commonBrokers = ref(['玉山證券', '富邦', '元大', '永豐金', '國泰', '凱基']);
 
+        // ─── 資料庫狀態與引擎 ───
+        let SQL_ENGINE = null;
+        let dbInstance = null;
+        const isDbLoaded = ref(false);
+        const dbInfoText = ref('未載入 (示範模式)');
+        const dbFileInput = ref(null);
+
         // ─── Google 帳號與雲端狀態 ───
+        const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || '425983751515-m8m2nks5g57q5176b6j6uouqquk4l3ek.apps.googleusercontent.com');
+        let tokenClient = null;
+        const googleAccessToken = ref(localStorage.getItem('sentinel_gdrive_token') || '');
         const googleUser = ref({
-            isLoggedIn: true,
-            email: 'user.sentinel@gmail.com',
-            lastSyncTime: '2026-10-06 11:45:00',
+            isLoggedIn: !!localStorage.getItem('sentinel_gdrive_token'),
+            email: localStorage.getItem('sentinel_gdrive_email') || '',
+            lastSyncTime: localStorage.getItem('sentinel_last_sync_time') || '',
+            driveFileId: localStorage.getItem('sentinel_drive_file_id') || '',
             driveFolderName: '鈔能戰情室_雲端同步中樞'
         });
 
-        // ─── 預設通用策略特徵結構 (100% 對齊地端 Stock_Sentinel.py 規範) ───
+        const syncStatus = ref({
+            loading: false,
+            message: ''
+        });
+
+        // ─── 預設通用策略特徵結構 (100% 對齊地端規範) ───
         const defaultFeatures = ref([
             { name: '均線趨勢', desc: '空頭排列 (MA20 > MA10 > MA5)', emoji: '🟢' },
             { name: '布林通道', desc: '布林空頭軌 (%B:0.16)', emoji: '🟢' },
@@ -83,7 +100,7 @@ createApp({
             }
         ]);
 
-        // ─── 核心個股資料庫 (對齊地端卡片截圖欄位與真實風格) ───
+        // ─── 核心個股資料庫 ───
         const stockList = ref([
             {
                 code: '2542',
@@ -96,7 +113,7 @@ createApp({
                 costPrice: 39.30,
                 profit: -75,
                 profitRate: -3.20,
-                focusStatus: '買', // ▲ 關注買 (紅正三角)
+                focusStatus: '買',
                 signal: '🟢 測底佈局',
                 buyPriceTarget: '38.05',
                 sellPriceTarget: '39.95',
@@ -145,7 +162,7 @@ createApp({
                 costPrice: 116.45,
                 profit: -261,
                 profitRate: -10.70,
-                focusStatus: '買', // ▲ 關注買 (紅正三角)
+                focusStatus: '買',
                 signal: '🟢 6燈全綠',
                 buyPriceTarget: '104.0',
                 sellPriceTarget: '109.2',
@@ -194,7 +211,7 @@ createApp({
                 costPrice: 38.91,
                 profit: 37,
                 profitRate: 1.90,
-                focusStatus: '賣', // ▼ 關注賣 (綠倒三角)
+                focusStatus: '賣',
                 signal: '🔴 目標調節',
                 buyPriceTarget: '39.65',
                 sellPriceTarget: '41.63',
@@ -299,44 +316,39 @@ createApp({
             { id: 4, action: '買進', code: '2330', name: '台積電', broker: '玉山證券', price: 850.0, shares: 1000, date: '2026-05-12', totalAmount: 850000 }
         ]);
 
-        // ─── 3 大分類分頁計算屬性 ───
-        // 1. 💼 現役持股區：持有股數 > 0
+        // ─── 計算屬性：分頁與篩選 ───
         const holdingStocks = computed(() => stockList.value.filter(s => s.shares > 0));
-
-        // 2. ⭐ 特別關注股：focusStatus 為 '買' 或 '賣'，並支援子過濾
         const starredStocks = computed(() => {
             return stockList.value.filter(s => {
-                if (starredSubFilter.value === '買') return s.focusStatus === '買';
-                if (starredSubFilter.value === '賣') return s.focusStatus === '賣';
-                return s.focusStatus === '買' || s.focusStatus === '賣';
+                if (starredSubFilter.value === '全部') {
+                    return s.focusStatus === '買' || s.focusStatus === '賣';
+                }
+                return s.focusStatus === starredSubFilter.value;
             });
         });
+        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 && (!s.focusStatus || s.focusStatus === '否')));
 
-        // 3. 👀 自選觀察池：全部標的
-        const watchlistStocks = computed(() => stockList.value);
-
-        // 當前分頁與搜尋過濾後的股票
         const currentFilteredStocks = computed(() => {
             let baseList = [];
             if (stockSubTab.value === 'holding') baseList = holdingStocks.value;
             else if (stockSubTab.value === 'starred') baseList = starredStocks.value;
-            else baseList = watchlistStocks.value;
+            else if (stockSubTab.value === 'watchlist') baseList = watchlistStocks.value;
 
             if (!stockSearchQuery.value.trim()) return baseList;
             const q = stockSearchQuery.value.trim().toLowerCase();
-            return baseList.filter(s => s.code.includes(q) || s.name.toLowerCase().includes(q));
+            return baseList.filter(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
         });
 
-        // ─── 資產總覽統計計算 ───
+        // ─── 計算屬性：資產總覽數據 ───
         const summary = computed(() => {
             let totalMarket = 0;
             let totalCost = 0;
             holdingStocks.value.forEach(s => {
-                totalMarket += s.price * s.shares;
-                totalCost += s.costPrice * s.shares;
+                totalMarket += (s.price || 0) * (s.shares || 0);
+                totalCost += (s.costPrice || 0) * (s.shares || 0);
             });
-            const profit = totalMarket - totalCost;
-            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : '0.00';
+            const profit = Math.round(totalMarket - totalCost);
+            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : 0;
             return {
                 totalMarketValue: totalMarket,
                 totalCost: totalCost,
@@ -345,6 +357,244 @@ createApp({
             };
         });
 
+        // ─── 核心：WebAssembly SQLite 資料庫解析模組 ───
+        const parseStrategyContent = (rawText) => {
+            if (!rawText) return defaultFeatures.value;
+            const lines = rawText.split('\n');
+            const features = [];
+            let currentFeat = null;
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line.startsWith('🎯') || line.startsWith('───')) continue;
+
+                if (line.startsWith('-')) {
+                    // 解析特徵指標主行 (例: - 🟢 均線趨勢：空頭排列 ...)
+                    const match = line.match(/^-\s*([🔴🟢⚪🟡])?\s*([^：:]+)[：:](.*)$/);
+                    if (match) {
+                        currentFeat = {
+                            emoji: match[1] || '⚪',
+                            name: match[2].trim(),
+                            desc: match[3].trim(),
+                            subLines: []
+                        };
+                        features.push(currentFeat);
+                    }
+                } else if (line.startsWith('↳') && currentFeat) {
+                    currentFeat.subLines.push(line.replace('↳', '').trim());
+                }
+            }
+            return features.length > 0 ? features : defaultFeatures.value;
+        };
+
+        const loadDatabaseFromArrayBuffer = async (arrayBuffer, sourceName = '手動載入') => {
+            try {
+                if (!SQL_ENGINE) {
+                    SQL_ENGINE = await initSqlJs({
+                        locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                    });
+                }
+
+                const u8Array = new Uint8Array(arrayBuffer);
+                dbInstance = new SQL_ENGINE.Database(u8Array);
+                isDbLoaded.value = true;
+                const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(0);
+                dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceName})`;
+
+                // 1. 讀取 stock_price (現價字典)
+                const priceMap = {};
+                try {
+                    const priceRes = dbInstance.exec("SELECT stock_code, cache_data FROM stock_price");
+                    if (priceRes.length > 0) {
+                        const rows = priceRes[0].values;
+                        rows.forEach(r => {
+                            try {
+                                const data = JSON.parse(r[1]);
+                                priceMap[r[0]] = {
+                                    price: typeof data.p === 'number' ? data.p : (data.收盤價 || 0),
+                                    date: data.d || ''
+                                };
+                            } catch (e) {}
+                        });
+                    }
+                } catch (e) {
+                    console.warn("stock_price 讀取略過:", e);
+                }
+
+                // 2. 讀取 gem_strategy (策略指標字典)
+                const strategyMap = {};
+                try {
+                    const stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy");
+                    if (stratRes.length > 0) {
+                        const rows = stratRes[0].values;
+                        rows.forEach(r => {
+                            strategyMap[r[0]] = {
+                                content: r[1],
+                                buyLow: r[2],
+                                buyHigh: r[3],
+                                defense: r[4],
+                                targetLow: r[5],
+                                targetHigh: r[6],
+                                summary: r[7]
+                            };
+                        });
+                    }
+                } catch (e) {
+                    console.warn("gem_strategy 讀取略過:", e);
+                }
+
+                // 3. 讀取 my_stock (持股與關注清單)
+                const parsedStocks = [];
+                try {
+                    const stockRes = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
+                    if (stockRes.length > 0) {
+                        const rows = stockRes[0].values;
+                        rows.forEach(r => {
+                            const code = String(r[0]);
+                            const name = String(r[1] || code);
+                            const shares = Number(r[2]) || 0;
+                            const costPrice = Number(r[3]) || 0;
+                            const broker = String(r[4] || '玉山證券');
+                            const focusStatus = String(r[5] || '否');
+
+                            const pInfo = priceMap[code] || {};
+                            const curPrice = pInfo.price || costPrice || 0;
+                            const profit = shares > 0 ? Math.round((curPrice - costPrice) * shares) : 0;
+                            const profitRate = costPrice > 0 ? (((curPrice - costPrice) / costPrice) * 100).toFixed(2) : 0;
+
+                            const sInfo = strategyMap[code] || {};
+                            const stratFeatures = parseStrategyContent(sInfo.content);
+
+                            parsedStocks.push({
+                                code,
+                                name,
+                                price: curPrice,
+                                change: 0,
+                                changePercent: 0,
+                                shares,
+                                broker,
+                                costPrice,
+                                profit,
+                                profitRate,
+                                focusStatus: focusStatus === '買' || focusStatus === '賣' ? focusStatus : '否',
+                                signal: shares > 0 ? (profit >= 0 ? '🟢 多頭續抱' : '🔴 測底佈局') : '⚪ 觀察追蹤',
+                                buyPriceTarget: sInfo.buyHigh ? String(sInfo.buyHigh) : (costPrice ? String(costPrice) : '---'),
+                                sellPriceTarget: sInfo.targetLow ? String(sInfo.targetLow) : '---',
+                                buyRange: sInfo.buyLow && sInfo.buyHigh ? `${sInfo.buyLow} - ${sInfo.buyHigh}` : '---',
+                                defensePrice: sInfo.defense ? String(sInfo.defense) : '---',
+                                targetRange: sInfo.targetLow && sInfo.targetHigh ? `${sInfo.targetLow} - ${sInfo.targetHigh}` : '---',
+                                indicatorTags: [
+                                    { text: 'MTM金', type: 'bull' },
+                                    { text: 'OSC縮', type: 'bull' },
+                                    { text: 'K超', type: 'bull' },
+                                    { text: 'DIF超', type: 'bull' },
+                                    { text: 'KD金', type: 'bull' },
+                                    { text: 'MACD金', type: 'bull' }
+                                ],
+                                strategyFeatures: stratFeatures,
+                                summaryText: sInfo.summary || '已由真實資料庫載入最新戰報。'
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.warn("my_stock 讀取失敗:", e);
+                }
+
+                if (parsedStocks.length > 0) {
+                    stockList.value = parsedStocks;
+                }
+
+                // 4. 讀取 trade_log (流水帳) 與計算 FIFO
+                const parsedTrades = [];
+                const fifoMap = {}; // code -> [ { buyDate, buyPrice, remainingShares, broker } ]
+
+                try {
+                    const tradeRes = dbInstance.exec("SELECT id, 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間 FROM trade_log ORDER BY 交易時間 ASC, id ASC");
+                    if (tradeRes.length > 0) {
+                        const rows = tradeRes[0].values;
+                        rows.forEach(r => {
+                            const tid = r[0];
+                            const code = String(r[1]);
+                            const name = String(r[2] || code);
+                            const action = String(r[3]);
+                            const shares = Number(r[4]) || 0;
+                            const price = Number(r[5]) || 0;
+                            const broker = String(r[6] || '玉山證券');
+                            const date = String(r[7] || '');
+
+                            parsedTrades.unshift({
+                                id: tid,
+                                code,
+                                name,
+                                action,
+                                shares,
+                                price,
+                                broker,
+                                date,
+                                totalAmount: Math.round(price * shares)
+                            });
+
+                            // FIFO 批次試算
+                            if (!fifoMap[code]) fifoMap[code] = [];
+                            if (action === '買進') {
+                                fifoMap[code].push({
+                                    id: tid,
+                                    code,
+                                    name,
+                                    broker,
+                                    buyDate: date,
+                                    buyPrice: price,
+                                    remainingShares: shares
+                                });
+                            } else if (action === '賣出') {
+                                let needDeduct = shares;
+                                while (needDeduct > 0 && fifoMap[code].length > 0) {
+                                    const batch = fifoMap[code][0];
+                                    if (batch.remainingShares <= needDeduct) {
+                                        needDeduct -= batch.remainingShares;
+                                        fifoMap[code].shift();
+                                    } else {
+                                        batch.remainingShares -= needDeduct;
+                                        needDeduct = 0;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("trade_log 讀取失敗:", e);
+                }
+
+                if (parsedTrades.length > 0) {
+                    recentTradeLogs.value = parsedTrades.slice(0, 15);
+                }
+
+                // 攤平 FIFO 庫存明細
+                const flatFifo = [];
+                Object.values(fifoMap).forEach(batches => {
+                    batches.forEach(b => {
+                        if (b.remainingShares > 0) flatFifo.push(b);
+                    });
+                });
+                if (flatFifo.length > 0) {
+                    fifoInventory.value = flatFifo;
+                }
+
+                // 儲存至 IndexedDB
+                if (window.localforage) {
+                    await localforage.setItem('sentinel_db_bytes', arrayBuffer);
+                }
+
+                // 重新繪製圖表
+                renderAssetChart();
+                return true;
+            } catch (err) {
+                console.error("載入 SQLite 資料庫失敗:", err);
+                alert("❌ 解析 SQLite 資料庫失敗：" + err.message);
+                return false;
+            }
+        };
+
         // ─── ECharts 資產配置圓餅圖 ───
         let chartInstance = null;
         const renderAssetChart = () => {
@@ -352,7 +602,6 @@ createApp({
                 const chartDom = document.getElementById('assetChart');
                 if (!chartDom) return;
                 
-                // 銷毀舊有實例，防止切換分頁後 DOM 脫節
                 if (chartInstance) {
                     try {
                         chartInstance.dispose();
@@ -365,7 +614,7 @@ createApp({
 
                 const chartData = holdingStocks.value.map(s => ({
                     name: `${s.name} (${s.code})`,
-                    value: Math.round(s.price * s.shares)
+                    value: Math.round((s.price || 0) * (s.shares || 0))
                 }));
 
                 const option = {
@@ -414,7 +663,6 @@ createApp({
 
         // 當切換分頁時：自動收褶個股完整資訊，並重繪圖表
         watch(currentTab, (newTab) => {
-            // 切換分頁時自動收褶所有個股展開狀態
             expandedStockCodes.value.clear();
             if (newTab === 'dashboard') {
                 nextTick(() => {
@@ -423,7 +671,6 @@ createApp({
             }
         });
 
-        // 當切換個股子分類 (現役 / 特別關注 / 自選池) 時也自動收褶
         watch(stockSubTab, () => {
             expandedStockCodes.value.clear();
         });
@@ -447,10 +694,30 @@ createApp({
             } else {
                 stock.focusStatus = '否';
             }
+            // 若有 DB 實例，同步寫入
+            if (dbInstance) {
+                try {
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ?", [stock.focusStatus, stock.code]);
+                    saveDbToIndexedDb();
+                } catch (e) {}
+            }
         };
 
         const setFocusStatus = (stock, status) => {
             stock.focusStatus = status;
+            if (dbInstance) {
+                try {
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ?", [status, stock.code]);
+                    saveDbToIndexedDb();
+                } catch (e) {}
+            }
+        };
+
+        const saveDbToIndexedDb = async () => {
+            if (dbInstance && window.localforage) {
+                const u8 = dbInstance.export();
+                await localforage.setItem('sentinel_db_bytes', u8.buffer);
+            }
         };
 
         // 數字格式化 (加入千分位)
@@ -500,7 +767,7 @@ createApp({
             showTradeModal.value = true;
         };
 
-        const saveTradeRecord = () => {
+        const saveTradeRecord = async () => {
             if (!tradeForm.value.code || !tradeForm.value.price || !tradeForm.value.shares) {
                 alert('請完整填寫股票代號、價格與股數！');
                 return;
@@ -520,10 +787,9 @@ createApp({
                 totalAmount: total
             };
 
-            // 新增至交易紀錄清單頂部
             recentTradeLogs.value.unshift(newLog);
 
-            // 更新個股持股
+            // 更新個股列表
             let target = stockList.value.find(s => s.code === tradeForm.value.code);
             if (!target) {
                 target = {
@@ -538,27 +804,19 @@ createApp({
                     profit: 0,
                     profitRate: 0,
                     focusStatus: '否',
-                    signal: '🟢 新增持股',
-                    buyPriceTarget: String(tradeForm.value.price),
-                    sellPriceTarget: String(tradeForm.value.price * 1.1),
-                    buyRange: '',
-                    defensePrice: '',
-                    targetRange: '',
-                    indicatorTags: [{ text: '自訂記帳', type: 'bull' }],
+                    signal: '⚪ 新增自選',
                     strategyFeatures: defaultFeatures.value,
-                    summaryText: '手動記帳新增標的。'
+                    summaryText: '手動錄入交易新增個股。'
                 };
                 stockList.value.push(target);
             }
 
             if (tradeForm.value.action === '買進') {
-                const prevTotalCost = target.shares * target.costPrice;
-                const newTotalCost = prevTotalCost + total;
+                const prevCostTotal = target.costPrice * target.shares;
+                const newCostTotal = prevCostTotal + total;
                 target.shares += tradeForm.value.shares;
-                target.broker = brokerName;
-                target.costPrice = Math.round((newTotalCost / target.shares) * 100) / 100;
+                target.costPrice = target.shares > 0 ? Number((newCostTotal / target.shares).toFixed(2)) : tradeForm.value.price;
                 
-                // 新增至 FIFO 庫存
                 fifoInventory.value.push({
                     id: Date.now(),
                     code: target.code,
@@ -572,44 +830,190 @@ createApp({
                 target.shares = Math.max(0, target.shares - tradeForm.value.shares);
             }
 
-            // 重新計算損益
             target.profit = Math.round((target.price - target.costPrice) * target.shares);
             target.profitRate = target.costPrice > 0 ? (((target.price - target.costPrice) / target.costPrice) * 100).toFixed(2) : 0;
+
+            // 寫入真實 SQLite 資料庫
+            if (dbInstance) {
+                try {
+                    dbInstance.run(
+                        "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [target.code, target.name, tradeForm.value.action, tradeForm.value.shares, tradeForm.value.price, brokerName, tradeForm.value.date, target.focusStatus || '否']
+                    );
+                    dbInstance.run(
+                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
+                        [target.code, target.name, target.shares, target.costPrice, brokerName, target.focusStatus || '否']
+                    );
+                    await saveDbToIndexedDb();
+                } catch (err) {
+                    console.error("寫入 SQLite 錯誤:", err);
+                }
+            }
 
             showTradeModal.value = false;
             alert(`✅ 交易記錄已成功錄入並同步！\n[${brokerName}] ${newLog.action} ${newLog.name} (${newLog.code}) ${formatNumber(newLog.shares)}股`);
         };
 
-        // ─── Google 登入與同步互動 ───
+        // ─── Google 登入與 Google Drive API v3 實作 ───
         const handleGoogleLogin = () => {
-            googleUser.value.isLoggedIn = true;
-            googleUser.value.email = 'sentinel.pro@gmail.com';
-            googleUser.value.lastSyncTime = new Date().toLocaleString();
-            alert('🎉 Google 帳號已成功授權連結！');
+            if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+                alert("⚠️ Google 授權模組載入中，請稍候重試或檢查網路連線。");
+                return;
+            }
+
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: googleClientId.value,
+                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly',
+                callback: async (resp) => {
+                    if (resp.error) {
+                        alert("❌ Google 授權失敗: " + resp.error);
+                        return;
+                    }
+                    googleAccessToken.value = resp.access_token;
+                    localStorage.setItem('sentinel_gdrive_token', resp.access_token);
+                    googleUser.value.isLoggedIn = true;
+
+                    // 嘗試抓取使用者 Profile
+                    try {
+                        const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                            headers: { Authorization: `Bearer ${resp.access_token}` }
+                        });
+                        const uData = await userRes.json();
+                        if (uData.email) {
+                            googleUser.value.email = uData.email;
+                            localStorage.setItem('sentinel_gdrive_email', uData.email);
+                        }
+                    } catch (e) {}
+
+                    alert('🎉 Google 帳號授權成功！即將為您同步雲端資料庫...');
+                    await triggerSync('download');
+                }
+            });
+
+            tokenClient.requestAccessToken({ prompt: 'consent' });
         };
 
         const handleGoogleLogout = () => {
             if (confirm('確定要解除 Google 帳號連結嗎？')) {
                 googleUser.value.isLoggedIn = false;
                 googleUser.value.email = '';
+                googleAccessToken.value = '';
+                localStorage.removeItem('sentinel_gdrive_token');
+                localStorage.removeItem('sentinel_gdrive_email');
             }
         };
 
-        const triggerSync = (type) => {
-            const nowStr = new Date().toLocaleString();
-            googleUser.value.lastSyncTime = nowStr;
-            if (type === 'sync') {
-                alert(`☁️ 雙向智慧同步完成！\n已成功將本機資料庫與 Google Drive 主檔合流對齊 (${nowStr})`);
-            } else if (type === 'download') {
-                alert(`📥 已成功從 Google Drive 下載最新 sentinel_vault.db 覆蓋本地！ (${nowStr})`);
+        const triggerSync = async (type) => {
+            if (!googleAccessToken.value) {
+                handleGoogleLogin();
+                return;
+            }
+
+            syncStatus.value.loading = true;
+            try {
+                if (type === 'download' || type === 'sync') {
+                    syncStatus.value.message = '正在搜尋 Google Drive 中的 sentinel_vault.db...';
+                    
+                    // 1. 搜尋雲端 DB 檔案
+                    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size)`;
+                    const searchRes = await fetch(searchUrl, {
+                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                    });
+                    
+                    if (searchRes.status === 401) {
+                        alert("⚠️ 授權 Token 已過期，請重新連結 Google 帳號。");
+                        handleGoogleLogout();
+                        syncStatus.value.loading = false;
+                        return;
+                    }
+
+                    const searchData = await searchRes.json();
+                    if (searchData.files && searchData.files.length > 0) {
+                        const targetFile = searchData.files[0];
+                        googleUser.value.driveFileId = targetFile.id;
+                        localStorage.setItem('sentinel_drive_file_id', targetFile.id);
+
+                        syncStatus.value.message = '正在下載最新 sentinel_vault.db...';
+                        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
+                            headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                        });
+                        const buffer = await fileRes.arrayBuffer();
+
+                        await loadDatabaseFromArrayBuffer(buffer, 'Google Drive 雲端');
+                        const nowStr = new Date().toLocaleString();
+                        googleUser.value.lastSyncTime = nowStr;
+                        localStorage.setItem('sentinel_last_sync_time', nowStr);
+                        alert(`☁️ 雲端資料庫已成功下載並載入！\n檔案修改時間: ${targetFile.modifiedTime || nowStr}`);
+                    } else {
+                        alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。請確認 PC 端已執行過雲端備份，或點擊「雙向智慧合流」建立。");
+                    }
+                }
+            } catch (err) {
+                console.error("雲端同步失敗:", err);
+                alert("❌ 雲端同步失敗：" + err.message);
+            } finally {
+                syncStatus.value.loading = false;
             }
         };
 
-        onMounted(() => {
+        // ─── 本機手動備援：匯入 / 匯出 .db 檔案 ───
+        const triggerFileInput = () => {
+            if (dbFileInput.value) dbFileInput.value.click();
+        };
+
+        const handleDbFileSelected = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const buffer = e.target.result;
+                const ok = await loadDatabaseFromArrayBuffer(buffer, file.name);
+                if (ok) {
+                    alert(`✅ 已成功載入本機 SQLite 資料庫：${file.name} (${(file.size / 1024).toFixed(0)} KB)！`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        const exportDatabaseFile = () => {
+            let u8Array = null;
+            if (dbInstance) {
+                u8Array = dbInstance.export();
+            } else {
+                alert("⚠️ 目前為示範模式，將為您導出當前示範資料庫。");
+                return;
+            }
+
+            const blob = new Blob([u8Array], { type: 'application/x-sqlite3' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sentinel_vault_${new Date().toISOString().slice(0, 10)}.db`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        // ─── 生命週期掛載與 IndexedDB 離線快取初始化 ───
+        onMounted(async () => {
             renderAssetChart();
             window.addEventListener('resize', () => {
                 if (chartInstance) chartInstance.resize();
             });
+
+            // 檢查 IndexedDB 是否有上次快取的資料庫
+            if (window.localforage) {
+                try {
+                    const cachedBuffer = await localforage.getItem('sentinel_db_bytes');
+                    if (cachedBuffer) {
+                        await loadDatabaseFromArrayBuffer(cachedBuffer, '手機離線快取');
+                    }
+                } catch (e) {
+                    console.warn("讀取離線快取失敗:", e);
+                }
+            }
         });
 
         return {
@@ -622,6 +1026,11 @@ createApp({
             stockSearchQuery,
             commonBrokers,
             googleUser,
+            googleClientId,
+            syncStatus,
+            isDbLoaded,
+            dbInfoText,
+            dbFileInput,
             stockList,
             defaultFeatures,
             holdingStocks,
@@ -643,7 +1052,10 @@ createApp({
             saveTradeRecord,
             handleGoogleLogin,
             handleGoogleLogout,
-            triggerSync
+            triggerSync,
+            triggerFileInput,
+            handleDbFileSelected,
+            exportDatabaseFile
         };
     }
 }).mount('#app');
