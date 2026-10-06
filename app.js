@@ -60,8 +60,9 @@ createApp({
         const dbInfoText = ref('未載入 (示範模式)');
         const dbFileInput = ref(null);
 
-        // ─── Google 帳號與雲端狀態 ───
-        const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || '425983751515-m8m2nks5g57q5176b6j6uouqquk4l3ek.apps.googleusercontent.com');
+        // ─── Google 帳號與雲端狀態 (100% 對齊地端 gdrive_sync.py) ───
+        const DEFAULT_CLIENT_ID = '790121467016-d428dh1276viiqv5ihhbdbsgnvv9u9ps.apps.googleusercontent.com';
+        const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || DEFAULT_CLIENT_ID);
         let tokenClient = null;
         const googleAccessToken = ref(localStorage.getItem('sentinel_gdrive_token') || '');
         const googleUser = ref({
@@ -69,7 +70,7 @@ createApp({
             email: localStorage.getItem('sentinel_gdrive_email') || '',
             lastSyncTime: localStorage.getItem('sentinel_last_sync_time') || '',
             driveFileId: localStorage.getItem('sentinel_drive_file_id') || '',
-            driveFolderName: '鈔能戰情室_雲端同步中樞'
+            driveFolderName: '台股戰情室_雲端同步'
         });
 
         const syncStatus = ref({
@@ -862,8 +863,8 @@ createApp({
             }
 
             tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: googleClientId.value,
-                scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly',
+                client_id: googleClientId.value.trim(),
+                scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid',
                 callback: async (resp) => {
                     if (resp.error) {
                         alert("❌ Google 授權失敗: " + resp.error);

@@ -476,9 +476,23 @@
 
                     <div :class="theme === 'dark' ? 'border-slate-800/80 text-slate-400' : 'border-slate-200 text-slate-600'" class="pt-2 border-t text-[11px] space-y-1">
                         <div>• <b>系統版號：</b> <span class="font-mono font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ appVersion }}</span> <span class="text-[10px] text-slate-400">(PWA 行動戰情版)</span></div>
-                        <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">鈔能戰情室_雲端同步中樞</code></div>
+                        <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">台股戰情室_雲端同步</code></div>
                         <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '尚未同步' }}</span></div>
                         <div>• <b>資料庫狀態：</b> <span :class="isDbLoaded ? 'text-emerald-400 font-bold' : 'text-amber-400'">{{ dbInfoText }}</span></div>
+                    </div>
+
+                    <!-- ⚙️ Google Client ID 進階配置折疊區 -->
+                    <div class="pt-2 border-t text-[10px]" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                        <details class="cursor-pointer">
+                            <summary :class="theme === 'dark' ? 'text-slate-400 hover:text-slate-300' : 'text-slate-600 hover:text-slate-800'">⚙️ Google 雲端憑證設定 (進階)</summary>
+                            <div class="mt-2 space-y-1.5 p-2 rounded-xl" :class="theme === 'dark' ? 'bg-slate-950/60' : 'bg-slate-50'">
+                                <label class="block font-bold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">OAuth 2.0 Client ID：</label>
+                                <input v-model="googleClientId" type="text" placeholder="輸入 Google OAuth Client ID..." 
+                                       :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                       class="w-full border rounded-lg px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-sky-500">
+                                <div class="text-[9px] text-slate-400">已預設對齊地端 gdrive_sync.py 專用憑證。</div>
+                            </div>
+                        </details>
                     </div>
                 </div>
 
