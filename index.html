@@ -186,6 +186,7 @@
                 <!-- 個股卡片列表 -->
                 <div class="space-y-2.5">
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
+                         :id="'stock-card-' + stock.uid"
                          :class="[
                             theme === 'dark' 
                                 ? (stock.profit >= 0 ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900')
