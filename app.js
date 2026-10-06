@@ -290,13 +290,24 @@ createApp({
                     console.warn("stock_heatmap_cache 讀取略過:", e);
                 }
 
-                // 3. 讀取 gem_strategy (真實戰情報告短評、建議買賣區間)
+                // 3. 讀取 gem_strategy (真實戰情報告短評、建議買賣區間，依記錄時間最新者優先)
                 const strategyMap = {};
                 try {
-                    const stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy");
+                    let stratRes = [];
+                    try {
+                        stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy ORDER BY 記錄時間 DESC");
+                    } catch (e1) {
+                        try {
+                            stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy ORDER BY rowid DESC");
+                        } catch (e2) {
+                            stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy");
+                        }
+                    }
+
                     if (stratRes.length > 0) {
                         stratRes[0].values.forEach(r => {
                             const rawCode = String(r[0] || '').trim();
+                            const summaryText = String(r[7] || r[1] || '').trim();
                             const dataObj = {
                                 content: r[1] || '',
                                 buyLow: r[2],
@@ -304,12 +315,15 @@ createApp({
                                 defense: r[4],
                                 targetLow: r[5],
                                 targetHigh: r[6],
-                                summary: r[7] || ''
+                                summary: summaryText
                             };
                             if (rawCode) {
-                                strategyMap[rawCode] = dataObj;
-                                strategyMap[rawCode.padStart(4, '0')] = dataObj;
-                                strategyMap[rawCode.replace(/^0+/, '')] = dataObj;
+                                // 僅以最新第一筆作為單一真相
+                                if (!strategyMap[rawCode]) strategyMap[rawCode] = dataObj;
+                                const padCode = rawCode.padStart(4, '0');
+                                if (!strategyMap[padCode]) strategyMap[padCode] = dataObj;
+                                const trimCode = rawCode.replace(/^0+/, '');
+                                if (!strategyMap[trimCode]) strategyMap[trimCode] = dataObj;
                             }
                         });
                     }
@@ -679,12 +693,13 @@ createApp({
             renderAssetChart();
         });
 
-        // ─── 卡片展開 / 收合控制 (以 uid = code_broker 為精準依據) ───
+        // ─── 卡片展開 / 收合控制 (手風琴模式：同時只展開一檔個股) ───
         const isExpanded = (uid) => expandedStockUids.value.has(uid);
         const toggleStockExpand = (uid) => {
             if (expandedStockUids.value.has(uid)) {
-                expandedStockUids.value.delete(uid);
+                expandedStockUids.value.clear();
             } else {
+                expandedStockUids.value.clear();
                 expandedStockUids.value.add(uid);
             }
         };
