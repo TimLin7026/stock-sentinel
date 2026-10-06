@@ -123,8 +123,8 @@
                         </h2>
                         <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ filteredHoldingStocks.length }} 檔持股</span>
                     </div>
-                    <!-- 圖表掛載容器 -->
-                    <div id="assetChart" class="w-full h-48"></div>
+                    <!-- 圖表掛載容器 (加大高度避免圖例重疊) -->
+                    <div id="assetChart" class="w-full h-64"></div>
                 </div>
             </section>
 
@@ -188,8 +188,8 @@
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :class="[
                             theme === 'dark' 
-                                ? (stock.focusStatus === '買' ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : (stock.focusStatus === '賣' ? 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900' : 'border-slate-800 bg-slate-900 hover:border-slate-700'))
-                                : (stock.focusStatus === '買' ? 'border-rose-300 bg-rose-50/50 shadow-sm' : (stock.focusStatus === '賣' ? 'border-emerald-300 bg-emerald-50/50 shadow-sm' : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'))
+                                ? (stock.profit >= 0 ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900')
+                                : (stock.profit >= 0 ? 'border-rose-300 bg-rose-50/50 shadow-sm' : 'border-emerald-300 bg-emerald-50/50 shadow-sm')
                          ]"
                          class="border rounded-2xl overflow-hidden transition shadow relative">
                         
@@ -225,7 +225,7 @@
                             <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80 text-slate-300' : 'bg-slate-100/80 border-slate-200 text-slate-700'" class="p-2 rounded-xl border mb-2 text-xs space-y-1">
                                 <div class="flex justify-between">
                                     <span>✅ <b>現價：</b><span :class="stock.change >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">${{ stock.price }}</span></span>
-                                    <span><b>成本：</b><span class="font-mono">${{ stock.costPrice }}</span></span>
+                                    <span><b>成本：</b><span class="font-mono">${{ Number(stock.costPrice).toFixed(2) }}</span></span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span><b>持有：</b><span class="font-mono">{{ formatNumber(stock.shares) }} 股</span></span>
@@ -351,26 +351,6 @@
                     <i class="fa-solid fa-pen-to-square text-base"></i>
                     <span class="text-sm">➕ 快速錄入交易記錄 (隨手記帳)</span>
                 </button>
-
-                <!-- FIFO 持股批次庫存明細 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-3.5 space-y-2.5">
-                    <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
-                        <i class="fa-solid fa-layer-group text-sky-500 mr-2"></i>FIFO 庫存批次明細
-                    </h2>
-                    
-                    <div class="space-y-2">
-                        <div v-for="fifo in fifoInventory" :key="fifo.id" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800/80' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border text-xs">
-                            <div class="flex justify-between font-bold mb-1" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">
-                                <span>{{ fifo.name }} ({{ fifo.code }})</span>
-                                <span class="text-sky-600 dark:text-sky-400 font-mono">剩餘 {{ formatNumber(fifo.remainingShares) }} 股</span>
-                            </div>
-                            <div class="flex justify-between text-[11px]" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'">
-                                <span>券商: <b :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'" class="font-semibold">{{ fifo.broker || '玉山證券' }}</b> | 日期: {{ fifo.buyDate }}</span>
-                                <span>成本價: ${{ fifo.buyPrice }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- 最近交易紀錄清單 (歷史交易流水帳清算港) -->
                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-3.5 space-y-2.5">
