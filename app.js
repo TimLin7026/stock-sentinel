@@ -45,13 +45,19 @@ createApp({
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
-        const stockSubTab = ref('starred'); // 預設特別關注分頁
+        const stockSubTab = ref('holding'); // 預設現役持股區
         const starredSubFilter = ref('全部'); // 特別關注子過濾 (全部 / 買 / 賣)
         const stockSearchQuery = ref('');
-        const expandedStockCodes = ref(new Set()); // 預設全部收褶 (簡易資訊)
+        const expandedStockUids = ref(new Set()); // 展開卡片集合 (以 code_broker 為唯一 UID)
+
+        // ─── 資產總覽：券商篩選狀態 (對齊地端) ───
+        const selectedBrokerFilter = ref('全部');
+
+        // ─── 交易 FIFO：時間範圍篩選狀態 (對齊地端歷史交易清算港) ───
+        const tradeDateRangeFilter = ref('全部'); // 近1周 | 近2周 | 近1月 | 近3月 | 全部
 
         // ─── 常用證券商清單 ───
-        const commonBrokers = ref(['玉山證券', '富邦', '元大', '永豐金', '國泰', '凱基']);
+        const commonBrokers = ref(['玉山證券', '中信證券', '富邦', '元大', '永豐金', '國泰', '凱基']);
 
         // ─── 資料庫狀態與引擎 ───
         let SQL_ENGINE = null;
@@ -60,7 +66,7 @@ createApp({
         const dbInfoText = ref('未載入 (示範模式)');
         const dbFileInput = ref(null);
 
-        // ─── Google 帳號與雲端狀態 (已對齊 Google Web Application Client ID) ───
+        // ─── Google 帳號與雲端狀態 (已對齊專屬 Web Client ID 與雲端資料夾) ───
         const DEFAULT_CLIENT_ID = '790121467016-vpncpfbmsrnldq9fhpiig36cp8b36oub.apps.googleusercontent.com';
         const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || DEFAULT_CLIENT_ID);
         let tokenClient = null;
@@ -78,316 +84,109 @@ createApp({
             message: ''
         });
 
-        // ─── 預設通用策略特徵結構 (100% 對齊地端規範) ───
+        // ─── 預設通用策略特徵結構 ───
         const defaultFeatures = ref([
-            { name: '均線趨勢', desc: '空頭排列 (MA20 > MA10 > MA5)', emoji: '🟢' },
-            { name: '布林通道', desc: '布林空頭軌 (%B:0.16)', emoji: '🟢' },
-            { name: '價量關係', desc: '價跌量增 (殺盤鬆動)', emoji: '🟢' },
-            { name: '月線乖離', desc: '溫和整理 (-3.14%)', emoji: '⚪' },
-            { name: '量能狀態', desc: '量能平穩 (1.4倍)', emoji: '⚪' },
-            { name: '法人動態', desc: '外資:連賣4天 │ 投信:不參與 │ 自營:多空拉鋸', emoji: '🟢' },
-            { name: '籌碼沉澱', desc: '融資堆積 (連增3天)', emoji: '🟢' },
-            { name: '籌碼吸籌比(5日)', desc: '加速出貨 🚨 (-28.4%)', emoji: '🟢' },
-            { name: '法人買超加速度', desc: '力道平穩', emoji: '⚪' },
-            { name: 'K線型態', desc: '無明顯型態', emoji: '⚪' },
-            { 
-                name: 'RSI12搶反彈與預估', 
-                desc: '區間觀望', 
-                emoji: '⚪',
-                subLines: [
-                    '買點預測：目前股價強勢/橫盤，未滿足起跌條件',
-                    '賣點預估：目前無反彈賣信號'
-                ]
-            }
+            { name: '均線趨勢', desc: '多頭排列 (MA5 > MA10 > MA20)', emoji: '🔴' },
+            { name: '布林通道', desc: '布林突破 (壓縮蓄勢)', emoji: '🔴' },
+            { name: '價量關係', desc: '價漲量縮 (量價背離/換手)', emoji: '🟡' },
+            { name: '月線乖離', desc: '溫和整理 (+2.81%)', emoji: '⚪' },
+            { name: '量能狀態', desc: '量能平穩 (1.0倍)', emoji: '⚪' },
+            { name: '法人動態', desc: '外資:多空拉鋸 │ 投信:不參與 │ 自營:多空拉鋸', emoji: '⚪' },
+            { name: '籌碼沉澱', desc: '融資堆積 (融資連增 5 天)', emoji: '🟢' },
+            { name: '籌碼吸籌比(5日)', desc: '法人加速出貨 🚨 (-62.2%)', emoji: '🟢' },
+            { name: '法人買超加速度', desc: '買賣超力道平穩', emoji: '⚪' },
+            { name: 'K線型態', desc: '無明顯型態', emoji: '⚪' }
         ]);
 
-        // ─── 核心個股資料庫 ───
-        const stockList = ref([
-            {
-                code: '2542',
-                name: '興富發',
-                price: 38.05,
-                change: -0.35,
-                changePercent: -0.91,
-                shares: 60,
-                broker: '玉山證券',
-                costPrice: 39.30,
-                profit: -75,
-                profitRate: -3.20,
-                focusStatus: '買',
-                signal: '🟢 測底佈局',
-                buyPriceTarget: '38.05',
-                sellPriceTarget: '39.95',
-                buyRange: '37.50 - 38.05',
-                defensePrice: '37.00',
-                targetRange: '39.95 - 41.50',
-                indicatorTags: [
-                    { text: 'MTM金', type: 'bull' },
-                    { text: 'OSC縮', type: 'bull' },
-                    { text: 'K超', type: 'bear' },
-                    { text: 'DIF超', type: 'bear' },
-                    { text: 'KD金', type: 'bull' },
-                    { text: 'MACD金', type: 'bull' }
-                ],
-                strategyFeatures: [
-                    { name: '均線趨勢', desc: '空頭排列 (MA20 > MA10 > MA5)', emoji: '🟢' },
-                    { name: '布林通道', desc: '布林空頭軌 (%B:0.16)', emoji: '🟢' },
-                    { name: '價量關係', desc: '價跌量增 (殺盤鬆動)', emoji: '🟢' },
-                    { name: '月線乖離', desc: '溫和整理 (-3.14%)', emoji: '⚪' },
-                    { name: '量能狀態', desc: '量能平穩 (1.4倍)', emoji: '⚪' },
-                    { name: '法人動態', desc: '外資:連賣4天 │ 投信:不參與 │ 自營:多空拉鋸', emoji: '🟢' },
-                    { name: '籌碼沉澱', desc: '融資堆積 (連增3天)', emoji: '🟢' },
-                    { name: '籌碼吸籌比(5日)', desc: '加速出貨 🚨 (-28.4%)', emoji: '🟢' },
-                    { name: '法人買超加速度', desc: '力道平穩', emoji: '⚪' },
-                    { name: 'K線型態', desc: '空頭吞噬', emoji: '🟢' },
-                    { 
-                        name: 'RSI12搶反彈與預估', 
-                        desc: '區間測底', 
-                        emoji: '⚪',
-                        subLines: [
-                            '買點預測：目前股價強勢/橫盤，未滿足起跌條件',
-                            '賣點預估：目前無反彈賣信號'
-                        ]
-                    }
-                ],
-                summaryText: '股價出現空頭吞噬與價跌量增，短線於布林下軌附近測底，建議於 37.50 至 38.05 元區間進行零股佈局，破 37.00 防守點停損。'
-            },
-            {
-                code: '1215',
-                name: '卜蜂',
-                price: 104.0,
-                change: -1.0,
-                changePercent: -0.95,
-                shares: 21,
-                broker: '玉山證券',
-                costPrice: 116.45,
-                profit: -261,
-                profitRate: -10.70,
-                focusStatus: '買',
-                signal: '🟢 6燈全綠',
-                buyPriceTarget: '104.0',
-                sellPriceTarget: '109.2',
-                buyRange: '102.0 - 104.0',
-                defensePrice: '100.0',
-                targetRange: '109.2 - 115.0',
-                indicatorTags: [
-                    { text: 'MTM金', type: 'bull' },
-                    { text: 'OSC縮', type: 'bull' },
-                    { text: 'K超', type: 'bull' },
-                    { text: 'DIF超', type: 'bull' },
-                    { text: 'KD金', type: 'bull' },
-                    { text: 'MACD金', type: 'bull' }
-                ],
-                strategyFeatures: [
-                    { name: '均線趨勢', desc: '多頭回測月線 (MA5 > MA20)', emoji: '🔴' },
-                    { name: '布林通道', desc: '回測中軌支撐 (%B:0.48)', emoji: '⚪' },
-                    { name: '價量關係', desc: '量縮回檔 (洗盤有守)', emoji: '🔴' },
-                    { name: '月線乖離', desc: '溫和整理 (-1.82%)', emoji: '⚪' },
-                    { name: '量能狀態', desc: '量能平穩 (0.9倍)', emoji: '⚪' },
-                    { name: '法人動態', desc: '外資:連買2天 │ 投信:持續買進', emoji: '🔴' },
-                    { name: '籌碼沉澱', desc: '大戶持股連增，籌碼安定', emoji: '🔴' },
-                    { name: '籌碼吸籌比(5日)', desc: '偏多吸籌 (+12.5%)', emoji: '🔴' },
-                    { name: '法人買超加速度', desc: '加速買超 🚀', emoji: '🔴' },
-                    { name: 'K線型態', desc: '早晨之星', emoji: '🔴' },
-                    { 
-                        name: 'RSI12搶反彈與預估', 
-                        desc: '滿足買進條件', 
-                        emoji: '🔴',
-                        subLines: [
-                            '買點預測：已達 102~104 支撐區，滿足佈局條件',
-                            '賣點預估：上看 109.2 頸線反壓'
-                        ]
-                    }
-                ],
-                summaryText: '股價價跌量增且 6 燈全綠，短線於布林下軌附近測底，建議於 102.00 至 104.00 元區間進行零股分批承接。'
-            },
-            {
-                code: '1229',
-                name: '聯華',
-                price: 39.65,
-                change: 0.45,
-                changePercent: 1.15,
-                shares: 50,
-                broker: '玉山證券',
-                costPrice: 38.91,
-                profit: 37,
-                profitRate: 1.90,
-                focusStatus: '賣',
-                signal: '🔴 目標調節',
-                buyPriceTarget: '39.65',
-                sellPriceTarget: '41.63',
-                buyRange: '38.50 - 39.00',
-                defensePrice: '38.00',
-                targetRange: '41.63 - 42.50',
-                indicatorTags: [
-                    { text: 'MTM金', type: 'bull' },
-                    { text: 'OSC縮', type: 'bull' },
-                    { text: 'K超', type: 'bull' },
-                    { text: 'DIF超', type: 'bull' },
-                    { text: 'KD金', type: 'bear' },
-                    { text: 'MACD金', type: 'bear' }
-                ],
-                strategyFeatures: [
-                    { name: '均線趨勢', desc: '觸及季線壓力 (MA60:41.2)', emoji: '⚪' },
-                    { name: '布林通道', desc: '抵達布林上軌 (%B:0.89)', emoji: '🔴' },
-                    { name: '價量關係', desc: '價漲量縮 (高檔背離)', emoji: '🟡' },
-                    { name: '月線乖離', desc: '超買過熱 (+5.2%)', emoji: '🔴' },
-                    { name: '量能狀態', desc: '放量推升 (1.8倍)', emoji: '🔴' },
-                    { name: '法人動態', desc: '外資:賣超 │ 投信:不參與', emoji: '🟢' },
-                    { name: '籌碼沉澱', desc: '融資連減，短線主力調節', emoji: '🔴' },
-                    { name: '籌碼吸籌比(5日)', desc: '偏空出貨 (-8.3%)', emoji: '🟢' },
-                    { name: '法人買超加速度', desc: '力道平穩', emoji: '⚪' },
-                    { name: 'K線型態', desc: '流星線 (上影線)', emoji: '🟢' },
-                    { 
-                        name: 'RSI12搶反彈與預估', 
-                        desc: '高檔超買', 
-                        emoji: '🔴',
-                        subLines: [
-                            '買點預測：短線漲多不宜追高',
-                            '賣點預估：41.63 觸發建議調節信號'
-                        ]
-                    }
-                ],
-                summaryText: '融資連減籌碼沉澱且 KD 低檔交叉，短線於布林下軌附近縮量築底，若觸及 41.63 建議賣出調節獲利。'
-            },
-            {
-                code: '2330',
-                name: '台積電',
-                price: 980.0,
-                change: 15.0,
-                changePercent: 1.55,
-                shares: 1000,
-                broker: '玉山證券',
-                costPrice: 850.0,
-                profit: 130000,
-                profitRate: 15.29,
-                focusStatus: '買',
-                signal: '🟢 多頭強勢',
-                buyPriceTarget: '940.0',
-                sellPriceTarget: '1050.0',
-                buyRange: '920 - 940',
-                defensePrice: '910',
-                targetRange: '1020 - 1050',
-                indicatorTags: [
-                    { text: 'MTM金', type: 'bull' },
-                    { text: 'OSC縮', type: 'bull' },
-                    { text: 'K超', type: 'bull' },
-                    { text: 'DIF超', type: 'bull' },
-                    { text: 'KD金', type: 'bull' },
-                    { text: 'MACD金', type: 'bull' }
-                ],
-                strategyFeatures: [
-                    { name: '均線趨勢', desc: '均線多頭排列 (MA5 > MA10 > MA20 > MA60)', emoji: '🔴' },
-                    { name: '布林通道', desc: '布林多頭攻擊軌 (%B:0.85)', emoji: '🔴' },
-                    { name: '價量關係', desc: '價漲量增 (攻擊發起)', emoji: '🔴' },
-                    { name: '月線乖離', desc: '溫和偏多 (+2.8%)', emoji: '⚪' },
-                    { name: '量能狀態', desc: '溫和放量 (1.3倍)', emoji: '⚪' },
-                    { name: '法人動態', desc: '外資:連買5天 │ 投信:連買3天 │ 三大法人合買', emoji: '🔴' },
-                    { name: '籌碼沉澱', desc: '融資連減，籌碼持續沉澱', emoji: '🔴' },
-                    { name: '籌碼吸籌比(5日)', desc: '強力吸籌 💎 (+35.2%)', emoji: '🔴' },
-                    { name: '法人買超加速度', desc: '加速買超 🚀', emoji: '🔴' },
-                    { name: 'K線型態', desc: '多頭紅三兵', emoji: '🔴' },
-                    { 
-                        name: 'RSI12搶反彈與預估', 
-                        desc: '多頭續抱', 
-                        emoji: '🔴',
-                        subLines: [
-                            '買點預測：回測 920-940 均線支撐',
-                            '賣點預估：1050 整數關卡分批調節'
-                        ]
-                    }
-                ],
-                summaryText: '外資主力持續敲進，站穩千元大關前夕。回測 920-940 均線有強力支撐，建議沿 10 日線續抱。'
-            }
-        ]);
+        // ─── 核心個股資料庫清單 ───
+        const stockList = ref([]);
 
         // ─── FIFO 批次庫存明細 ───
-        const fifoInventory = ref([
-            { id: 1, code: '2542', name: '興富發', broker: '玉山證券', buyDate: '2026-08-20', buyPrice: 39.30, remainingShares: 60 },
-            { id: 2, code: '1215', name: '卜蜂',   broker: '玉山證券', buyDate: '2026-07-15', buyPrice: 116.45, remainingShares: 21 },
-            { id: 3, code: '1229', name: '聯華',   broker: '玉山證券', buyDate: '2026-09-01', buyPrice: 38.91, remainingShares: 50 },
-            { id: 4, code: '2330', name: '台積電', broker: '玉山證券', buyDate: '2026-05-12', buyPrice: 850.0, remainingShares: 1000 }
-        ]);
+        const fifoInventory = ref([]);
 
         // ─── 最近交易紀錄 ───
-        const recentTradeLogs = ref([
-            { id: 1, action: '買進', code: '2542', name: '興富發', broker: '玉山證券', price: 39.30, shares: 60, date: '2026-08-20', totalAmount: 2358 },
-            { id: 2, action: '買進', code: '1215', name: '卜蜂',   broker: '玉山證券', price: 116.45, shares: 21, date: '2026-07-15', totalAmount: 2445 },
-            { id: 3, action: '買進', code: '1229', name: '聯華',   broker: '玉山證券', price: 38.91, shares: 50, date: '2026-09-01', totalAmount: 1946 },
-            { id: 4, action: '買進', code: '2330', name: '台積電', broker: '玉山證券', price: 850.0, shares: 1000, date: '2026-05-12', totalAmount: 850000 }
-        ]);
+        const recentTradeLogs = ref([]);
 
-        // ─── 計算屬性：分頁與篩選 ───
-        const holdingStocks = computed(() => stockList.value.filter(s => s.shares > 0));
-        const starredStocks = computed(() => {
-            return stockList.value.filter(s => {
-                if (starredSubFilter.value === '全部') {
-                    return s.focusStatus === '買' || s.focusStatus === '賣';
-                }
-                return s.focusStatus === starredSubFilter.value;
-            });
-        });
-        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 && (!s.focusStatus || s.focusStatus === '否')));
-
-        const currentFilteredStocks = computed(() => {
-            let baseList = [];
-            if (stockSubTab.value === 'holding') baseList = holdingStocks.value;
-            else if (stockSubTab.value === 'starred') baseList = starredStocks.value;
-            else if (stockSubTab.value === 'watchlist') baseList = watchlistStocks.value;
-
-            if (!stockSearchQuery.value.trim()) return baseList;
-            const q = stockSearchQuery.value.trim().toLowerCase();
-            return baseList.filter(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-        });
-
-        // ─── 計算屬性：資產總覽數據 ───
-        const summary = computed(() => {
-            let totalMarket = 0;
-            let totalCost = 0;
-            holdingStocks.value.forEach(s => {
-                totalMarket += (s.price || 0) * (s.shares || 0);
-                totalCost += (s.costPrice || 0) * (s.shares || 0);
-            });
-            const profit = Math.round(totalMarket - totalCost);
-            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : 0;
-            return {
-                totalMarketValue: totalMarket,
-                totalCost: totalCost,
-                unrealizedProfit: profit,
-                unrealizedProfitRate: rate
-            };
-        });
-
-        // ─── 核心：WebAssembly SQLite 資料庫解析模組 ───
-        const parseStrategyContent = (rawText) => {
-            if (!rawText) return defaultFeatures.value;
-            const lines = rawText.split('\n');
+        // ─── 地端標準燈號轉換演算法 (對齊 Stock_Sentinel.py format_strategy_text) ───
+        const buildStrategyFeaturesFromDict = (stratDict) => {
+            if (!stratDict || typeof stratDict !== 'object') return defaultFeatures.value;
             const features = [];
-            let currentFeat = null;
 
-            for (let line of lines) {
-                line = line.trim();
-                if (!line || line.startsWith('🎯') || line.startsWith('───')) continue;
+            // 1. 均線趨勢
+            const ma = String(stratDict.ma_align || '');
+            let maEmoji = '⚪';
+            if (ma.includes('多頭')) maEmoji = '🔴';
+            else if (ma.includes('空頭')) maEmoji = '🟢';
+            features.push({ name: '均線趨勢', desc: ma || '均線整理', emoji: maEmoji });
 
-                if (line.startsWith('-')) {
-                    // 解析特徵指標主行 (例: - 🟢 均線趨勢：空頭排列 ...)
-                    const match = line.match(/^-\s*([🔴🟢⚪🟡])?\s*([^：:]+)[：:](.*)$/);
-                    if (match) {
-                        currentFeat = {
-                            emoji: match[1] || '⚪',
-                            name: match[2].trim(),
-                            desc: match[3].trim(),
-                            subLines: []
-                        };
-                        features.push(currentFeat);
-                    }
-                } else if (line.startsWith('↳') && currentFeat) {
-                    currentFeat.subLines.push(line.replace('↳', '').trim());
-                }
-            }
-            return features.length > 0 ? features : defaultFeatures.value;
+            // 2. 布林通道
+            const bb = String(stratDict.bb_desc || '');
+            let bbEmoji = '⚪';
+            if (bb.includes('突破') || bb.includes('多頭軌')) bbEmoji = '🔴';
+            else if (bb.includes('空頭軌') || bb.includes('跌破')) bbEmoji = '🟢';
+            features.push({ name: '布林通道', desc: bb || '布林常態軌', emoji: bbEmoji });
+
+            // 3. 價量關係
+            const pv = String(stratDict.pv_desc || '');
+            let pvEmoji = '⚪';
+            if (pv.includes('價漲量增') || pv.includes('多頭攻擊') || pv.includes('止跌')) pvEmoji = '🔴';
+            else if (pv.includes('價跌量增') || pv.includes('殺盤')) pvEmoji = '🟢';
+            else if (pv.includes('價漲量縮') || pv.includes('價平量增') || pv.includes('背離') || pv.includes('換手')) pvEmoji = '🟡';
+            features.push({ name: '價量關係', desc: pv || '溫和量價', emoji: pvEmoji });
+
+            // 4. 月線乖離
+            const bias = String(stratDict.bias_label || '');
+            let biasEmoji = '⚪';
+            if (bias.includes('超買') || bias.includes('過熱')) biasEmoji = '🔴';
+            else if (bias.includes('超跌') || bias.includes('恐慌')) biasEmoji = '🟢';
+            features.push({ name: '月線乖離', desc: bias || '溫和整理', emoji: biasEmoji });
+
+            // 5. 量能狀態
+            const vol = String(stratDict.vol_status || '');
+            let volEmoji = vol.includes('爆量') || vol.includes('放量') ? '🔴' : '⚪';
+            features.push({ name: '量能狀態', desc: vol || '量能平穩', emoji: volEmoji });
+
+            // 6. 法人動態
+            const inst = String(stratDict.inst_synergy || '');
+            let instEmoji = '⚪';
+            if (inst.includes('外投同連買') || inst.includes('連買')) instEmoji = '🔴';
+            else if (inst.includes('連賣')) instEmoji = '🟢';
+            features.push({ name: '法人動態', desc: inst || '多空拉鋸', emoji: instEmoji });
+
+            // 7. 籌碼沉澱
+            const margin = String(stratDict.margin_status || '');
+            let marginEmoji = '⚪';
+            if (margin.includes('籌碼沉澱') || margin.includes('連減') || margin.includes('資減')) marginEmoji = '🔴';
+            else if (margin.includes('融資堆積') || margin.includes('連增') || margin.includes('資增')) marginEmoji = '🟢';
+            features.push({ name: '籌碼沉澱', desc: margin || '籌碼平穩', emoji: marginEmoji });
+
+            // 8. 籌碼吸籌比(5日)
+            const abs = String(stratDict.absorption_status || '');
+            let absEmoji = '⚪';
+            if (abs.includes('吸籌') && !abs.includes('出貨')) absEmoji = '🔴';
+            else if (abs.includes('出貨')) absEmoji = '🟢';
+            features.push({ name: '籌碼吸籌比(5日)', desc: abs || '吸籌力道平穩', emoji: absEmoji });
+
+            // 9. 法人買超加速度
+            const accel = String(stratDict.accel_status || '');
+            let accelEmoji = '⚪';
+            if (accel.includes('加速買超')) accelEmoji = '🔴';
+            else if (accel.includes('加速賣超')) accelEmoji = '🟢';
+            features.push({ name: '法人買超加速度', desc: accel || '力道平穩', emoji: accelEmoji });
+
+            // 10. K線型態
+            const kp = String(stratDict.k_pattern || '').replace(/[🔴🟢⚪🟡]/g, '').trim();
+            let kpEmoji = '⚪';
+            const bullishK = ['多頭吞噬', '晨星', '早晨', '紅棒', '突破', '紅三兵', '多頭', '貫穿', '槌子'];
+            const bearishK = ['空頭吞噬', '烏鴉', '黑棒', '夜星', '黃昏', '空頭', '吊人', '流星', '烏雲'];
+            if (bullishK.some(w => kp.includes(w))) kpEmoji = '🔴';
+            else if (bearishK.some(w => kp.includes(w))) kpEmoji = '🟢';
+            features.push({ name: 'K線型態', desc: kp || '無明顯型態', emoji: kpEmoji });
+
+            return features;
         };
 
+        // ─── 核心：WebAssembly SQLite 資料庫解析模組 ───
         const loadDatabaseFromArrayBuffer = async (arrayBuffer, sourceName = '手動載入') => {
             try {
                 if (!SQL_ENGINE) {
@@ -402,16 +201,15 @@ createApp({
                 const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(0);
                 dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceName})`;
 
-                // 1. 讀取 stock_price (現價字典)
+                // 1. 讀取 stock_price (真實最新收盤價)
                 const priceMap = {};
                 try {
                     const priceRes = dbInstance.exec("SELECT stock_code, cache_data FROM stock_price");
                     if (priceRes.length > 0) {
-                        const rows = priceRes[0].values;
-                        rows.forEach(r => {
+                        priceRes[0].values.forEach(r => {
                             try {
                                 const data = JSON.parse(r[1]);
-                                priceMap[r[0]] = {
+                                priceMap[String(r[0])] = {
                                     price: typeof data.p === 'number' ? data.p : (data.收盤價 || 0),
                                     date: data.d || ''
                                 };
@@ -422,21 +220,41 @@ createApp({
                     console.warn("stock_price 讀取略過:", e);
                 }
 
-                // 2. 讀取 gem_strategy (策略指標字典)
+                // 2. 讀取 stock_heatmap_cache (真實 6 燈技術指標與 10 項策略特徵指標)
+                const heatmapMap = {};
+                try {
+                    const hmRes = dbInstance.exec("SELECT stock_code, cache_data FROM stock_heatmap_cache");
+                    if (hmRes.length > 0) {
+                        hmRes[0].values.forEach(r => {
+                            try {
+                                const data = JSON.parse(r[1]);
+                                heatmapMap[String(r[0])] = {
+                                    indicators: data.indicators || {},
+                                    strategyIndicators: data.strategy_indicators || {},
+                                    dataDate: data.data_date || '',
+                                    updateTime: data.update_time || ''
+                                };
+                            } catch (e) {}
+                        });
+                    }
+                } catch (e) {
+                    console.warn("stock_heatmap_cache 讀取略過:", e);
+                }
+
+                // 3. 讀取 gem_strategy (真實戰情報告短評、建議買賣區間)
                 const strategyMap = {};
                 try {
                     const stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy");
                     if (stratRes.length > 0) {
-                        const rows = stratRes[0].values;
-                        rows.forEach(r => {
-                            strategyMap[r[0]] = {
-                                content: r[1],
+                        stratRes[0].values.forEach(r => {
+                            strategyMap[String(r[0])] = {
+                                content: r[1] || '',
                                 buyLow: r[2],
                                 buyHigh: r[3],
                                 defense: r[4],
                                 targetLow: r[5],
                                 targetHigh: r[6],
-                                summary: r[7]
+                                summary: r[7] || ''
                             };
                         });
                     }
@@ -444,29 +262,135 @@ createApp({
                     console.warn("gem_strategy 讀取略過:", e);
                 }
 
-                // 3. 讀取 my_stock (持股與關注清單)
+                // 4. 讀取 trade_log (流水帳) 並關聯每檔股票的最新交易時間
+                const parsedTrades = [];
+                const fifoMap = {}; // uid -> [ { buyDate, buyPrice, remainingShares, broker } ]
+                const latestTradeDateMap = {}; // code_broker -> date
+
+                try {
+                    const tradeRes = dbInstance.exec("SELECT id, 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間 FROM trade_log ORDER BY 交易時間 DESC, id DESC");
+                    if (tradeRes.length > 0) {
+                        tradeRes[0].values.forEach(r => {
+                            const tid = r[0];
+                            const code = String(r[1]);
+                            const name = String(r[2] || code);
+                            const action = String(r[3]);
+                            const shares = Number(r[4]) || 0;
+                            const price = Number(r[5]) || 0;
+                            const broker = String(r[6] || '玉山證券');
+                            const date = String(r[7] || '');
+                            const uid = `${code}_${broker}`;
+
+                            parsedTrades.push({
+                                id: tid,
+                                uid,
+                                code,
+                                name,
+                                action,
+                                shares,
+                                price,
+                                broker,
+                                date,
+                                totalAmount: Math.round(price * shares)
+                            });
+
+                            if (!latestTradeDateMap[uid]) {
+                                latestTradeDateMap[uid] = date;
+                            }
+                            if (!latestTradeDateMap[code]) {
+                                latestTradeDateMap[code] = date;
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("trade_log 讀取略過:", e);
+                }
+
+                // 計算 FIFO 庫存批次 (依時間由舊到新計算先進先出)
+                const ascTrades = [...parsedTrades].reverse();
+                ascTrades.forEach(t => {
+                    const uid = t.uid;
+                    if (!fifoMap[uid]) fifoMap[uid] = [];
+                    if (t.action === '買進') {
+                        fifoMap[uid].push({
+                            id: t.id,
+                            code: t.code,
+                            name: t.name,
+                            broker: t.broker,
+                            buyDate: t.date,
+                            buyPrice: t.price,
+                            remainingShares: t.shares
+                        });
+                    } else if (t.action === '賣出') {
+                        let needDeduct = t.shares;
+                        while (needDeduct > 0 && fifoMap[uid].length > 0) {
+                            const batch = fifoMap[uid][0];
+                            if (batch.remainingShares <= needDeduct) {
+                                needDeduct -= batch.remainingShares;
+                                fifoMap[uid].shift();
+                            } else {
+                                batch.remainingShares -= needDeduct;
+                                needDeduct = 0;
+                            }
+                        }
+                    }
+                });
+
+                recentTradeLogs.value = parsedTrades;
+
+                const flatFifo = [];
+                Object.values(fifoMap).forEach(batches => {
+                    batches.forEach(b => {
+                        if (b.remainingShares > 0) flatFifo.push(b);
+                    });
+                });
+                fifoInventory.value = flatFifo;
+
+                // 5. 讀取 my_stock (持股與自選觀察清單)
                 const parsedStocks = [];
                 try {
                     const stockRes = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
                     if (stockRes.length > 0) {
-                        const rows = stockRes[0].values;
-                        rows.forEach(r => {
+                        stockRes[0].values.forEach(r => {
                             const code = String(r[0]);
                             const name = String(r[1] || code);
                             const shares = Number(r[2]) || 0;
                             const costPrice = Number(r[3]) || 0;
                             const broker = String(r[4] || '玉山證券');
                             const focusStatus = String(r[5] || '否');
+                            const uid = `${code}_${broker}`;
 
+                            // 最新價格與日期
                             const pInfo = priceMap[code] || {};
                             const curPrice = pInfo.price || costPrice || 0;
                             const profit = shares > 0 ? Math.round((curPrice - costPrice) * shares) : 0;
                             const profitRate = costPrice > 0 ? (((curPrice - costPrice) / costPrice) * 100).toFixed(2) : 0;
 
+                            // 戰報與策略特徵
                             const sInfo = strategyMap[code] || {};
-                            const stratFeatures = parseStrategyContent(sInfo.content);
+                            const hmInfo = heatmapMap[code] || {};
+                            const stratFeatures = hmInfo.strategyIndicators ? buildStrategyFeaturesFromDict(hmInfo.strategyIndicators) : defaultFeatures.value;
+
+                            // 6 燈技術指標 (1: 紅燈 bull, -1: 綠燈 bear)
+                            const hmIndicators = hmInfo.indicators || {};
+                            const indicatorTags = [
+                                { text: 'MTM金', type: hmIndicators['MTM金'] === 1 ? 'bull' : 'bear' },
+                                { text: 'OSC縮', type: hmIndicators['OSC縮'] === 1 ? 'bull' : 'bear' },
+                                { text: 'K超', type: (hmIndicators['K超'] === 1 || hmIndicators['K趨'] === 1) ? 'bull' : 'bear' },
+                                { text: 'DIF超', type: (hmIndicators['DIF超'] === 1 || hmIndicators['DIF趨'] === 1) ? 'bull' : 'bear' },
+                                { text: 'KD金', type: hmIndicators['KD金'] === 1 ? 'bull' : 'bear' },
+                                { text: 'MACD金', type: hmIndicators['MACD金'] === 1 ? 'bull' : 'bear' }
+                            ];
+
+                            // 建議買賣區間
+                            const buyTarget = sInfo.buyHigh ? String(sInfo.buyHigh) : (costPrice ? String(costPrice) : '---');
+                            const sellTarget = sInfo.targetLow ? String(sInfo.targetLow) : '---';
+
+                            // 最新交易/分析時間 (供排序使用)
+                            const latestDate = latestTradeDateMap[uid] || latestTradeDateMap[code] || hmInfo.dataDate || pInfo.date || '2026-01-01';
 
                             parsedStocks.push({
+                                uid,
                                 code,
                                 name,
                                 price: curPrice,
@@ -478,22 +402,16 @@ createApp({
                                 profit,
                                 profitRate,
                                 focusStatus: focusStatus === '買' || focusStatus === '賣' ? focusStatus : '否',
-                                signal: shares > 0 ? (profit >= 0 ? '🟢 多頭續抱' : '🔴 測底佈局') : '⚪ 觀察追蹤',
-                                buyPriceTarget: sInfo.buyHigh ? String(sInfo.buyHigh) : (costPrice ? String(costPrice) : '---'),
-                                sellPriceTarget: sInfo.targetLow ? String(sInfo.targetLow) : '---',
+                                signal: shares > 0 ? (profit >= 0 ? '🔴 多頭獲利' : '🟢 測底佈局') : '⚪ 觀察追蹤',
+                                buyPriceTarget: buyTarget,
+                                sellPriceTarget: sellTarget,
                                 buyRange: sInfo.buyLow && sInfo.buyHigh ? `${sInfo.buyLow} - ${sInfo.buyHigh}` : '---',
                                 defensePrice: sInfo.defense ? String(sInfo.defense) : '---',
                                 targetRange: sInfo.targetLow && sInfo.targetHigh ? `${sInfo.targetLow} - ${sInfo.targetHigh}` : '---',
-                                indicatorTags: [
-                                    { text: 'MTM金', type: 'bull' },
-                                    { text: 'OSC縮', type: 'bull' },
-                                    { text: 'K超', type: 'bull' },
-                                    { text: 'DIF超', type: 'bull' },
-                                    { text: 'KD金', type: 'bull' },
-                                    { text: 'MACD金', type: 'bull' }
-                                ],
+                                indicatorTags,
                                 strategyFeatures: stratFeatures,
-                                summaryText: sInfo.summary || '已由真實資料庫載入最新戰報。'
+                                summaryText: sInfo.summary || '已由真實資料庫載入最新戰報。',
+                                latestDate
                             });
                         });
                     }
@@ -505,88 +423,12 @@ createApp({
                     stockList.value = parsedStocks;
                 }
 
-                // 4. 讀取 trade_log (流水帳) 與計算 FIFO
-                const parsedTrades = [];
-                const fifoMap = {}; // code -> [ { buyDate, buyPrice, remainingShares, broker } ]
-
-                try {
-                    const tradeRes = dbInstance.exec("SELECT id, 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間 FROM trade_log ORDER BY 交易時間 ASC, id ASC");
-                    if (tradeRes.length > 0) {
-                        const rows = tradeRes[0].values;
-                        rows.forEach(r => {
-                            const tid = r[0];
-                            const code = String(r[1]);
-                            const name = String(r[2] || code);
-                            const action = String(r[3]);
-                            const shares = Number(r[4]) || 0;
-                            const price = Number(r[5]) || 0;
-                            const broker = String(r[6] || '玉山證券');
-                            const date = String(r[7] || '');
-
-                            parsedTrades.unshift({
-                                id: tid,
-                                code,
-                                name,
-                                action,
-                                shares,
-                                price,
-                                broker,
-                                date,
-                                totalAmount: Math.round(price * shares)
-                            });
-
-                            // FIFO 批次試算
-                            if (!fifoMap[code]) fifoMap[code] = [];
-                            if (action === '買進') {
-                                fifoMap[code].push({
-                                    id: tid,
-                                    code,
-                                    name,
-                                    broker,
-                                    buyDate: date,
-                                    buyPrice: price,
-                                    remainingShares: shares
-                                });
-                            } else if (action === '賣出') {
-                                let needDeduct = shares;
-                                while (needDeduct > 0 && fifoMap[code].length > 0) {
-                                    const batch = fifoMap[code][0];
-                                    if (batch.remainingShares <= needDeduct) {
-                                        needDeduct -= batch.remainingShares;
-                                        fifoMap[code].shift();
-                                    } else {
-                                        batch.remainingShares -= needDeduct;
-                                        needDeduct = 0;
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn("trade_log 讀取失敗:", e);
-                }
-
-                if (parsedTrades.length > 0) {
-                    recentTradeLogs.value = parsedTrades.slice(0, 15);
-                }
-
-                // 攤平 FIFO 庫存明細
-                const flatFifo = [];
-                Object.values(fifoMap).forEach(batches => {
-                    batches.forEach(b => {
-                        if (b.remainingShares > 0) flatFifo.push(b);
-                    });
-                });
-                if (flatFifo.length > 0) {
-                    fifoInventory.value = flatFifo;
-                }
-
                 // 儲存至 IndexedDB
                 if (window.localforage) {
                     await localforage.setItem('sentinel_db_bytes', arrayBuffer);
                 }
 
-                // 重新繪製圖表
+                // 重新渲染資產配置甜甜圈圖
                 renderAssetChart();
                 return true;
             } catch (err) {
@@ -595,6 +437,98 @@ createApp({
                 return false;
             }
         };
+
+        // ─── 計算屬性：持股清單與券商篩選 ───
+        const holdingStocks = computed(() => stockList.value.filter(s => s.shares > 0));
+
+        // 資產總覽可用券商清單 (對齊地端：全部 / 玉山 / 中信 ...)
+        const availableBrokers = computed(() => {
+            const set = new Set();
+            holdingStocks.value.forEach(s => {
+                if (s.broker) set.add(s.broker);
+            });
+            return ['全部', ...Array.from(set)];
+        });
+
+        // 依券商過濾後的持股
+        const filteredHoldingStocks = computed(() => {
+            if (selectedBrokerFilter.value === '全部') {
+                return holdingStocks.value;
+            }
+            return holdingStocks.value.filter(s => s.broker === selectedBrokerFilter.value);
+        });
+
+        // ─── 計算屬性：資產總覽數據 (隨券商篩選即時聯動) ───
+        const summary = computed(() => {
+            let totalMarket = 0;
+            let totalCost = 0;
+            filteredHoldingStocks.value.forEach(s => {
+                totalMarket += (s.price || 0) * (s.shares || 0);
+                totalCost += (s.costPrice || 0) * (s.shares || 0);
+            });
+            const profit = Math.round(totalMarket - totalCost);
+            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : 0;
+            return {
+                totalMarketValue: totalMarket,
+                totalCost: totalCost,
+                unrealizedProfit: profit,
+                unrealizedProfitRate: rate
+            };
+        });
+
+        // ─── 計算屬性：個股戰報分類與「依交易日新到舊」排序 ───
+        const starredStocks = computed(() => {
+            return stockList.value.filter(s => {
+                if (starredSubFilter.value === '全部') {
+                    return s.focusStatus === '買' || s.focusStatus === '賣';
+                }
+                return s.focusStatus === starredSubFilter.value;
+            });
+        });
+
+        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 && (!s.focusStatus || s.focusStatus === '否')));
+
+        const currentFilteredStocks = computed(() => {
+            let baseList = [];
+            if (stockSubTab.value === 'holding') baseList = holdingStocks.value;
+            else if (stockSubTab.value === 'starred') baseList = starredStocks.value;
+            else if (stockSubTab.value === 'watchlist') baseList = watchlistStocks.value;
+
+            // 搜尋過濾
+            if (stockSearchQuery.value.trim()) {
+                const q = stockSearchQuery.value.trim().toLowerCase();
+                baseList = baseList.filter(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.broker && s.broker.toLowerCase().includes(q)));
+            }
+
+            // 🌟 嚴格依「最新交易日由新到舊」降冪排序 (對齊地端)
+            return [...baseList].sort((a, b) => {
+                const dateA = String(a.latestDate || '');
+                const dateB = String(b.latestDate || '');
+                return dateB.localeCompare(dateA);
+            });
+        });
+
+        // ─── 計算屬性：交易 FIFO 時間範圍篩選 (近1周 / 近2周 / 近1月 / 近3月 / 全部) ───
+        const filteredTradeLogs = computed(() => {
+            if (tradeDateRangeFilter.value === '全部') {
+                return recentTradeLogs.value;
+            }
+
+            const now = new Date();
+            let daysLimit = 3650;
+            if (tradeDateRangeFilter.value === '近1周') daysLimit = 7;
+            else if (tradeDateRangeFilter.value === '近2周') daysLimit = 14;
+            else if (tradeDateRangeFilter.value === '近1月') daysLimit = 30;
+            else if (tradeDateRangeFilter.value === '近3月') daysLimit = 90;
+
+            const cutoff = new Date(now.getTime() - daysLimit * 24 * 60 * 60 * 1000);
+
+            return recentTradeLogs.value.filter(log => {
+                if (!log.date) return true;
+                const logDate = new Date(log.date.replace(/\//g, '-'));
+                return !isNaN(logDate) && logDate >= cutoff;
+            });
+        });
 
         // ─── ECharts 資產配置圓餅圖 ───
         let chartInstance = null;
@@ -613,7 +547,7 @@ createApp({
                 const isDark = theme.value === 'dark';
                 chartInstance = echarts.init(chartDom, isDark ? 'dark' : null, { renderer: 'canvas' });
 
-                const chartData = holdingStocks.value.map(s => ({
+                const chartData = filteredHoldingStocks.value.map(s => ({
                     name: `${s.name} (${s.code})`,
                     value: Math.round((s.price || 0) * (s.shares || 0))
                 }));
@@ -662,9 +596,9 @@ createApp({
             });
         };
 
-        // 當切換分頁時：自動收褶個股完整資訊，並重繪圖表
+        // 監聽分頁與券商篩選切換
         watch(currentTab, (newTab) => {
-            expandedStockCodes.value.clear();
+            expandedStockUids.value.clear();
             if (newTab === 'dashboard') {
                 nextTick(() => {
                     setTimeout(renderAssetChart, 50);
@@ -673,16 +607,20 @@ createApp({
         });
 
         watch(stockSubTab, () => {
-            expandedStockCodes.value.clear();
+            expandedStockUids.value.clear();
         });
 
-        // ─── 卡片展開 / 收合控制 ───
-        const isExpanded = (code) => expandedStockCodes.value.has(code);
-        const toggleStockExpand = (code) => {
-            if (expandedStockCodes.value.has(code)) {
-                expandedStockCodes.value.delete(code);
+        watch(selectedBrokerFilter, () => {
+            renderAssetChart();
+        });
+
+        // ─── 卡片展開 / 收合控制 (以 uid = code_broker 為精準依據) ───
+        const isExpanded = (uid) => expandedStockUids.value.has(uid);
+        const toggleStockExpand = (uid) => {
+            if (expandedStockUids.value.has(uid)) {
+                expandedStockUids.value.delete(uid);
             } else {
-                expandedStockCodes.value.add(code);
+                expandedStockUids.value.add(uid);
             }
         };
 
@@ -695,10 +633,9 @@ createApp({
             } else {
                 stock.focusStatus = '否';
             }
-            // 若有 DB 實例，同步寫入
             if (dbInstance) {
                 try {
-                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ?", [stock.focusStatus, stock.code]);
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [stock.focusStatus, stock.code, stock.broker]);
                     saveDbToIndexedDb();
                 } catch (e) {}
             }
@@ -708,7 +645,7 @@ createApp({
             stock.focusStatus = status;
             if (dbInstance) {
                 try {
-                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ?", [status, stock.code]);
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [status, stock.code, stock.broker]);
                     saveDbToIndexedDb();
                 } catch (e) {}
             }
@@ -761,7 +698,7 @@ createApp({
                 tradeForm.value.name = '';
                 tradeForm.value.price = null;
                 tradeForm.value.shares = 1000;
-                tradeForm.value.broker = '玉山證券';
+                tradeForm.value.broker = selectedBrokerFilter.value !== '全部' ? selectedBrokerFilter.value : '玉山證券';
             }
             tradeForm.value.action = '買進';
             tradeForm.value.date = new Date().toISOString().split('T')[0];
@@ -776,8 +713,10 @@ createApp({
 
             const total = Math.round(tradeForm.value.price * tradeForm.value.shares);
             const brokerName = tradeForm.value.broker || '玉山證券';
+            const uid = `${tradeForm.value.code}_${brokerName}`;
             const newLog = {
                 id: Date.now(),
+                uid,
                 action: tradeForm.value.action,
                 code: tradeForm.value.code,
                 name: tradeForm.value.name || tradeForm.value.code,
@@ -791,9 +730,10 @@ createApp({
             recentTradeLogs.value.unshift(newLog);
 
             // 更新個股列表
-            let target = stockList.value.find(s => s.code === tradeForm.value.code);
+            let target = stockList.value.find(s => s.uid === uid);
             if (!target) {
                 target = {
+                    uid,
                     code: tradeForm.value.code,
                     name: tradeForm.value.name || tradeForm.value.code,
                     price: tradeForm.value.price,
@@ -807,10 +747,13 @@ createApp({
                     focusStatus: '否',
                     signal: '⚪ 新增自選',
                     strategyFeatures: defaultFeatures.value,
-                    summaryText: '手動錄入交易新增個股。'
+                    summaryText: '手動錄入交易新增個股。',
+                    latestDate: tradeForm.value.date
                 };
                 stockList.value.push(target);
             }
+
+            target.latestDate = tradeForm.value.date;
 
             if (tradeForm.value.action === '買進') {
                 const prevCostTotal = target.costPrice * target.shares;
@@ -874,7 +817,7 @@ createApp({
                     localStorage.setItem('sentinel_gdrive_token', resp.access_token);
                     googleUser.value.isLoggedIn = true;
 
-                    // 嘗試抓取使用者 Profile
+                    // 抓取使用者 Email
                     try {
                         const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                             headers: { Authorization: `Bearer ${resp.access_token}` }
@@ -915,7 +858,6 @@ createApp({
                 if (type === 'download' || type === 'sync') {
                     syncStatus.value.message = '正在搜尋 Google Drive 中的 sentinel_vault.db...';
                     
-                    // 1. 搜尋雲端 DB 檔案
                     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size)`;
                     const searchRes = await fetch(searchUrl, {
                         headers: { Authorization: `Bearer ${googleAccessToken.value}` }
@@ -982,7 +924,7 @@ createApp({
             if (dbInstance) {
                 u8Array = dbInstance.export();
             } else {
-                alert("⚠️ 目前為示範模式，將為您導出當前示範資料庫。");
+                alert("⚠️ 目前為示範模式，無法匯出空資料庫。");
                 return;
             }
 
@@ -1004,7 +946,7 @@ createApp({
                 if (chartInstance) chartInstance.resize();
             });
 
-            // 檢查 IndexedDB 是否有上次快取的資料庫
+            // 優先讀取 IndexedDB 實現 0 延遲秒開
             if (window.localforage) {
                 try {
                     const cachedBuffer = await localforage.getItem('sentinel_db_bytes');
@@ -1025,6 +967,9 @@ createApp({
             stockSubTab,
             starredSubFilter,
             stockSearchQuery,
+            selectedBrokerFilter,
+            availableBrokers,
+            tradeDateRangeFilter,
             commonBrokers,
             googleUser,
             googleClientId,
@@ -1035,11 +980,13 @@ createApp({
             stockList,
             defaultFeatures,
             holdingStocks,
+            filteredHoldingStocks,
             starredStocks,
             watchlistStocks,
             currentFilteredStocks,
             fifoInventory,
             recentTradeLogs,
+            filteredTradeLogs,
             summary,
             isExpanded,
             toggleStockExpand,

@@ -75,12 +75,27 @@
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
             <section v-if="currentTab === 'dashboard'" class="space-y-3.5">
+                <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
+                <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
+                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
+                    <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
+                            :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
+                        {{ b }}
+                    </button>
+                </div>
+
                 <!-- 總資產核心卡片 -->
                 <div :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700/80 text-white' : 'bg-gradient-to-br from-sky-600 to-indigo-700 border-sky-500 text-white'" class="border rounded-2xl p-4 shadow-lg relative overflow-hidden">
                     <div class="absolute -right-6 -bottom-6 opacity-20 text-8xl pointer-events-none">
                         <i class="fa-solid fa-chart-line"></i>
                     </div>
-                    <div class="text-xs opacity-80 mb-1">投資組合總資產市值</div>
+                    <div class="flex justify-between items-center mb-1">
+                        <div class="text-xs opacity-80">投資組合總資產市值</div>
+                        <span v-if="selectedBrokerFilter !== '全部'" class="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            {{ selectedBrokerFilter }}
+                        </span>
+                    </div>
                     <div class="text-2xl font-black tracking-tight mb-2">
                         ${{ formatNumber(summary.totalMarketValue) }}
                     </div>
@@ -106,7 +121,7 @@
                         <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
                             <i class="fa-solid fa-chart-pie text-sky-500 mr-2"></i>持股配置佔比
                         </h2>
-                        <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ holdingStocks.length }} 檔持股</span>
+                        <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ filteredHoldingStocks.length }} 檔持股</span>
                     </div>
                     <!-- 圖表掛載容器 -->
                     <div id="assetChart" class="w-full h-48"></div>
@@ -170,7 +185,7 @@
 
                 <!-- 個股卡片列表 -->
                 <div class="space-y-2.5">
-                    <div v-for="stock in currentFilteredStocks" :key="stock.code" 
+                    <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :class="[
                             theme === 'dark' 
                                 ? (stock.focusStatus === '買' ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : (stock.focusStatus === '賣' ? 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900' : 'border-slate-800 bg-slate-900 hover:border-slate-700'))
@@ -179,7 +194,7 @@
                          class="border rounded-2xl overflow-hidden transition shadow relative">
                         
                         <!-- 3.1 簡易列表 (點擊切換展開/收合) -->
-                        <div @click="toggleStockExpand(stock.code)" class="p-3.5 cursor-pointer active:opacity-80 transition">
+                        <div @click="toggleStockExpand(stock.uid)" class="p-3.5 cursor-pointer active:opacity-80 transition">
                             
                             <!-- 卡片頂部：紅正/綠反三角關注標籤 + 股票代號名稱 + 券商標籤 -->
                             <div class="flex justify-between items-center mb-2">
@@ -226,17 +241,17 @@
                             <div :class="theme === 'dark' ? 'bg-slate-950/50 border-slate-800/60 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'" class="p-2 rounded-xl border text-[11px] flex justify-between items-center mb-1.5 font-mono">
                                 <div>
                                     <span class="text-sky-600 dark:text-sky-400 font-bold">✅ 建議：</span>
-                                    <span class="text-emerald-600 dark:text-emerald-400 font-bold">🔼 買入 &lt; {{ stock.buyPriceTarget || stock.buyRange }}</span>
+                                    <span class="text-rose-600 dark:text-rose-400 font-bold">🔼 買入 &lt; {{ stock.buyPriceTarget || stock.buyRange }}</span>
                                 </div>
                                 <div>
-                                    <span class="text-rose-600 dark:text-rose-400 font-bold">{{ stock.sellPriceTarget || stock.targetRange }} &lt; 賣出 🔽</span>
+                                    <span class="text-emerald-600 dark:text-emerald-400 font-bold">{{ stock.sellPriceTarget || stock.targetRange }} &lt; 賣出 🔽</span>
                                 </div>
                             </div>
 
                             <!-- 6 燈技術指標燈號膠囊 (6 欄等寬全寬分散對齊：[MTM金] [OSC縮] [K超] [DIF超] [KD金] [MACD金]) -->
                             <div class="grid grid-cols-6 gap-1 pt-1.5 w-full">
                                 <span v-for="tag in stock.indicatorTags" :key="tag.text" 
-                                      :class="tag.type === 'bull' ? 'bg-emerald-600 text-white font-bold' : 'bg-rose-600 text-white font-bold'"
+                                      :class="tag.type === 'bull' ? 'bg-rose-600 text-white font-bold' : 'bg-emerald-600 text-white font-bold'"
                                       class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center">
                                     {{ tag.text }}
                                 </span>
@@ -244,13 +259,13 @@
 
                             <!-- 展開收合指示小箭頭 -->
                             <div class="flex justify-center mt-1 text-[10px] text-slate-400">
-                                <i class="fa-solid" :class="isExpanded(stock.code) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                                <i class="fa-solid" :class="isExpanded(stock.uid) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                             </div>
                         </div>
 
                         <!-- 3.2 點擊展開完整卡片 (深度戰情報告：完全對齊地端截圖) -->
                         <transition name="card-expand">
-                            <div v-if="isExpanded(stock.code)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="px-3.5 py-3 border-t space-y-3 text-xs">
+                            <div v-if="isExpanded(stock.uid)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="px-3.5 py-3 border-t space-y-3 text-xs">
                                 
                                 <!-- 快捷關注設置欄 (▲ 關注買 / ▼ 關注賣 / 取消) -->
                                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center justify-between p-2 rounded-xl border">
@@ -357,28 +372,44 @@
                     </div>
                 </div>
 
-                <!-- 最近交易紀錄清單 -->
+                <!-- 最近交易紀錄清單 (歷史交易流水帳清算港) -->
                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-3.5 space-y-2.5">
-                    <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center justify-between">
-                        <span><i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>最近交易記錄</span>
-                        <span class="text-[10px] text-slate-400 font-normal">最近 10 筆</span>
-                    </h2>
+                    <div class="flex items-center justify-between">
+                        <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
+                            <i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>歷史交易流水帳
+                        </h2>
+                        <span class="text-[10px] text-slate-400 font-mono">共 {{ filteredTradeLogs.length }} 筆</span>
+                    </div>
 
+                    <!-- 時間範圍篩選標籤列 (對齊地端：近1周 | 近2周 | 近1月 | 近3月 | 全部) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex p-1 rounded-xl border text-xs">
+                        <button v-for="range in ['近1周', '近2周', '近1月', '近3月', '全部']" :key="range" 
+                                @click="tradeDateRangeFilter = range"
+                                :class="tradeDateRangeFilter === range ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                                class="flex-1 py-1 rounded-lg transition text-center text-[11px]">
+                            {{ range }}
+                        </button>
+                    </div>
+
+                    <!-- 交易明細列表 -->
                     <div class="space-y-1.5">
-                        <div v-for="log in recentTradeLogs" :key="log.id" :class="theme === 'dark' ? 'bg-slate-950/60 border-slate-800/50' : 'bg-slate-50 border-slate-200'" class="flex justify-between items-center p-2 rounded-xl border text-xs">
+                        <div v-if="filteredTradeLogs.length === 0" class="text-center py-6 text-slate-400 text-xs">
+                            此時間區間內暫無交易記錄
+                        </div>
+                        <div v-for="log in filteredTradeLogs" :key="log.id" :class="theme === 'dark' ? 'bg-slate-950/60 border-slate-800/50' : 'bg-slate-50 border-slate-200'" class="flex justify-between items-center p-2 rounded-xl border text-xs">
                             <div class="flex items-center space-x-2">
-                                <span :class="log.action === '買進' ? 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800/50' : 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800/50'" 
-                                      class="px-1.5 py-0.5 rounded text-[10px] font-bold border">
+                                <span :class="log.action === '買進' ? 'bg-rose-600 text-white border-rose-500' : 'bg-emerald-600 text-white border-emerald-500'" 
+                                      class="px-2 py-0.5 rounded text-[10px] font-bold border shadow-sm">
                                     {{ log.action }}
                                 </span>
                                 <div>
-                                    <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-bold">{{ log.name }}</div>
-                                    <div class="text-[10px] text-slate-400">{{ log.broker }} · {{ log.date }}</div>
+                                    <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-bold">{{ log.name }} <span class="font-mono text-[10px] text-slate-400">({{ log.code }})</span></div>
+                                    <div class="text-[10px] text-slate-400">{{ log.broker || '玉山證券' }} · {{ log.date }}</div>
                                 </div>
                             </div>
                             <div class="text-right font-mono">
                                 <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-semibold">${{ log.price }} × {{ formatNumber(log.shares) }}股</div>
-                                <div class="text-[10px] text-slate-400">總計: ${{ formatNumber(log.totalAmount) }}</div>
+                                <div class="text-[10px]" :class="log.action === '買進' ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'">總計: ${{ formatNumber(log.totalAmount) }}</div>
                             </div>
                         </div>
                     </div>
