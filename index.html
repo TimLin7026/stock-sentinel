@@ -238,11 +238,11 @@
                                 </div>
                             </div>
 
-                            <!-- 6 燈技術指標燈號膠囊 (對齊地端：[MTM金] [OSC縮] [K超] [DIF超] [KD金] [MACD金]) -->
-                            <div class="flex flex-wrap gap-1 pt-1">
+                            <!-- 6 燈技術指標燈號膠囊 (6 欄等寬全寬分散對齊：[MTM金] [OSC縮] [K超] [DIF超] [KD金] [MACD金]) -->
+                            <div class="grid grid-cols-6 gap-1 pt-1.5 w-full">
                                 <span v-for="tag in stock.indicatorTags" :key="tag.text" 
                                       :class="tag.type === 'bull' ? 'bg-emerald-600 text-white font-bold' : 'bg-rose-600 text-white font-bold'"
-                                      class="text-[9px] px-1.5 py-0.5 rounded shadow-sm font-mono">
+                                      class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center">
                                     {{ tag.text }}
                                 </span>
                             </div>
