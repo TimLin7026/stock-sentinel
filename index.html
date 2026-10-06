@@ -267,7 +267,7 @@
 
                         <!-- 3.2 點擊展開完整卡片 (深度戰情報告：完全對齊地端截圖) -->
                         <transition name="card-expand">
-                            <div v-if="isExpanded(stock.uid)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="px-3.5 py-3 border-t space-y-3 text-xs">
+                            <div v-if="isExpanded(stock.uid)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="stock-detail-body px-3.5 py-3 border-t space-y-3 text-xs">
                                 
                                 <!-- 快捷關注設置欄 (▲ 關注買 / ▼ 關注賣 / 取消) -->
                                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center justify-between p-2 rounded-xl border">

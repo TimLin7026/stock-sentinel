@@ -693,28 +693,55 @@ createApp({
             renderAssetChart();
         });
 
-        // ─── 卡片展開 / 收合控制 (手風琴模式：同時只展開一檔個股 + 精準自動滾動定錨) ───
+        // ─── 卡片展開 / 收合控制 (手風琴模式：瞬時高度補償 + 單向平滑定錨) ───
         const isExpanded = (uid) => expandedStockUids.value.has(uid);
         const toggleStockExpand = (uid) => {
             if (expandedStockUids.value.has(uid)) {
                 expandedStockUids.value.clear();
-            } else {
-                expandedStockUids.value.clear();
-                expandedStockUids.value.add(uid);
-
-                // 展開後自動精密平滑定錨至該卡片頂端 (自動對齊 scroll-mt-[68px] 留白)
-                nextTick(() => {
-                    setTimeout(() => {
-                        const cardEl = document.getElementById(`stock-card-${uid}`);
-                        if (cardEl) {
-                            cardEl.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'start'
-                            });
-                        }
-                    }, 50);
-                });
+                return;
             }
+
+            // 1. 偵測目前已展開的卡片與點擊目標卡片的相對位置
+            const targetEl = document.getElementById(`stock-card-${uid}`);
+            const oldDetailEl = document.querySelector('.stock-detail-body');
+            let heightCompensation = 0;
+
+            if (targetEl && oldDetailEl) {
+                const targetRect = targetEl.getBoundingClientRect();
+                const oldDetailRect = oldDetailEl.getBoundingClientRect();
+
+                // 如果舊卡片位於點擊目標的上方 (由上往下點擊)
+                if (oldDetailRect.top < targetRect.top) {
+                    // 取得舊卡片收合將損失的高度
+                    heightCompensation = oldDetailEl.offsetHeight;
+                }
+            }
+
+            // 2. 切換展開狀態 (Vue 響應式更新)
+            expandedStockUids.value.clear();
+            expandedStockUids.value.add(uid);
+
+            // 3. 在同一幀內瞬間補償滾動軸位置，完全抵消塌陷拉扯
+            if (heightCompensation > 0) {
+                window.scrollBy(0, -heightCompensation);
+            }
+
+            // 4. 等待 DOM 更新後，從當前平穩位置一次性平滑滑動至頂端對齊
+            nextTick(() => {
+                requestAnimationFrame(() => {
+                    const newTargetEl = document.getElementById(`stock-card-${uid}`);
+                    if (newTargetEl) {
+                        const headerOffset = 64; // Sticky Header 避讓高度
+                        const elementTop = newTargetEl.getBoundingClientRect().top;
+                        const targetScrollY = elementTop + window.pageYOffset - headerOffset;
+                        
+                        window.scrollTo({
+                            top: Math.max(0, targetScrollY),
+                            behavior: 'smooth'
+                        });
+                    }
+                });
+            });
         };
 
         // 特別關注切換循環：否 ➔ 買 (▲) ➔ 賣 (▼) ➔ 否
