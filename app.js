@@ -47,7 +47,7 @@ createApp({
         const stockSubTab = ref('starred'); // 預設特別關注分頁
         const starredSubFilter = ref('全部'); // 特別關注子過濾 (全部 / 買 / 賣)
         const stockSearchQuery = ref('');
-        const expandedStockCodes = ref(new Set(['2542'])); // 預設展開興富發
+        const expandedStockCodes = ref(new Set()); // 預設全部收褶 (簡易資訊)
 
         // ─── 常用證券商清單 ───
         const commonBrokers = ref(['玉山證券', '富邦', '元大', '永豐金', '國泰', '凱基']);
@@ -412,13 +412,20 @@ createApp({
             });
         };
 
-        // 當切換到資產總覽分頁時重新繪製圖表
+        // 當切換分頁時：自動收褶個股完整資訊，並重繪圖表
         watch(currentTab, (newTab) => {
+            // 切換分頁時自動收褶所有個股展開狀態
+            expandedStockCodes.value.clear();
             if (newTab === 'dashboard') {
                 nextTick(() => {
                     setTimeout(renderAssetChart, 50);
                 });
             }
+        });
+
+        // 當切換個股子分類 (現役 / 特別關注 / 自選池) 時也自動收褶
+        watch(stockSubTab, () => {
+            expandedStockCodes.value.clear();
         });
 
         // ─── 卡片展開 / 收合控制 ───
