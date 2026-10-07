@@ -98,6 +98,66 @@ createApp({
             message: ''
         });
 
+        // ─── 雲地同步異動感知與未對齊高亮狀態 ───
+        const hasUnsyncedChanges = ref(false);
+
+        const getLocalDbFingerprint = () => {
+            if (!dbInstance) return '';
+            try {
+                let t = '', m = '', d = '';
+                try {
+                    const tr = dbInstance.exec("SELECT id, 股票代號, 動作, 成交股數, 成交價, 證券商, 交易時間 FROM trade_log ORDER BY id");
+                    if (tr.length > 0) t = JSON.stringify(tr[0].values);
+                } catch(e) {}
+                try {
+                    const mr = dbInstance.exec("SELECT 股票代號, 個股股數, 損平價, 證券商 FROM my_stock ORDER BY 股票代號, 證券商");
+                    if (mr.length > 0) m = JSON.stringify(mr[0].values);
+                } catch(e) {}
+                try {
+                    const dr = dbInstance.exec("SELECT unique_key FROM deleted_records ORDER BY unique_key");
+                    if (dr.length > 0) d = JSON.stringify(dr[0].values);
+                } catch(e) {}
+                return `${t.length}_${m.length}_${d.length}_${t.slice(-40)}_${d.slice(-40)}`;
+            } catch(e) {
+                return '';
+            }
+        };
+
+        const checkUnsyncedStatus = () => {
+            if (!dbInstance) {
+                hasUnsyncedChanges.value = false;
+                return;
+            }
+            const curFp = getLocalDbFingerprint();
+            const lastFp = localStorage.getItem('sentinel_last_sync_fingerprint');
+            
+            if (curFp && (!lastFp || curFp !== lastFp)) {
+                hasUnsyncedChanges.value = true;
+                return;
+            }
+            
+            // 若雲端已有統計且筆數不同，也標記未同步
+            if (cloudDbStats.value && cloudDbStats.value.tradeLogCount !== '---' && localDbStats.value && localDbStats.value.tradeLogCount !== '---') {
+                if (Number(localDbStats.value.tradeLogCount) !== Number(cloudDbStats.value.tradeLogCount)) {
+                    hasUnsyncedChanges.value = true;
+                    return;
+                }
+            }
+            hasUnsyncedChanges.value = false;
+        };
+
+        const handleHeaderSyncClick = async () => {
+            if (syncStatus.value.loading) return;
+            if (!googleUser.value.isLoggedIn || !googleAccessToken.value) {
+                if (confirm("☁️ 尚未連線 Google 雲端帳號，是否立即進行 Google 授權登入？")) {
+                    handleGoogleLogin();
+                }
+                return;
+            }
+            await executeTwoWaySync();
+            checkUnsyncedStatus();
+        };
+
         // ─── 預設通用策略特徵結構 ───
         const defaultFeatures = ref([
             { name: '均線趨勢', desc: '多頭排列 (MA5 > MA10 > MA20)', emoji: '🔴' },
@@ -556,6 +616,8 @@ createApp({
 
                 // 重新渲染資產配置甜甜圈圖
                 renderAssetChart();
+                updateLocalDbStats();
+                checkUnsyncedStatus();
                 return true;
             } catch (err) {
                 console.error("載入 SQLite 資料庫失敗:", err);
@@ -988,6 +1050,7 @@ createApp({
                     // 重新全盤載入更新後的 DB
                     const u8 = dbInstance.export();
                     await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已更新)');
+                    hasUnsyncedChanges.value = true;
                 } catch (err) {
                     console.error("寫入 SQLite 錯誤:", err);
                     alert("寫入資料庫失敗: " + err.message);
@@ -1034,6 +1097,7 @@ createApp({
                     await saveDbToIndexedDb();
                     const u8 = dbInstance.export();
                     await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已更新)');
+                    hasUnsyncedChanges.value = true;
                 } catch (e) {
                     console.error("刪除交易記錄失敗:", e);
                     alert("刪除失敗: " + e.message);
@@ -1299,6 +1363,7 @@ createApp({
                 console.warn("fetchCloudDbStats 失敗:", e);
             } finally {
                 isFetchingCloudStats.value = false;
+                checkUnsyncedStatus();
             }
         };
 
@@ -1377,6 +1442,10 @@ createApp({
                 localStorage.setItem('sentinel_drive_file_id', upData.id);
                 googleUser.value.lastSyncTime = nowStr;
                 localStorage.setItem('sentinel_last_sync_time', nowStr);
+
+                const newFp = getLocalDbFingerprint();
+                localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
+                hasUnsyncedChanges.value = false;
                 return true;
             } else {
                 throw new Error(`Google Drive API 上傳失敗 (HTTP ${upRes.status})`);
@@ -1557,6 +1626,10 @@ createApp({
 
                 updateLocalDbStats();
                 await fetchCloudDbStats();
+
+                const newFp = getLocalDbFingerprint();
+                localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
+                hasUnsyncedChanges.value = false;
 
                 alert("🤝 智慧雙向同步成功！\n兩端交易紀錄與策略資料庫已 100% 完整無損合流對齊。");
             } catch (err) {
@@ -1767,6 +1840,8 @@ createApp({
             fetchCloudDbStats,
             handleGoogleLogin,
             handleGoogleLogout,
+            hasUnsyncedChanges,
+            handleHeaderSyncClick,
             triggerSync,
             triggerFileInput,
             handleDbFileSelected,

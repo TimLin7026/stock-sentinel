@@ -54,17 +54,32 @@
                 </div>
             </div>
             
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-1.5">
                 <!-- 🌓 深色 / 淺色切換開關 -->
                 <button @click="toggleTheme" :class="theme === 'dark' ? 'bg-slate-800 text-amber-400 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'" class="w-7 h-7 rounded-full flex items-center justify-center text-xs transition shadow-sm border" title="切換深/淺色模式">
                     <i :class="theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
                 </button>
 
-                <!-- 雲端同步狀態燈號 -->
-                <button @click="currentTab = 'settings'" :class="theme === 'dark' ? 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'" class="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs transition border">
-                    <span class="w-2 h-2 rounded-full" :class="googleUser.isLoggedIn ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'"></span>
-                    <span class="text-[11px]">{{ googleUser.isLoggedIn ? '雲端' : '未連' }}</span>
-                    <i class="fa-solid fa-cloud text-[11px] text-sky-500"></i>
+                <!-- ☁️ 頂部一鍵雙向同步按鈕 (異動時紅色呼吸燈高亮提醒) -->
+                <button @click="handleHeaderSyncClick" 
+                        :disabled="syncStatus.loading"
+                        :class="[
+                            syncStatus.loading ? 'opacity-80 cursor-not-allowed' : '',
+                            hasUnsyncedChanges 
+                                ? 'bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-md shadow-rose-500/40 animate-pulse border-rose-400' 
+                                : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
+                        ]"
+                        class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
+                        title="一鍵雙向同步">
+                    <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs"></i>
+                    <i v-else class="fa-solid fa-cloud text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-500'"></i>
+                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '同步' }}</span>
+                </button>
+
+                <!-- ⚙️ 雲端設定燈號按鈕 -->
+                <button @click="currentTab = 'settings'" :class="theme === 'dark' ? 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'" class="flex items-center space-x-1 px-2 py-1 rounded-full text-xs transition border" title="前往雲端設定">
+                    <span class="w-2 h-2 rounded-full" :class="googleUser.isLoggedIn ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+                    <i class="fa-solid fa-gear text-[11px] text-slate-400"></i>
                 </button>
             </div>
         </header>
