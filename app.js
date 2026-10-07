@@ -1266,9 +1266,24 @@ createApp({
             const pad = (n) => String(n).padStart(2, '0');
             const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
-            let tCount = localDbStats.value.tradeLogCount;
-            let mCount = localDbStats.value.myStockCount;
-            let gCount = localDbStats.value.gemStrategyCount;
+            // 即時由最新資料庫中統計真實筆數
+            let tCount = 0, mCount = 0, gCount = 0;
+            if (dbInstance) {
+                try { tCount = dbInstance.exec("SELECT COUNT(*) FROM trade_log")[0]?.values[0][0] || 0; } catch (e) {}
+                try { mCount = dbInstance.exec("SELECT COUNT(*) FROM my_stock")[0]?.values[0][0] || 0; } catch (e) {}
+                try { gCount = dbInstance.exec("SELECT COUNT(*) FROM gem_strategy")[0]?.values[0][0] || 0; } catch (e) {}
+            } else {
+                tCount = localDbStats.value.tradeLogCount;
+                mCount = localDbStats.value.myStockCount;
+                gCount = localDbStats.value.gemStrategyCount;
+            }
+
+            localDbStats.value = {
+                lastModified: nowStr,
+                tradeLogCount: tCount,
+                myStockCount: mCount,
+                gemStrategyCount: gCount
+            };
 
             const metaObj = {
                 device: 'PWA-Mobile',
