@@ -456,8 +456,11 @@
                     <div class="grid grid-cols-2 gap-2.5">
                         <!-- 💻 本機 (手機) 資料庫狀態 -->
                         <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
-                            <h4 class="font-bold text-sky-500 flex items-center text-xs">
-                                <i class="fa-solid fa-laptop mr-1.5"></i>本機資料庫狀態
+                            <h4 class="font-bold text-sky-500 flex items-center justify-between text-xs">
+                                <span class="flex items-center"><i class="fa-solid fa-laptop mr-1.5"></i>本機資料庫狀態</span>
+                                <button @click="updateLocalDbStats" title="重新整理本機狀態" class="text-sky-500 hover:text-sky-400 p-0.5 rounded transition">
+                                    <i class="fa-solid fa-arrows-rotate text-[11px]"></i>
+                                </button>
                             </h4>
                             <div class="text-[11px] space-y-1 text-slate-400 font-mono">
                                 <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ localDbStats.lastModified }}</span></div>
@@ -469,8 +472,11 @@
 
                         <!-- ☁️ 雲端資料庫狀態 -->
                         <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
-                            <h4 class="font-bold text-teal-500 flex items-center text-xs">
-                                <i class="fa-solid fa-cloud mr-1.5"></i>雲端資料庫狀態
+                            <h4 class="font-bold text-teal-500 flex items-center justify-between text-xs">
+                                <span class="flex items-center"><i class="fa-solid fa-cloud mr-1.5"></i>雲端資料庫狀態</span>
+                                <button @click="fetchCloudDbStats" :disabled="isFetchingCloudStats || !googleUser.isLoggedIn" title="重新查詢雲端狀態" class="text-teal-500 hover:text-teal-400 p-0.5 rounded transition disabled:opacity-40">
+                                    <i class="fa-solid fa-arrows-rotate text-[11px]" :class="isFetchingCloudStats ? 'fa-spin' : ''"></i>
+                                </button>
                             </h4>
                             <div class="text-[11px] space-y-1 text-slate-400 font-mono">
                                 <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ cloudDbStats.lastModified }}</span></div>

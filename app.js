@@ -998,6 +998,8 @@ createApp({
             alert("🗑️ 交易記錄已成功刪除並重新計算庫存！");
         };
 
+        const isFetchingCloudStats = ref(false);
+
         // ─── Google 登入、靜默重新授權與智慧心跳監控 ───
         const silentRefreshGoogleToken = (isSilent = true) => {
             if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return;
@@ -1017,8 +1019,8 @@ createApp({
                     googleUser.value.isLoggedIn = true;
                     console.log("🟢 Google Token 靜默刷新/重連成功！");
 
-                    // 自動在背景同步最新雲端檔案
-                    await triggerSync('download', true);
+                    // 重新查詢雲端最新狀態
+                    await fetchCloudDbStats();
                 }
             });
 
@@ -1060,8 +1062,8 @@ createApp({
                         }
                     } catch (e) {}
 
-                    alert('🎉 Google 帳號授權成功！即將為您同步雲端資料庫...');
-                    await triggerSync('download');
+                    alert('🎉 Google 帳號授權成功！已連線至 Google 雲端同步中樞。');
+                    await fetchCloudDbStats();
                 }
             });
 
@@ -1075,6 +1077,14 @@ createApp({
                 googleAccessToken.value = '';
                 localStorage.removeItem('sentinel_gdrive_token');
                 localStorage.removeItem('sentinel_gdrive_email');
+                cloudDbStats.value = {
+                    lastModified: '未連接雲端或尚未查詢',
+                    tradeLogCount: '---',
+                    myStockCount: '---',
+                    gemStrategyCount: '---',
+                    fileId: '',
+                    sizeKB: 0
+                };
             }
         };
 
@@ -1103,7 +1113,10 @@ createApp({
                     if (uData.email) {
                         googleUser.value.email = uData.email;
                         googleUser.value.isLoggedIn = true;
+                        localStorage.setItem('sentinel_gdrive_email', uData.email);
                     }
+                    // Token 仍有效，查詢雲端狀態
+                    await fetchCloudDbStats();
                 }
             } catch (e) {
                 console.warn("檢查 Google Token 異常:", e);
@@ -1159,13 +1172,18 @@ createApp({
 
         // 查詢雲端資料庫狀態 (由 Google Drive 獲取最新 metadata 與 stats)
         const fetchCloudDbStats = async () => {
-            if (!googleAccessToken.value) return;
+            const token = googleAccessToken.value || localStorage.getItem('sentinel_gdrive_token');
+            if (!token) return;
+            if (!googleAccessToken.value) googleAccessToken.value = token;
+
+            isFetchingCloudStats.value = true;
             try {
-                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?spaces=drive&q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)&orderBy=modifiedTime desc`;
                 const searchRes = await fetch(searchUrl, {
-                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                    headers: { Authorization: `Bearer ${token}` }
                 });
                 if (searchRes.status === 401) {
+                    console.log("⚠️ 查詢雲端狀態 401，嘗試靜默授權...");
                     silentRefreshGoogleToken(true);
                     return;
                 }
@@ -1175,13 +1193,23 @@ createApp({
                     cloudDbStats.value.fileId = targetFile.id;
                     cloudDbStats.value.sizeKB = Math.round((targetFile.size || 0) / 1024);
                     
-                    let timeStr = targetFile.modifiedTime ? targetFile.modifiedTime.slice(0, 19).replace('T', ' ') : '---';
+                    let timeStr = '---';
+                    if (targetFile.modifiedTime) {
+                        const d = new Date(targetFile.modifiedTime);
+                        if (!isNaN(d.getTime())) {
+                            const pad = n => String(n).padStart(2, '0');
+                            timeStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                        } else {
+                            timeStr = targetFile.modifiedTime.slice(0, 19).replace('T', ' ');
+                        }
+                    }
+
                     let parsed = false;
 
                     if (targetFile.description) {
                         try {
                             const metaObj = JSON.parse(targetFile.description);
-                            if (metaObj.stats) {
+                            if (metaObj && metaObj.stats) {
                                 cloudDbStats.value.tradeLogCount = metaObj.stats.trade_log_count ?? '---';
                                 cloudDbStats.value.myStockCount = metaObj.stats.my_stock_count ?? '---';
                                 cloudDbStats.value.gemStrategyCount = metaObj.stats.gem_strategy_count ?? '---';
@@ -1194,18 +1222,20 @@ createApp({
                     if (!parsed) {
                         try {
                             const fRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
-                                headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                headers: { Authorization: `Bearer ${token}` }
                             });
                             const buf = await fRes.arrayBuffer();
                             if (!SQL_ENGINE) {
-                                SQL_ENGINE = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
+                                SQL_ENGINE = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
                             }
                             const tempDb = new SQL_ENGINE.Database(new Uint8Array(buf));
                             try { cloudDbStats.value.tradeLogCount = tempDb.exec("SELECT COUNT(*) FROM trade_log")[0]?.values[0][0] || 0; } catch (e) {}
                             try { cloudDbStats.value.myStockCount = tempDb.exec("SELECT COUNT(*) FROM my_stock")[0]?.values[0][0] || 0; } catch (e) {}
                             try { cloudDbStats.value.gemStrategyCount = tempDb.exec("SELECT COUNT(*) FROM gem_strategy")[0]?.values[0][0] || 0; } catch (e) {}
                             tempDb.close();
-                        } catch (e) {}
+                        } catch (e) {
+                            console.warn("解析雲端 DB buffer 筆數失敗:", e);
+                        }
                     }
                     cloudDbStats.value.lastModified = timeStr;
                 } else {
@@ -1220,6 +1250,8 @@ createApp({
                 }
             } catch (e) {
                 console.warn("fetchCloudDbStats 失敗:", e);
+            } finally {
+                isFetchingCloudStats.value = false;
             }
         };
 
@@ -1327,7 +1359,7 @@ createApp({
                 const cloudBuf = await fileRes.arrayBuffer();
 
                 if (!SQL_ENGINE) {
-                    SQL_ENGINE = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
+                    SQL_ENGINE = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
                 }
 
                 const cloudDb = new SQL_ENGINE.Database(new Uint8Array(cloudBuf));
@@ -1548,6 +1580,14 @@ createApp({
             URL.revokeObjectURL(url);
         };
 
+        // 監聽頁籤切換：切到雲端設定時自動刷新本機與雲端狀態
+        watch(currentTab, (newTab) => {
+            if (newTab === 'settings') {
+                updateLocalDbStats();
+                fetchCloudDbStats();
+            }
+        });
+
         // ─── 生命週期掛載與 IndexedDB / Google 心跳初始化 ───
         onMounted(async () => {
             renderAssetChart();
@@ -1570,10 +1610,8 @@ createApp({
 
             // 啟動 Google 智慧心跳監控與背景自動檢測
             initGoogleHeartbeat();
-            checkGoogleTokenFreshness();
-            if (googleAccessToken.value) {
-                fetchCloudDbStats();
-            }
+            await checkGoogleTokenFreshness();
+            await fetchCloudDbStats();
         });
 
         return {
@@ -1620,6 +1658,7 @@ createApp({
             formatTradeDate,
             localDbStats,
             cloudDbStats,
+            isFetchingCloudStats,
             executeTwoWaySync,
             executeSingleUpload,
             executeSingleDownload,
