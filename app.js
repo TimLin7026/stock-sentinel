@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261007.05');
+        const appVersion = ref('v2.20261007.06');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -1464,7 +1464,7 @@ createApp({
             }
         };
 
-        // 🤝 1. 執行【智慧雙向同步】(推薦：兩端紀錄 100% 完整保留)
+        // 🤝 1. 核心升級：全量二進位資料庫鏡像同步引擎 (以雲端完整 DB 為基底，全量保留現價、指標、字典與特別關注)
         const executeTwoWaySync = async () => {
             if (!googleAccessToken.value) {
                 handleGoogleLogin();
@@ -1472,7 +1472,7 @@ createApp({
             }
 
             syncStatus.value.loading = true;
-            syncStatus.value.message = '正在取得雲端最新 sentinel_vault.db...';
+            syncStatus.value.message = '正在取得雲端最新 sentinel_vault.db (全量鏡像基底)...';
 
             try {
                 const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
@@ -1494,11 +1494,13 @@ createApp({
 
                 const targetFile = searchData.files[0];
                 cloudDbStats.value.fileId = targetFile.id;
-                syncStatus.value.message = '正在下載雲端資料庫進行智慧合流...';
+                syncStatus.value.message = '正在下載雲端完整資料庫主檔...';
 
                 const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
                     headers: { Authorization: `Bearer ${googleAccessToken.value}` }
                 });
+                if (!fileRes.ok) throw new Error("下載雲端資料庫主檔失敗 (HTTP " + fileRes.status + ")");
+
                 const cloudBuf = await fileRes.arrayBuffer();
 
                 if (!SQL_ENGINE) {
@@ -1508,105 +1510,113 @@ createApp({
                 const cloudDb = new SQL_ENGINE.Database(new Uint8Array(cloudBuf));
 
                 if (!dbInstance) {
-                    await loadDatabaseFromArrayBuffer(cloudBuf, 'Google Drive 雲端');
+                    // 本地無 DB，直接 100% 鏡像採用雲端完整庫
+                    dbInstance = cloudDb;
+                    await saveDbToIndexedDb();
+                    await loadDatabaseFromArrayBuffer(cloudBuf, '雲端資料庫');
                     updateLocalDbStats();
-                    alert("✨ 成功下載並載入雲端資料庫！");
+                    await fetchCloudDbStats();
+                    const newFp = getLocalDbFingerprint();
+                    localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
+                    hasUnsyncedChanges.value = false;
+                    alert("✅ 雲端全量資料庫已成功鏡像同步至手機！\n最新現價、價金與特別關注名單已 100% 對齊。");
                     return;
                 }
 
-                // ─── 智慧合流：雙向去重聯集 (含墓碑過濾) ───
-                syncStatus.value.message = '正在進行雙向無損聯集合併 (含墓碑過濾)...';
+                // 🎯【核心升級：全量二進位鏡像合流 (以雲端完整 DB 為基底，全量保留現價/指標/字典)】
+                syncStatus.value.message = '正在執行雙向合流 (保留全量現價報價與指標)...';
 
-                // 0. 智慧合流 deleted_records 墓碑名冊
+                // 0. 確保 deleted_records 墓碑表存在
+                dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                cloudDb.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+
+                // 合流墓碑至 cloudDb
                 try {
-                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
-                    cloudDb.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
-                    const cTombs = cloudDb.exec("SELECT table_name, unique_key, deleted_at FROM deleted_records");
-                    if (cTombs.length > 0) {
-                        cTombs[0].values.forEach(t => {
-                            dbInstance.run("INSERT OR IGNORE INTO deleted_records (table_name, unique_key, deleted_at) VALUES (?, ?, ?)", t);
+                    const localTombs = dbInstance.exec("SELECT table_name, unique_key, deleted_at FROM deleted_records");
+                    if (localTombs.length > 0) {
+                        localTombs[0].values.forEach(t => {
+                            cloudDb.run("INSERT OR IGNORE INTO deleted_records (table_name, unique_key, deleted_at) VALUES (?, ?, ?)", t);
                         });
                     }
                 } catch (e) {
-                    console.warn("合流 deleted_records 警告:", e);
+                    console.warn("合流本地墓碑至雲端失敗:", e);
                 }
 
-                // 取得三大核心表之所有墓碑名冊
+                // 提取全量墓碑
                 const deletedTradeKeys = new Set();
                 const deletedStockKeys = new Set();
                 const deletedStrategyKeys = new Set();
                 try {
-                    const dResT = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
+                    const dResT = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
                     if (dResT.length > 0) dResT[0].values.forEach(r => deletedTradeKeys.add(r[0]));
-                    const dResS = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'my_stock'");
+                    const dResS = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'my_stock'");
                     if (dResS.length > 0) dResS[0].values.forEach(r => deletedStockKeys.add(r[0]));
-                    const dResG = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'gem_strategy'");
+                    const dResG = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'gem_strategy'");
                     if (dResG.length > 0) dResG[0].values.forEach(r => deletedStrategyKeys.add(r[0]));
                 } catch (e) {}
 
-                // 1. 清算本地 trade_log 墓碑資料
+                // 1. 清算 cloudDb 中的 trade_log 墓碑
                 try {
-                    const localLogs = dbInstance.exec("SELECT id, 股票代號, 證券商, 交易時間, 動作, 成交股數, 成交價 FROM trade_log");
-                    if (localLogs.length > 0) {
-                        localLogs[0].values.forEach(r => {
+                    const cLogs = cloudDb.exec("SELECT id, 股票代號, 證券商, 交易時間, 動作, 成交股數, 成交價 FROM trade_log");
+                    if (cLogs.length > 0) {
+                        cLogs[0].values.forEach(r => {
                             const [r_id, r_code, r_broker, r_date, r_action, r_shares, r_price] = r;
                             const uk = makeTradeUniqueKey(r_code, r_broker, r_date, r_action, r_shares, r_price);
                             if (deletedTradeKeys.has(uk)) {
-                                dbInstance.run("DELETE FROM trade_log WHERE id = ?", [r_id]);
+                                cloudDb.run("DELETE FROM trade_log WHERE id = ?", [r_id]);
                             }
                         });
                     }
                 } catch (e) {}
 
-                // 2. 合流 trade_log (排除墓碑)
+                // 2. 將本地 trade_log 增量注入 cloudDb (排除墓碑)
+                let localTradesAdded = 0;
                 try {
-                    const cTrades = cloudDb.exec("SELECT 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注 FROM trade_log");
-                    if (cTrades.length > 0) {
-                        cTrades[0].values.forEach(r => {
+                    const lTrades = dbInstance.exec("SELECT 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注 FROM trade_log");
+                    if (lTrades.length > 0) {
+                        lTrades[0].values.forEach(r => {
                             const [code, name, action, shares, price, broker, date, focus] = r;
                             const uk = makeTradeUniqueKey(code, broker, date, action, shares, price);
                             if (!deletedTradeKeys.has(uk)) {
-                                const chk = dbInstance.exec(
+                                const chk = cloudDb.exec(
                                     "SELECT id FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? AND 交易時間 = ? AND 動作 = ? AND 成交股數 = ? AND 成交價 = ?",
                                     [code, broker, date, action, shares, price]
                                 );
                                 if (!chk.length || !chk[0].values.length) {
-                                    dbInstance.run(
+                                    cloudDb.run(
                                         "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                                         [code, name, action, shares, price, broker, date, focus || '否']
                                     );
+                                    localTradesAdded++;
                                 }
                             }
                         });
                     }
                 } catch (e) {
-                    console.warn("合流 trade_log 警告:", e);
+                    console.warn("注入本地 trade_log 警告:", e);
                 }
 
-                // 3. 智慧合流 gem_strategy (含墓碑清算與過濾)
+                // 3. 智慧合流 gem_strategy (清算墓碑 + 增量注入)
                 try {
-                    // 3.1 清算本地 gem_strategy 墓碑
-                    const localStrat = dbInstance.exec("SELECT rowid, 股票代號, 記錄時間 FROM gem_strategy");
-                    if (localStrat.length > 0) {
-                        localStrat[0].values.forEach(r => {
+                    const cStrat = cloudDb.exec("SELECT rowid, 股票代號, 記錄時間 FROM gem_strategy");
+                    if (cStrat.length > 0) {
+                        cStrat[0].values.forEach(r => {
                             const [r_id, r_code, r_time] = r;
                             const uk = makeStrategyUniqueKey(r_code, r_time);
                             if (deletedStrategyKeys.has(uk)) {
-                                dbInstance.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
+                                cloudDb.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
                             }
                         });
                     }
-
-                    // 3.2 增量合流雲端 gem_strategy (排除墓碑)
-                    const cStrat = cloudDb.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
-                    if (cStrat.length > 0) {
-                        cStrat[0].values.forEach(r => {
+                    const lStrat = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
+                    if (lStrat.length > 0) {
+                        lStrat[0].values.forEach(r => {
                             const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime] = r;
                             const uk = makeStrategyUniqueKey(code, rTime);
                             if (!deletedStrategyKeys.has(uk)) {
-                                const chk = dbInstance.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                                const chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
                                 if (!chk.length || !chk[0].values.length) {
-                                    dbInstance.run(
+                                    cloudDb.run(
                                         "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                         [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
                                     );
@@ -1618,34 +1628,28 @@ createApp({
                     console.warn("合流 gem_strategy 警告:", e);
                 }
 
-                // 4. 智慧合流 my_stock (自選名冊，含墓碑清算與過濾)
+                // 4. 智慧合流 my_stock (自選名冊與特別關注狀態對齊)
                 try {
-                    // 4.1 清算本地已刪除且無庫存的自選股
-                    const localStocks = dbInstance.exec("SELECT 股票代號, 證券商, 個股股數 FROM my_stock");
-                    if (localStocks.length > 0) {
-                        localStocks[0].values.forEach(r => {
+                    // 4.1 清算 cloudDb 中已刪除且無庫存的自選股
+                    const cStocks = cloudDb.exec("SELECT 股票代號, 證券商, 個股股數 FROM my_stock");
+                    if (cStocks.length > 0) {
+                        cStocks[0].values.forEach(r => {
                             const [r_code, r_broker, r_shares] = r;
                             const uk = makeStockUniqueKey(r_code, r_broker);
                             if (deletedStockKeys.has(uk) && Number(r_shares || 0) <= 0) {
-                                dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [r_code, r_broker]);
+                                cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [r_code, r_broker]);
                             }
                         });
                     }
 
-                    // 4.2 增量合流雲端 my_stock (排除墓碑)
-                    const cStocks = cloudDb.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
-                    if (cStocks.length > 0) {
-                        cStocks[0].values.forEach(r => {
-                            const [code, name, shares, price, broker, focus] = r;
+                    // 4.2 本地特別關注狀態更新至 cloudDb
+                    const lStocks = dbInstance.exec("SELECT 股票代號, 證券商, 特別關注 FROM my_stock");
+                    if (lStocks.length > 0) {
+                        lStocks[0].values.forEach(r => {
+                            const [code, broker, focus] = r;
                             const uk = makeStockUniqueKey(code, broker);
-                            if (!deletedStockKeys.has(uk)) {
-                                const chk = dbInstance.exec("SELECT 股票代號 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
-                                if (!chk.length || !chk[0].values.length) {
-                                    dbInstance.run(
-                                        "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
-                                        [code, name, shares, price, broker, focus || '否']
-                                    );
-                                }
+                            if (!deletedStockKeys.has(uk) && focus && focus !== '否') {
+                                cloudDb.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [focus, code, broker]);
                             }
                         });
                     }
@@ -1653,49 +1657,58 @@ createApp({
                     console.warn("合流 my_stock 警告:", e);
                 }
 
-                cloudDb.close();
-
-                // 5. 重新以本機合併後的 trade_log 滾算 my_stock (排除墓碑中已刪除之自選觀察股)
-                const allHoldRes = dbInstance.exec("SELECT DISTINCT 股票代號, 證券商, 股票名稱 FROM trade_log");
-                if (allHoldRes.length > 0) {
-                    allHoldRes[0].values.forEach(r => {
-                        const [code, broker, name] = r;
-                        const tRows = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [code, broker]);
-                        let curShares = 0;
-                        let curCost = 0;
-                        let totalCost = 0;
-                        if (tRows.length > 0) {
-                            tRows[0].values.forEach(tr => {
-                                const [act, sh, pr] = tr;
-                                if (act === '買進') {
-                                    totalCost += sh * pr;
-                                    curShares += sh;
-                                } else if (act === '賣出') {
-                                    curShares = Math.max(0, curShares - sh);
-                                    if (curShares === 0) totalCost = 0;
-                                }
-                            });
-                            curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
-                        }
-                        
-                        const stockUk = makeStockUniqueKey(code, broker);
-                        if (curShares === 0 && deletedStockKeys.has(stockUk)) {
-                            dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
-                        } else {
-                            dbInstance.run(
-                                "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'))",
-                                [code, name, curShares, curCost, broker, code, broker]
-                            );
-                        }
-                    });
+                // 5. 重新以合流後的 trade_log 滾算 cloudDb 庫存 (確保剔除 0 股且墓碑記錄之個股)
+                try {
+                    const allHoldRes = cloudDb.exec("SELECT DISTINCT 股票代號, 證券商, 股票名稱 FROM trade_log");
+                    if (allHoldRes.length > 0) {
+                        allHoldRes[0].values.forEach(r => {
+                            const [code, broker, name] = r;
+                            const tRows = cloudDb.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [code, broker]);
+                            let curShares = 0;
+                            let curCost = 0;
+                            let totalCost = 0;
+                            if (tRows.length > 0) {
+                                tRows[0].values.forEach(tr => {
+                                    const [act, sh, pr] = tr;
+                                    if (act === '買進') {
+                                        totalCost += sh * pr;
+                                        curShares += sh;
+                                    } else if (act === '賣出') {
+                                        curShares = Math.max(0, curShares - sh);
+                                        if (curShares === 0) totalCost = 0;
+                                    }
+                                });
+                                curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
+                            }
+                            
+                            const stockUk = makeStockUniqueKey(code, broker);
+                            if (curShares === 0 && deletedStockKeys.has(stockUk)) {
+                                cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                            } else if (curShares > 0) {
+                                cloudDb.run(
+                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'))",
+                                    [code, name, curShares, curCost, broker, code, broker]
+                                );
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("滾算庫存警告:", e);
                 }
 
-                await saveDbToIndexedDb();
-                const mergedBuf = dbInstance.export();
-                await loadDatabaseFromArrayBuffer(mergedBuf.buffer, '智慧雙向合流');
+                // 關閉本地舊庫，以 100% 完整之 cloudDb 作為全新本地實例！
+                dbInstance.close();
+                dbInstance = cloudDb;
 
-                syncStatus.value.message = '正在將雙向合流後的黃金版本上傳回 Google Drive...';
-                await uploadBufferToGoogleDrive(mergedBuf);
+                await saveDbToIndexedDb();
+                const finalBuf = dbInstance.export();
+                await loadDatabaseFromArrayBuffer(finalBuf.buffer, '全量鏡像合流');
+
+                // 若本地有新增交易，才需要反向覆蓋雲端；否則雲端本就是最新
+                if (localTradesAdded > 0) {
+                    syncStatus.value.message = '正在將雙向合流後的黃金版本上傳回 Google Drive...';
+                    await uploadBufferToGoogleDrive(finalBuf);
+                }
 
                 updateLocalDbStats();
                 await fetchCloudDbStats();
@@ -1704,7 +1717,7 @@ createApp({
                 localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
                 hasUnsyncedChanges.value = false;
 
-                alert("🤝 智慧雙向同步成功！\n兩端交易紀錄與策略資料庫已 100% 完整無損合流對齊。");
+                alert("🤝 全量鏡像同步成功！\n最新現價、價金、5 家特別關注標的與完整字典已 100% 鏡像對齊。");
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
