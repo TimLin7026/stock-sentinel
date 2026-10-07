@@ -999,6 +999,16 @@ createApp({
             alert(`✅ 交易記錄已成功${isEditingTrade.value ? '修改' : '錄入'}並同步！\n[${brokerName}] ${actionName} ${nameVal} (${codeVal}) ${formatNumber(sharesVal)}股`);
         };
 
+        const makeTradeUniqueKey = (code, broker, date, action, shares, price) => {
+            const c = String(code || '').trim().padStart(4, '0');
+            const b = String(broker || '').trim();
+            const d = String(date || '').trim();
+            const a = String(action || '').trim();
+            const s = String(Number(shares) || 0);
+            const p = String(Number(price) || 0);
+            return `${c}|${b}|${d}|${a}|${s}|${p}`;
+        };
+
         const deleteTradeRecord = async (targetId = null) => {
             const idToDelete = targetId || editingTradeId.value;
             if (!idToDelete) return;
@@ -1006,6 +1016,20 @@ createApp({
 
             if (dbInstance) {
                 try {
+                    // 0. 寫入刪除墓碑 (Tombstone)
+                    try {
+                        const logRows = dbInstance.exec("SELECT 股票代號, 證券商, 交易時間, 動作, 成交股數, 成交價 FROM trade_log WHERE id = ?", [idToDelete]);
+                        if (logRows.length > 0 && logRows[0].values.length > 0) {
+                            const [c, b, d, a, s, p] = logRows[0].values[0];
+                            const uk = makeTradeUniqueKey(c, b, d, a, s, p);
+                            const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                            dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                            dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('trade_log', ?, ?)", [uk, nowStr]);
+                        }
+                    } catch (e_tomb) {
+                        console.warn("寫入墓碑警告:", e_tomb);
+                    }
+
                     dbInstance.run("DELETE FROM trade_log WHERE id = ?", [idToDelete]);
                     await saveDbToIndexedDb();
                     const u8 = dbInstance.export();
@@ -1409,24 +1433,64 @@ createApp({
                     return;
                 }
 
-                // ─── 智慧合流：雙向去重聯集 ───
-                syncStatus.value.message = '正在進行雙向無損聯集合併...';
+                // ─── 智慧合流：雙向去重聯集 (含墓碑過濾) ───
+                syncStatus.value.message = '正在進行雙向無損聯集合併 (含墓碑過濾)...';
 
-                // 合流 trade_log
+                // 0. 智慧合流 deleted_records 墓碑名冊
+                try {
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                    cloudDb.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                    const cTombs = cloudDb.exec("SELECT table_name, unique_key, deleted_at FROM deleted_records");
+                    if (cTombs.length > 0) {
+                        cTombs[0].values.forEach(t => {
+                            dbInstance.run("INSERT OR IGNORE INTO deleted_records (table_name, unique_key, deleted_at) VALUES (?, ?, ?)", t);
+                        });
+                    }
+                } catch (e) {
+                    console.warn("合流 deleted_records 警告:", e);
+                }
+
+                // 取得所有交易墓碑
+                const deletedTradeKeys = new Set();
+                try {
+                    const dRes = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
+                    if (dRes.length > 0) {
+                        dRes[0].values.forEach(r => deletedTradeKeys.add(r[0]));
+                    }
+                } catch (e) {}
+
+                // 1. 清算本地 trade_log 墓碑資料
+                try {
+                    const localLogs = dbInstance.exec("SELECT id, 股票代號, 證券商, 交易時間, 動作, 成交股數, 成交價 FROM trade_log");
+                    if (localLogs.length > 0) {
+                        localLogs[0].values.forEach(r => {
+                            const [r_id, r_code, r_broker, r_date, r_action, r_shares, r_price] = r;
+                            const uk = makeTradeUniqueKey(r_code, r_broker, r_date, r_action, r_shares, r_price);
+                            if (deletedTradeKeys.has(uk)) {
+                                dbInstance.run("DELETE FROM trade_log WHERE id = ?", [r_id]);
+                            }
+                        });
+                    }
+                } catch (e) {}
+
+                // 2. 合流 trade_log (排除墓碑)
                 try {
                     const cTrades = cloudDb.exec("SELECT 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注 FROM trade_log");
                     if (cTrades.length > 0) {
                         cTrades[0].values.forEach(r => {
                             const [code, name, action, shares, price, broker, date, focus] = r;
-                            const chk = dbInstance.exec(
-                                "SELECT id FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? AND 交易時間 = ? AND 動作 = ? AND 成交股數 = ? AND 成交價 = ?",
-                                [code, broker, date, action, shares, price]
-                            );
-                            if (!chk.length || !chk[0].values.length) {
-                                dbInstance.run(
-                                    "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                    [code, name, action, shares, price, broker, date, focus || '否']
+                            const uk = makeTradeUniqueKey(code, broker, date, action, shares, price);
+                            if (!deletedTradeKeys.has(uk)) {
+                                const chk = dbInstance.exec(
+                                    "SELECT id FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? AND 交易時間 = ? AND 動作 = ? AND 成交股數 = ? AND 成交價 = ?",
+                                    [code, broker, date, action, shares, price]
                                 );
+                                if (!chk.length || !chk[0].values.length) {
+                                    dbInstance.run(
+                                        "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        [code, name, action, shares, price, broker, date, focus || '否']
+                                    );
+                                }
                             }
                         });
                     }
