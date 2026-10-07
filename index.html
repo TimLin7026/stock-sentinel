@@ -452,15 +452,59 @@
                         <span v-else class="text-[10px] text-amber-400 font-normal"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>示範資料庫模式</span>
                     </h3>
 
-                    <div class="grid grid-cols-2 gap-2">
-                        <button @click="triggerSync('sync')" :disabled="syncStatus.loading || !googleUser.isLoggedIn" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm disabled:opacity-50">
-                            <div class="text-sky-600 dark:text-sky-400 font-bold text-xs mb-0.5"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>雙向智慧合流</div>
-                            <div class="text-[10px] text-slate-400">合併手機與雲端最新記錄</div>
+                    <!-- 雲地 SQL 資料庫狀態雙欄對比看板 (100% 對齊電腦端) -->
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <!-- 💻 本機 (手機) 資料庫狀態 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
+                            <h4 class="font-bold text-sky-500 flex items-center text-xs">
+                                <i class="fa-solid fa-laptop mr-1.5"></i>本機資料庫狀態
+                            </h4>
+                            <div class="text-[11px] space-y-1 text-slate-400 font-mono">
+                                <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ localDbStats.lastModified }}</span></div>
+                                <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ localDbStats.tradeLogCount }} 筆</span></div>
+                                <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ localDbStats.myStockCount }} 檔</span></div>
+                                <div>• 策略庫：<span class="text-amber-500 font-bold">{{ localDbStats.gemStrategyCount }} 筆</span></div>
+                            </div>
+                        </div>
+
+                        <!-- ☁️ 雲端資料庫狀態 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
+                            <h4 class="font-bold text-teal-500 flex items-center text-xs">
+                                <i class="fa-solid fa-cloud mr-1.5"></i>雲端資料庫狀態
+                            </h4>
+                            <div class="text-[11px] space-y-1 text-slate-400 font-mono">
+                                <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ cloudDbStats.lastModified }}</span></div>
+                                <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ cloudDbStats.tradeLogCount }} 筆</span></div>
+                                <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ cloudDbStats.myStockCount }} 檔</span></div>
+                                <div>• 策略庫：<span class="text-amber-500 font-bold">{{ cloudDbStats.gemStrategyCount }} 筆</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 🚀 數據同步與備份操作 -->
+                    <div class="space-y-2 pt-1">
+                        <!-- 🤝 智慧雙向同步大紅按鈕 -->
+                        <button @click="executeTwoWaySync" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
+                                class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center space-x-1.5 shadow-lg transition disabled:opacity-50">
+                            <i class="fa-solid fa-handshake"></i>
+                            <span>🤝 執行【智慧雙向同步】(推薦：兩端紀錄 100% 完整保留)</span>
                         </button>
-                        <button @click="triggerSync('download')" :disabled="syncStatus.loading || !googleUser.isLoggedIn" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 border-slate-200'" class="border p-3 rounded-xl text-left transition shadow-sm disabled:opacity-50">
-                            <div class="text-emerald-600 dark:text-emerald-400 font-bold text-xs mb-0.5"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>下載覆蓋本地</div>
-                            <div class="text-[10px] text-slate-400">以雲端 sentinel_vault.db 為準</div>
-                        </button>
+
+                        <!-- 雙欄：單向上傳 / 單向下載 -->
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="executeSingleUpload" :disabled="syncStatus.loading || !googleUser.isLoggedIn || !isDbLoaded"
+                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
+                                    class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
+                                <i class="fa-solid fa-cloud-arrow-up text-sky-500"></i>
+                                <span>📤 單向上傳至雲端</span>
+                            </button>
+                            <button @click="executeSingleDownload" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
+                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
+                                    class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
+                                <i class="fa-solid fa-cloud-arrow-down text-emerald-500"></i>
+                                <span>📥 單向從雲端下載</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 本機手動備援操作 (匯入 / 匯出) -->

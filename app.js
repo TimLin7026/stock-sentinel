@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20260906.01');
+        const appVersion = ref('v2.20261007.01');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -62,6 +62,23 @@ createApp({
         const isDbLoaded = ref(false);
         const dbInfoText = ref('未載入 (示範模式)');
         const dbFileInput = ref(null);
+
+        // ─── 雲地資料庫狀態統計 (100% 對齊電腦端看板) ───
+        const localDbStats = ref({
+            lastModified: '尚未載入',
+            tradeLogCount: 0,
+            myStockCount: 0,
+            gemStrategyCount: 0
+        });
+
+        const cloudDbStats = ref({
+            lastModified: '未連接雲端或尚未查詢',
+            tradeLogCount: '---',
+            myStockCount: '---',
+            gemStrategyCount: '---',
+            fileId: '',
+            sizeKB: 0
+        });
 
         // ─── Google 帳號與雲端狀態 (已對齊專屬 Web Client ID 與雲端資料夾) ───
         const DEFAULT_CLIENT_ID = '790121467016-vpncpfbmsrnldq9fhpiig36cp8b36oub.apps.googleusercontent.com';
@@ -1107,60 +1124,386 @@ createApp({
             });
         };
 
-        const triggerSync = async (type, isSilent = false) => {
+        // ─── 雲地資料庫狀態更新函式 ───
+        const updateLocalDbStats = (modTimeStr = null) => {
+            if (!dbInstance) return;
+            try {
+                let tCount = 0, mCount = 0, gCount = 0;
+                try {
+                    const tRes = dbInstance.exec("SELECT COUNT(*) FROM trade_log");
+                    if (tRes.length > 0) tCount = tRes[0].values[0][0];
+                } catch (e) {}
+                try {
+                    const mRes = dbInstance.exec("SELECT COUNT(*) FROM my_stock");
+                    if (mRes.length > 0) mCount = mRes[0].values[0][0];
+                } catch (e) {}
+                try {
+                    const gRes = dbInstance.exec("SELECT COUNT(*) FROM gem_strategy");
+                    if (gRes.length > 0) gCount = gRes[0].values[0][0];
+                } catch (e) {}
+
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                const timeStr = modTimeStr || `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                
+                localDbStats.value = {
+                    lastModified: timeStr,
+                    tradeLogCount: tCount,
+                    myStockCount: mCount,
+                    gemStrategyCount: gCount
+                };
+            } catch (e) {
+                console.warn("updateLocalDbStats 失敗:", e);
+            }
+        };
+
+        // 查詢雲端資料庫狀態 (由 Google Drive 獲取最新 metadata 與 stats)
+        const fetchCloudDbStats = async () => {
+            if (!googleAccessToken.value) return;
+            try {
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
+                const searchRes = await fetch(searchUrl, {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                if (searchRes.status === 401) {
+                    silentRefreshGoogleToken(true);
+                    return;
+                }
+                const searchData = await searchRes.json();
+                if (searchData.files && searchData.files.length > 0) {
+                    const targetFile = searchData.files[0];
+                    cloudDbStats.value.fileId = targetFile.id;
+                    cloudDbStats.value.sizeKB = Math.round((targetFile.size || 0) / 1024);
+                    
+                    let timeStr = targetFile.modifiedTime ? targetFile.modifiedTime.slice(0, 19).replace('T', ' ') : '---';
+                    let parsed = false;
+
+                    if (targetFile.description) {
+                        try {
+                            const metaObj = JSON.parse(targetFile.description);
+                            if (metaObj.stats) {
+                                cloudDbStats.value.tradeLogCount = metaObj.stats.trade_log_count ?? '---';
+                                cloudDbStats.value.myStockCount = metaObj.stats.my_stock_count ?? '---';
+                                cloudDbStats.value.gemStrategyCount = metaObj.stats.gem_strategy_count ?? '---';
+                                if (metaObj.stats.last_modified) timeStr = metaObj.stats.last_modified;
+                                parsed = true;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (!parsed) {
+                        try {
+                            const fRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
+                                headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                            });
+                            const buf = await fRes.arrayBuffer();
+                            if (!SQL_ENGINE) {
+                                SQL_ENGINE = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
+                            }
+                            const tempDb = new SQL_ENGINE.Database(new Uint8Array(buf));
+                            try { cloudDbStats.value.tradeLogCount = tempDb.exec("SELECT COUNT(*) FROM trade_log")[0]?.values[0][0] || 0; } catch (e) {}
+                            try { cloudDbStats.value.myStockCount = tempDb.exec("SELECT COUNT(*) FROM my_stock")[0]?.values[0][0] || 0; } catch (e) {}
+                            try { cloudDbStats.value.gemStrategyCount = tempDb.exec("SELECT COUNT(*) FROM gem_strategy")[0]?.values[0][0] || 0; } catch (e) {}
+                            tempDb.close();
+                        } catch (e) {}
+                    }
+                    cloudDbStats.value.lastModified = timeStr;
+                } else {
+                    cloudDbStats.value = {
+                        lastModified: '雲端尚無資料庫主檔',
+                        tradeLogCount: 0,
+                        myStockCount: 0,
+                        gemStrategyCount: 0,
+                        fileId: '',
+                        sizeKB: 0
+                    };
+                }
+            } catch (e) {
+                console.warn("fetchCloudDbStats 失敗:", e);
+            }
+        };
+
+        // 上傳 buffer 到 Google Drive
+        const uploadBufferToGoogleDrive = async (u8Buffer) => {
             if (!googleAccessToken.value) {
-                if (!isSilent) handleGoogleLogin();
+                handleGoogleLogin();
+                return false;
+            }
+            const blob = new Blob([u8Buffer], { type: 'application/x-sqlite3' });
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+            let tCount = localDbStats.value.tradeLogCount;
+            let mCount = localDbStats.value.myStockCount;
+            let gCount = localDbStats.value.gemStrategyCount;
+
+            const metaObj = {
+                device: 'PWA-Mobile',
+                last_sync_time: nowStr,
+                stats: {
+                    trade_log_count: tCount,
+                    my_stock_count: mCount,
+                    gem_strategy_count: gCount,
+                    last_modified: nowStr
+                }
+            };
+
+            const metadata = {
+                name: 'sentinel_vault.db',
+                mimeType: 'application/x-sqlite3',
+                description: JSON.stringify(metaObj)
+            };
+
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', blob);
+
+            let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            let method = 'POST';
+
+            if (cloudDbStats.value.fileId) {
+                uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${cloudDbStats.value.fileId}?uploadType=multipart`;
+                method = 'PATCH';
+            }
+
+            const upRes = await fetch(uploadUrl, {
+                method: method,
+                headers: { Authorization: `Bearer ${googleAccessToken.value}` },
+                body: form
+            });
+
+            if (upRes.ok) {
+                const upData = await upRes.json();
+                cloudDbStats.value.fileId = upData.id;
+                cloudDbStats.value.lastModified = nowStr;
+                cloudDbStats.value.tradeLogCount = tCount;
+                cloudDbStats.value.myStockCount = mCount;
+                cloudDbStats.value.gemStrategyCount = gCount;
+                localStorage.setItem('sentinel_drive_file_id', upData.id);
+                googleUser.value.lastSyncTime = nowStr;
+                localStorage.setItem('sentinel_last_sync_time', nowStr);
+                return true;
+            } else {
+                throw new Error(`Google Drive API 上傳失敗 (HTTP ${upRes.status})`);
+            }
+        };
+
+        // 🤝 1. 執行【智慧雙向同步】(推薦：兩端紀錄 100% 完整保留)
+        const executeTwoWaySync = async () => {
+            if (!googleAccessToken.value) {
+                handleGoogleLogin();
                 return;
             }
 
             syncStatus.value.loading = true;
+            syncStatus.value.message = '正在取得雲端最新 sentinel_vault.db...';
+
             try {
-                if (type === 'download' || type === 'sync') {
-                    syncStatus.value.message = '正在搜尋 Google Drive 中的 sentinel_vault.db...';
-                    
-                    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size)`;
-                    const searchRes = await fetch(searchUrl, {
-                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
-                    });
-                    
-                    // 遇 401 自動刷新重試
-                    if (searchRes.status === 401) {
-                        console.warn("Token 過期 401，啟動靜默刷新後重試...");
-                        silentRefreshGoogleToken(true);
-                        syncStatus.value.loading = false;
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
+                const searchRes = await fetch(searchUrl, {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                const searchData = await searchRes.json();
+
+                if (!searchData.files || searchData.files.length === 0) {
+                    if (!dbInstance) {
+                        alert("⚠️ 本地尚未載入資料庫，無法建立雲端檔案。");
                         return;
                     }
-
-                    const searchData = await searchRes.json();
-                    if (searchData.files && searchData.files.length > 0) {
-                        const targetFile = searchData.files[0];
-                        googleUser.value.driveFileId = targetFile.id;
-                        localStorage.setItem('sentinel_drive_file_id', targetFile.id);
-
-                        syncStatus.value.message = '正在下載最新 sentinel_vault.db...';
-                        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
-                            headers: { Authorization: `Bearer ${googleAccessToken.value}` }
-                        });
-                        const buffer = await fileRes.arrayBuffer();
-
-                        await loadDatabaseFromArrayBuffer(buffer, 'Google Drive 雲端');
-                        const nowStr = new Date().toLocaleString();
-                        googleUser.value.lastSyncTime = nowStr;
-                        localStorage.setItem('sentinel_last_sync_time', nowStr);
-                        if (!isSilent) {
-                            alert(`☁️ 雲端資料庫已成功下載並載入！\n檔案修改時間: ${targetFile.modifiedTime || nowStr}`);
-                        }
-                    } else {
-                        if (!isSilent) {
-                            alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。請確認 PC 端已執行過雲端備份，或點擊「雙向智慧合流」建立。");
-                        }
-                    }
+                    syncStatus.value.message = '雲端尚無檔案，正在上傳本機資料庫作為主檔...';
+                    await uploadBufferToGoogleDrive(dbInstance.export());
+                    alert("✨ 雲端主檔建立成功！兩端資料已同步。");
+                    return;
                 }
+
+                const targetFile = searchData.files[0];
+                cloudDbStats.value.fileId = targetFile.id;
+                syncStatus.value.message = '正在下載雲端資料庫進行智慧合流...';
+
+                const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                const cloudBuf = await fileRes.arrayBuffer();
+
+                if (!SQL_ENGINE) {
+                    SQL_ENGINE = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
+                }
+
+                const cloudDb = new SQL_ENGINE.Database(new Uint8Array(cloudBuf));
+
+                if (!dbInstance) {
+                    await loadDatabaseFromArrayBuffer(cloudBuf, 'Google Drive 雲端');
+                    updateLocalDbStats();
+                    alert("✨ 成功下載並載入雲端資料庫！");
+                    return;
+                }
+
+                // ─── 智慧合流：雙向去重聯集 ───
+                syncStatus.value.message = '正在進行雙向無損聯集合併...';
+
+                // 合流 trade_log
+                try {
+                    const cTrades = cloudDb.exec("SELECT 股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注 FROM trade_log");
+                    if (cTrades.length > 0) {
+                        cTrades[0].values.forEach(r => {
+                            const [code, name, action, shares, price, broker, date, focus] = r;
+                            const chk = dbInstance.exec(
+                                "SELECT id FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? AND 交易時間 = ? AND 動作 = ? AND 成交股數 = ? AND 成交價 = ?",
+                                [code, broker, date, action, shares, price]
+                            );
+                            if (!chk.length || !chk[0].values.length) {
+                                dbInstance.run(
+                                    "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, name, action, shares, price, broker, date, focus || '否']
+                                );
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("合流 trade_log 警告:", e);
+                }
+
+                // 合流 gem_strategy
+                try {
+                    const cStrat = cloudDb.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
+                    if (cStrat.length > 0) {
+                        cStrat[0].values.forEach(r => {
+                            const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime] = r;
+                            const chk = dbInstance.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                            if (!chk.length || !chk[0].values.length) {
+                                dbInstance.run(
+                                    "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                );
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("合流 gem_strategy 警告:", e);
+                }
+
+                cloudDb.close();
+
+                // 重新以本機合併後的 trade_log 滾算 my_stock
+                const allHoldRes = dbInstance.exec("SELECT DISTINCT 股票代號, 證券商, 股票名稱 FROM trade_log");
+                if (allHoldRes.length > 0) {
+                    allHoldRes[0].values.forEach(r => {
+                        const [code, broker, name] = r;
+                        const tRows = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [code, broker]);
+                        let curShares = 0;
+                        let curCost = 0;
+                        let totalCost = 0;
+                        if (tRows.length > 0) {
+                            tRows[0].values.forEach(tr => {
+                                const [act, sh, pr] = tr;
+                                if (act === '買進') {
+                                    totalCost += sh * pr;
+                                    curShares += sh;
+                                } else if (act === '賣出') {
+                                    curShares = Math.max(0, curShares - sh);
+                                    if (curShares === 0) totalCost = 0;
+                                }
+                            });
+                            curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
+                        }
+                        dbInstance.run(
+                            "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
+                            [code, name, curShares, curCost, broker, '否']
+                        );
+                    });
+                }
+
+                await saveDbToIndexedDb();
+                const mergedBuf = dbInstance.export();
+                await loadDatabaseFromArrayBuffer(mergedBuf.buffer, '智慧雙向合流');
+
+                syncStatus.value.message = '正在將雙向合流後的黃金版本上傳回 Google Drive...';
+                await uploadBufferToGoogleDrive(mergedBuf);
+
+                updateLocalDbStats();
+                await fetchCloudDbStats();
+
+                alert("🤝 智慧雙向同步成功！\n兩端交易紀錄與策略資料庫已 100% 完整無損合流對齊。");
             } catch (err) {
-                console.error("雲端同步失敗:", err);
-                if (!isSilent) alert("❌ 雲端同步失敗：" + err.message);
+                console.error("雙向同步失敗:", err);
+                alert("❌ 雙向同步失敗：" + err.message);
             } finally {
                 syncStatus.value.loading = false;
+            }
+        };
+
+        // 📤 2. 單向上傳備份至雲端
+        const executeSingleUpload = async () => {
+            if (!dbInstance) {
+                alert("⚠️ 本機尚未載入資料庫，無法上傳。");
+                return;
+            }
+            if (!confirm("⚠️ 確定要執行【單向上傳備份】嗎？\n這將會以手機本機的資料庫直接覆蓋雲端上的 sentinel_vault.db！")) return;
+
+            syncStatus.value.loading = true;
+            syncStatus.value.message = '正在上傳本機資料庫至 Google Drive...';
+
+            try {
+                const u8 = dbInstance.export();
+                await uploadBufferToGoogleDrive(u8);
+                await fetchCloudDbStats();
+                alert("📤 單向上傳備份成功！雲端資料庫已覆蓋更新。");
+            } catch (err) {
+                console.error("單向上傳失敗:", err);
+                alert("❌ 上傳失敗：" + err.message);
+            } finally {
+                syncStatus.value.loading = false;
+            }
+        };
+
+        // 📥 3. 單向從雲端下載覆蓋本地
+        const executeSingleDownload = async () => {
+            if (!googleAccessToken.value) {
+                handleGoogleLogin();
+                return;
+            }
+            if (!confirm("⚠️ 確定要執行【單向下載覆蓋】嗎？\n這將會從雲端下載 sentinel_vault.db 並直接覆蓋手機本機的所有記錄！")) return;
+
+            syncStatus.value.loading = true;
+            syncStatus.value.message = '正在從 Google Drive 下載主檔覆蓋本地...';
+
+            try {
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
+                const searchRes = await fetch(searchUrl, {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                const searchData = await searchRes.json();
+
+                if (searchData.files && searchData.files.length > 0) {
+                    const targetFile = searchData.files[0];
+                    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
+                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                    });
+                    const buffer = await fileRes.arrayBuffer();
+
+                    await loadDatabaseFromArrayBuffer(buffer, 'Google Drive 雲端 (單向覆蓋)');
+                    updateLocalDbStats();
+                    await fetchCloudDbStats();
+                    alert(`📥 單向下載還原成功！\n已成功載入雲端最新主檔 (${(buffer.byteLength / 1024).toFixed(0)} KB)。`);
+                } else {
+                    alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。");
+                }
+            } catch (err) {
+                console.error("單向下載失敗:", err);
+                alert("❌ 下載還原失敗：" + err.message);
+            } finally {
+                syncStatus.value.loading = false;
+            }
+        };
+
+        const triggerSync = async (type, isSilent = false) => {
+            if (type === 'download') {
+                await executeSingleDownload();
+            } else if (type === 'upload') {
+                await executeSingleUpload();
+            } else {
+                await executeTwoWaySync();
             }
         };
 
@@ -1178,6 +1521,7 @@ createApp({
                 const buffer = e.target.result;
                 const ok = await loadDatabaseFromArrayBuffer(buffer, file.name);
                 if (ok) {
+                    updateLocalDbStats();
                     alert(`✅ 已成功載入本機 SQLite 資料庫：${file.name} (${(file.size / 1024).toFixed(0)} KB)！`);
                 }
             };
@@ -1217,6 +1561,7 @@ createApp({
                     const cachedBuffer = await localforage.getItem('sentinel_db_bytes');
                     if (cachedBuffer) {
                         await loadDatabaseFromArrayBuffer(cachedBuffer, '手機離線快取');
+                        updateLocalDbStats();
                     }
                 } catch (e) {
                     console.warn("讀取離線快取失敗:", e);
@@ -1226,6 +1571,9 @@ createApp({
             // 啟動 Google 智慧心跳監控與背景自動檢測
             initGoogleHeartbeat();
             checkGoogleTokenFreshness();
+            if (googleAccessToken.value) {
+                fetchCloudDbStats();
+            }
         });
 
         return {
@@ -1270,6 +1618,12 @@ createApp({
             isEditingTrade,
             deleteTradeRecord,
             formatTradeDate,
+            localDbStats,
+            cloudDbStats,
+            executeTwoWaySync,
+            executeSingleUpload,
+            executeSingleDownload,
+            fetchCloudDbStats,
             handleGoogleLogin,
             handleGoogleLogout,
             triggerSync,
