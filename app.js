@@ -315,7 +315,8 @@ createApp({
                                 defense: r[4],
                                 targetLow: r[5],
                                 targetHigh: r[6],
-                                summary: summaryText
+                                summary: summaryText,
+                                recordTime: r[8] || ''
                             };
                             if (rawCode) {
                                 // 僅以最新第一筆作為單一真相
@@ -415,7 +416,22 @@ createApp({
                 });
                 fifoInventory.value = flatFifo;
 
-                // 5. 讀取 my_stock (持股與自選觀察清單)
+                // 5. 推算全市場最新基準交易日 (取所有表的最大日期)
+                let allDates = [];
+                Object.values(priceMap).forEach(p => { if (p.date) allDates.push(String(p.date).replace(/\D/g, '')); });
+                Object.values(heatmapMap).forEach(h => { if (h.dataDate) allDates.push(String(h.dataDate).replace(/\D/g, '')); });
+                parsedTrades.forEach(t => { if (t.date) allDates.push(String(t.date).replace(/\D/g, '')); });
+                allDates = allDates.filter(d => d.length >= 8).sort().reverse();
+                const latestMarketTradingDay = allDates.length > 0 ? allDates[0].slice(0, 8) : '20260331';
+
+                // 日期格式化輔助 (轉換為 YYYY/MM/DD)
+                const formatDateClean = (dStr) => {
+                    if (!dStr) return '';
+                    const clean = String(dStr).trim().replace(/-/g, '/');
+                    return clean.length >= 10 ? clean.slice(0, 10) : clean;
+                };
+
+                // 6. 讀取 my_stock (持股與自選觀察清單)
                 const parsedStocks = [];
                 try {
                     const stockRes = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
@@ -454,6 +470,20 @@ createApp({
                                 { text: 'MACD金', type: hmIndicators['MACD金'] === 1 ? 'bull' : 'bear' }
                             ];
 
+                            // 時效比對 (對齊電腦端：✅ 即時新鮮 / ⚠️ 過期或落後)
+                            const pDigits = String(pInfo.date || '').replace(/\D/g, '').slice(0, 8);
+                            const hmDigits = String(hmInfo.dataDate || '').replace(/\D/g, '').slice(0, 8);
+                            const stratDigits = String(sInfo.recordTime || '').replace(/\D/g, '').slice(0, 8);
+
+                            const isPriceFresh = Boolean(pDigits && pDigits === latestMarketTradingDay);
+                            const isReportFresh = Boolean(stratDigits && stratDigits >= latestMarketTradingDay);
+                            const isIndicatorFresh = Boolean(hmDigits && pDigits && hmDigits === pDigits);
+                            const isStrategyFresh = Boolean(hmDigits && hmDigits === latestMarketTradingDay);
+
+                            const priceDate = formatDateClean(pInfo.date) || '---';
+                            const reportDate = formatDateClean(sInfo.recordTime) || '最新';
+                            const strategyDate = formatDateClean(hmInfo.dataDate) || (formatDateClean(pInfo.date) || '最新交易日');
+
                             // 建議買賣區間
                             const buyTarget = sInfo.buyHigh ? String(sInfo.buyHigh) : (costPrice ? String(costPrice) : '---');
                             const sellTarget = sInfo.targetLow ? String(sInfo.targetLow) : '---';
@@ -483,7 +513,14 @@ createApp({
                                 indicatorTags,
                                 strategyFeatures: stratFeatures,
                                 summaryText: sInfo.summary || sInfo.content || '暫無策略總結，請於 PC 端進行全量掃描分析。',
-                                latestDate
+                                latestDate,
+                                isPriceFresh,
+                                isReportFresh,
+                                isIndicatorFresh,
+                                isStrategyFresh,
+                                priceDate,
+                                reportDate,
+                                strategyDate
                             });
                         });
                     }
@@ -784,8 +821,18 @@ createApp({
             return num.toLocaleString('en-US');
         };
 
-        // ─── 快速記帳 Modal 彈窗控制 ───
+        // ─── 輔助：流水帳日期格式化 (只顯示年月日) ───
+        const formatTradeDate = (dStr) => {
+            if (!dStr) return '';
+            const clean = String(dStr).trim().replace(/-/g, '/');
+            return clean.length >= 10 ? clean.slice(0, 10) : clean;
+        };
+
+        // ─── 快速記帳 / 修改交易 Modal 彈窗控制 ───
         const showTradeModal = ref(false);
+        const isEditingTrade = ref(false);
+        const editingTradeId = ref(null);
+
         const tradeForm = ref({
             action: '買進',
             broker: '玉山證券',
@@ -806,22 +853,38 @@ createApp({
             }
         };
 
-        const openTradeModal = (targetStock = null) => {
-            if (targetStock) {
+        const openTradeModal = (targetStock = null, editingLog = null) => {
+            if (editingLog) {
+                isEditingTrade.value = true;
+                editingTradeId.value = editingLog.id;
+                tradeForm.value.action = editingLog.action || '買進';
+                tradeForm.value.broker = editingLog.broker || '玉山證券';
+                tradeForm.value.code = editingLog.code;
+                tradeForm.value.name = editingLog.name;
+                tradeForm.value.price = editingLog.price;
+                tradeForm.value.shares = editingLog.shares;
+                tradeForm.value.date = editingLog.date ? editingLog.date.slice(0, 10).replace(/\//g, '-') : new Date().toISOString().split('T')[0];
+            } else if (targetStock) {
+                isEditingTrade.value = false;
+                editingTradeId.value = null;
+                tradeForm.value.action = '買進';
+                tradeForm.value.broker = targetStock.broker || '玉山證券';
                 tradeForm.value.code = targetStock.code;
                 tradeForm.value.name = targetStock.name;
                 tradeForm.value.price = targetStock.price;
-                tradeForm.value.shares = targetStock.shares > 0 ? targetStock.shares : 1000;
-                tradeForm.value.broker = targetStock.broker || '玉山證券';
+                tradeForm.value.shares = null; // 🌟 預設保持空白
+                tradeForm.value.date = new Date().toISOString().split('T')[0];
             } else {
+                isEditingTrade.value = false;
+                editingTradeId.value = null;
+                tradeForm.value.action = '買進';
+                tradeForm.value.broker = selectedBrokerFilter.value !== '全部' ? selectedBrokerFilter.value : '玉山證券';
                 tradeForm.value.code = '';
                 tradeForm.value.name = '';
                 tradeForm.value.price = null;
-                tradeForm.value.shares = 1000;
-                tradeForm.value.broker = selectedBrokerFilter.value !== '全部' ? selectedBrokerFilter.value : '玉山證券';
+                tradeForm.value.shares = null; // 🌟 預設保持空白
+                tradeForm.value.date = new Date().toISOString().split('T')[0];
             }
-            tradeForm.value.action = '買進';
-            tradeForm.value.date = new Date().toISOString().split('T')[0];
             showTradeModal.value = true;
         };
 
@@ -831,94 +894,125 @@ createApp({
                 return;
             }
 
-            const total = Math.round(tradeForm.value.price * tradeForm.value.shares);
             const brokerName = tradeForm.value.broker || '玉山證券';
-            const uid = `${tradeForm.value.code}_${brokerName}`;
-            const newLog = {
-                id: Date.now(),
-                uid,
-                action: tradeForm.value.action,
-                code: tradeForm.value.code,
-                name: tradeForm.value.name || tradeForm.value.code,
-                broker: brokerName,
-                price: tradeForm.value.price,
-                shares: tradeForm.value.shares,
-                date: tradeForm.value.date,
-                totalAmount: total
-            };
+            const actionName = tradeForm.value.action || '買進';
+            const codeVal = tradeForm.value.code.trim();
+            const nameVal = tradeForm.value.name.trim() || codeVal;
+            const priceVal = Number(tradeForm.value.price);
+            const sharesVal = Number(tradeForm.value.shares);
+            const dateVal = tradeForm.value.date;
 
-            recentTradeLogs.value.unshift(newLog);
-
-            // 更新個股列表
-            let target = stockList.value.find(s => s.uid === uid);
-            if (!target) {
-                target = {
-                    uid,
-                    code: tradeForm.value.code,
-                    name: tradeForm.value.name || tradeForm.value.code,
-                    price: tradeForm.value.price,
-                    change: 0,
-                    changePercent: 0,
-                    shares: 0,
-                    broker: brokerName,
-                    costPrice: tradeForm.value.price,
-                    profit: 0,
-                    profitRate: 0,
-                    focusStatus: '否',
-                    signal: '⚪ 新增自選',
-                    strategyFeatures: defaultFeatures.value,
-                    summaryText: '手動錄入交易新增個股。',
-                    latestDate: tradeForm.value.date
-                };
-                stockList.value.push(target);
-            }
-
-            target.latestDate = tradeForm.value.date;
-
-            if (tradeForm.value.action === '買進') {
-                const prevCostTotal = target.costPrice * target.shares;
-                const newCostTotal = prevCostTotal + total;
-                target.shares += tradeForm.value.shares;
-                target.costPrice = target.shares > 0 ? Number((newCostTotal / target.shares).toFixed(2)) : tradeForm.value.price;
-                
-                fifoInventory.value.push({
-                    id: Date.now(),
-                    code: target.code,
-                    name: target.name,
-                    broker: brokerName,
-                    buyDate: tradeForm.value.date,
-                    buyPrice: tradeForm.value.price,
-                    remainingShares: tradeForm.value.shares
-                });
-            } else if (tradeForm.value.action === '賣出') {
-                target.shares = Math.max(0, target.shares - tradeForm.value.shares);
-            }
-
-            target.profit = Math.round((target.price - target.costPrice) * target.shares);
-            target.profitRate = target.costPrice > 0 ? (((target.price - target.costPrice) / target.costPrice) * 100).toFixed(2) : 0;
-
-            // 寫入真實 SQLite 資料庫
             if (dbInstance) {
                 try {
-                    dbInstance.run(
-                        "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        [target.code, target.name, tradeForm.value.action, tradeForm.value.shares, tradeForm.value.price, brokerName, tradeForm.value.date, target.focusStatus || '否']
-                    );
+                    if (isEditingTrade.value && editingTradeId.value) {
+                        // 1. 編輯修改現有記錄
+                        dbInstance.run(
+                            "UPDATE trade_log SET 股票代號 = ?, 股票名稱 = ?, 動作 = ?, 成交股數 = ?, 成交價 = ?, 證券商 = ?, 交易時間 = ? WHERE id = ?",
+                            [codeVal, nameVal, actionName, sharesVal, priceVal, brokerName, dateVal, editingTradeId.value]
+                        );
+                    } else {
+                        // 2. 新增記錄
+                        dbInstance.run(
+                            "INSERT INTO trade_log (股票代號, 股票名稱, 動作, 成交股數, 成交價, 證券商, 交易時間, 特別關注) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [codeVal, nameVal, actionName, sharesVal, priceVal, brokerName, dateVal, '否']
+                        );
+                    }
+
+                    // 重新滾算該股持股總數與成本
+                    const holdRes = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [codeVal, brokerName]);
+                    let curShares = 0;
+                    let curCost = priceVal;
+                    if (holdRes.length > 0) {
+                        let totalCost = 0;
+                        holdRes[0].values.forEach(r => {
+                            const act = r[0];
+                            const sh = Number(r[1]) || 0;
+                            const pr = Number(r[2]) || 0;
+                            if (act === '買進') {
+                                totalCost += sh * pr;
+                                curShares += sh;
+                            } else if (act === '賣出') {
+                                curShares = Math.max(0, curShares - sh);
+                                if (curShares === 0) totalCost = 0;
+                            }
+                        });
+                        curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : priceVal;
+                    }
+
                     dbInstance.run(
                         "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
-                        [target.code, target.name, target.shares, target.costPrice, brokerName, target.focusStatus || '否']
+                        [codeVal, nameVal, curShares, curCost, brokerName, '否']
                     );
+
                     await saveDbToIndexedDb();
+                    // 重新全盤載入更新後的 DB
+                    const u8 = dbInstance.export();
+                    await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已更新)');
                 } catch (err) {
                     console.error("寫入 SQLite 錯誤:", err);
+                    alert("寫入資料庫失敗: " + err.message);
+                    return;
                 }
             }
 
             showTradeModal.value = false;
-            alert(`✅ 交易記錄已成功錄入並同步！\n[${brokerName}] ${newLog.action} ${newLog.name} (${newLog.code}) ${formatNumber(newLog.shares)}股`);
+            alert(`✅ 交易記錄已成功${isEditingTrade.value ? '修改' : '錄入'}並同步！\n[${brokerName}] ${actionName} ${nameVal} (${codeVal}) ${formatNumber(sharesVal)}股`);
         };
 
-        // ─── Google 登入與 Google Drive API v3 實作 ───
+        const deleteTradeRecord = async (targetId = null) => {
+            const idToDelete = targetId || editingTradeId.value;
+            if (!idToDelete) return;
+            if (!confirm("⚠️ 確定要刪除這筆交易記錄嗎？\n刪除後系統將自動重新計算庫存與持股成本。")) return;
+
+            if (dbInstance) {
+                try {
+                    dbInstance.run("DELETE FROM trade_log WHERE id = ?", [idToDelete]);
+                    await saveDbToIndexedDb();
+                    const u8 = dbInstance.export();
+                    await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已更新)');
+                } catch (e) {
+                    console.error("刪除交易記錄失敗:", e);
+                    alert("刪除失敗: " + e.message);
+                    return;
+                }
+            }
+
+            showTradeModal.value = false;
+            alert("🗑️ 交易記錄已成功刪除並重新計算庫存！");
+        };
+
+        // ─── Google 登入、靜默重新授權與智慧心跳監控 ───
+        const silentRefreshGoogleToken = (isSilent = true) => {
+            if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return;
+            const savedEmail = localStorage.getItem('sentinel_gdrive_email') || googleUser.value.email || '';
+            
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: googleClientId.value.trim(),
+                scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid',
+                callback: async (resp) => {
+                    if (resp.error) {
+                        console.warn("Google 靜默刷新 Token 失敗:", resp.error);
+                        if (!isSilent) alert("❌ Google 授權失敗: " + resp.error);
+                        return;
+                    }
+                    googleAccessToken.value = resp.access_token;
+                    localStorage.setItem('sentinel_gdrive_token', resp.access_token);
+                    googleUser.value.isLoggedIn = true;
+                    console.log("🟢 Google Token 靜默刷新/重連成功！");
+
+                    // 自動在背景同步最新雲端檔案
+                    await triggerSync('download', true);
+                }
+            });
+
+            try {
+                // prompt: '' 靜默無彈窗授權
+                tokenClient.requestAccessToken({ prompt: '', hint: savedEmail });
+            } catch (e) {
+                console.warn("requestAccessToken 靜默呼叫失敗:", e);
+            }
+        };
+
         const handleGoogleLogin = () => {
             if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
                 alert("⚠️ Google 授權模組載入中，請稍候重試或檢查網路連線。");
@@ -967,9 +1061,55 @@ createApp({
             }
         };
 
-        const triggerSync = async (type) => {
+        // 檢查 Token 是否過期並在需要時自動重連
+        const checkGoogleTokenFreshness = async () => {
+            const savedToken = localStorage.getItem('sentinel_gdrive_token');
+            const savedEmail = localStorage.getItem('sentinel_gdrive_email');
+
+            if (!googleAccessToken.value && savedToken && savedEmail) {
+                googleAccessToken.value = savedToken;
+                googleUser.value.email = savedEmail;
+                googleUser.value.isLoggedIn = true;
+            }
+
+            if (!googleAccessToken.value) return;
+
+            try {
+                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                if (res.status === 401) {
+                    console.log("⚠️ Google Token 已過期，啟動後台自動無感重新連結...");
+                    silentRefreshGoogleToken(true);
+                } else if (res.ok) {
+                    const uData = await res.json();
+                    if (uData.email) {
+                        googleUser.value.email = uData.email;
+                        googleUser.value.isLoggedIn = true;
+                    }
+                }
+            } catch (e) {
+                console.warn("檢查 Google Token 異常:", e);
+            }
+        };
+
+        // 智慧心跳監控與喚醒監聽
+        const initGoogleHeartbeat = () => {
+            // 每 5 分鐘心跳檢查
+            setInterval(checkGoogleTokenFreshness, 5 * 60 * 1000);
+
+            // 頁面待機切回前台時自動檢查
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    console.log("📱 頁面切回前台，自動檢查 Google 連線狀態...");
+                    checkGoogleTokenFreshness();
+                }
+            });
+        };
+
+        const triggerSync = async (type, isSilent = false) => {
             if (!googleAccessToken.value) {
-                handleGoogleLogin();
+                if (!isSilent) handleGoogleLogin();
                 return;
             }
 
@@ -983,9 +1123,10 @@ createApp({
                         headers: { Authorization: `Bearer ${googleAccessToken.value}` }
                     });
                     
+                    // 遇 401 自動刷新重試
                     if (searchRes.status === 401) {
-                        alert("⚠️ 授權 Token 已過期，請重新連結 Google 帳號。");
-                        handleGoogleLogout();
+                        console.warn("Token 過期 401，啟動靜默刷新後重試...");
+                        silentRefreshGoogleToken(true);
                         syncStatus.value.loading = false;
                         return;
                     }
@@ -1006,14 +1147,18 @@ createApp({
                         const nowStr = new Date().toLocaleString();
                         googleUser.value.lastSyncTime = nowStr;
                         localStorage.setItem('sentinel_last_sync_time', nowStr);
-                        alert(`☁️ 雲端資料庫已成功下載並載入！\n檔案修改時間: ${targetFile.modifiedTime || nowStr}`);
+                        if (!isSilent) {
+                            alert(`☁️ 雲端資料庫已成功下載並載入！\n檔案修改時間: ${targetFile.modifiedTime || nowStr}`);
+                        }
                     } else {
-                        alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。請確認 PC 端已執行過雲端備份，或點擊「雙向智慧合流」建立。");
+                        if (!isSilent) {
+                            alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。請確認 PC 端已執行過雲端備份，或點擊「雙向智慧合流」建立。");
+                        }
                     }
                 }
             } catch (err) {
                 console.error("雲端同步失敗:", err);
-                alert("❌ 雲端同步失敗：" + err.message);
+                if (!isSilent) alert("❌ 雲端同步失敗：" + err.message);
             } finally {
                 syncStatus.value.loading = false;
             }
@@ -1059,7 +1204,7 @@ createApp({
             URL.revokeObjectURL(url);
         };
 
-        // ─── 生命週期掛載與 IndexedDB 離線快取初始化 ───
+        // ─── 生命週期掛載與 IndexedDB / Google 心跳初始化 ───
         onMounted(async () => {
             renderAssetChart();
             window.addEventListener('resize', () => {
@@ -1077,6 +1222,10 @@ createApp({
                     console.warn("讀取離線快取失敗:", e);
                 }
             }
+
+            // 啟動 Google 智慧心跳監控與背景自動檢測
+            initGoogleHeartbeat();
+            checkGoogleTokenFreshness();
         });
 
         return {
@@ -1118,6 +1267,9 @@ createApp({
             onCodeInput,
             openTradeModal,
             saveTradeRecord,
+            isEditingTrade,
+            deleteTradeRecord,
+            formatTradeDate,
             handleGoogleLogin,
             handleGoogleLogout,
             triggerSync,
