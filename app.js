@@ -850,6 +850,18 @@ createApp({
         const isEditingTrade = ref(false);
         const editingTradeId = ref(null);
 
+        const getNowDateStr = () => {
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+        };
+
+        const getNowDateTimeStr = () => {
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        };
+
         const tradeForm = ref({
             action: '買進',
             broker: '玉山證券',
@@ -857,7 +869,7 @@ createApp({
             name: '',
             price: null,
             shares: null,
-            date: new Date().toISOString().split('T')[0]
+            date: getNowDateStr()
         });
 
         const onCodeInput = () => {
@@ -880,7 +892,7 @@ createApp({
                 tradeForm.value.name = editingLog.name;
                 tradeForm.value.price = editingLog.price;
                 tradeForm.value.shares = editingLog.shares;
-                tradeForm.value.date = editingLog.date ? editingLog.date.slice(0, 10).replace(/\//g, '-') : new Date().toISOString().split('T')[0];
+                tradeForm.value.date = editingLog.date ? editingLog.date.slice(0, 10).replace(/\//g, '-') : getNowDateStr();
             } else if (targetStock) {
                 isEditingTrade.value = false;
                 editingTradeId.value = null;
@@ -890,7 +902,7 @@ createApp({
                 tradeForm.value.name = targetStock.name;
                 tradeForm.value.price = targetStock.price;
                 tradeForm.value.shares = null; // 🌟 預設保持空白
-                tradeForm.value.date = new Date().toISOString().split('T')[0];
+                tradeForm.value.date = getNowDateStr();
             } else {
                 isEditingTrade.value = false;
                 editingTradeId.value = null;
@@ -900,7 +912,7 @@ createApp({
                 tradeForm.value.name = '';
                 tradeForm.value.price = null;
                 tradeForm.value.shares = null; // 🌟 預設保持空白
-                tradeForm.value.date = new Date().toISOString().split('T')[0];
+                tradeForm.value.date = getNowDateStr();
             }
             showTradeModal.value = true;
         };
@@ -917,7 +929,14 @@ createApp({
             const nameVal = tradeForm.value.name.trim() || codeVal;
             const priceVal = Number(tradeForm.value.price);
             const sharesVal = Number(tradeForm.value.shares);
-            const dateVal = tradeForm.value.date;
+            
+            // 🌟 核心對齊：資料庫統一儲存標準「日期 + 時間 (YYYY-MM-DD HH:mm)」
+            let dateVal = tradeForm.value.date ? String(tradeForm.value.date).trim().replace(/\//g, '-') : getNowDateStr();
+            if (dateVal.length === 10) {
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                dateVal = `${dateVal} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            }
 
             if (dbInstance) {
                 try {
