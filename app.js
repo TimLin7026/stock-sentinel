@@ -1072,6 +1072,18 @@ createApp({
             return `${c}|${b}|${d}|${a}|${s}|${p}`;
         };
 
+        const makeStockUniqueKey = (code, broker) => {
+            const c = String(code || '').trim().padStart(4, '0');
+            const b = String(broker || '').trim();
+            return `${c}|${b}`;
+        };
+
+        const makeStrategyUniqueKey = (code, recordTime) => {
+            const c = String(code || '').trim().padStart(4, '0');
+            const t = String(recordTime || '').trim();
+            return `${c}|${t}`;
+        };
+
         const deleteTradeRecord = async (targetId = null) => {
             const idToDelete = targetId || editingTradeId.value;
             if (!idToDelete) return;
@@ -1519,13 +1531,17 @@ createApp({
                     console.warn("合流 deleted_records 警告:", e);
                 }
 
-                // 取得所有交易墓碑
+                // 取得三大核心表之所有墓碑名冊
                 const deletedTradeKeys = new Set();
+                const deletedStockKeys = new Set();
+                const deletedStrategyKeys = new Set();
                 try {
-                    const dRes = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
-                    if (dRes.length > 0) {
-                        dRes[0].values.forEach(r => deletedTradeKeys.add(r[0]));
-                    }
+                    const dResT = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
+                    if (dResT.length > 0) dResT[0].values.forEach(r => deletedTradeKeys.add(r[0]));
+                    const dResS = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'my_stock'");
+                    if (dResS.length > 0) dResS[0].values.forEach(r => deletedStockKeys.add(r[0]));
+                    const dResG = dbInstance.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'gem_strategy'");
+                    if (dResG.length > 0) dResG[0].values.forEach(r => deletedStrategyKeys.add(r[0]));
                 } catch (e) {}
 
                 // 1. 清算本地 trade_log 墓碑資料
@@ -1567,18 +1583,34 @@ createApp({
                     console.warn("合流 trade_log 警告:", e);
                 }
 
-                // 合流 gem_strategy
+                // 3. 智慧合流 gem_strategy (含墓碑清算與過濾)
                 try {
+                    // 3.1 清算本地 gem_strategy 墓碑
+                    const localStrat = dbInstance.exec("SELECT rowid, 股票代號, 記錄時間 FROM gem_strategy");
+                    if (localStrat.length > 0) {
+                        localStrat[0].values.forEach(r => {
+                            const [r_id, r_code, r_time] = r;
+                            const uk = makeStrategyUniqueKey(r_code, r_time);
+                            if (deletedStrategyKeys.has(uk)) {
+                                dbInstance.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
+                            }
+                        });
+                    }
+
+                    // 3.2 增量合流雲端 gem_strategy (排除墓碑)
                     const cStrat = cloudDb.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
                     if (cStrat.length > 0) {
                         cStrat[0].values.forEach(r => {
                             const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime] = r;
-                            const chk = dbInstance.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
-                            if (!chk.length || !chk[0].values.length) {
-                                dbInstance.run(
-                                    "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                    [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                );
+                            const uk = makeStrategyUniqueKey(code, rTime);
+                            if (!deletedStrategyKeys.has(uk)) {
+                                const chk = dbInstance.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                                if (!chk.length || !chk[0].values.length) {
+                                    dbInstance.run(
+                                        "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                    );
+                                }
                             }
                         });
                     }
@@ -1586,9 +1618,44 @@ createApp({
                     console.warn("合流 gem_strategy 警告:", e);
                 }
 
+                // 4. 智慧合流 my_stock (自選名冊，含墓碑清算與過濾)
+                try {
+                    // 4.1 清算本地已刪除且無庫存的自選股
+                    const localStocks = dbInstance.exec("SELECT 股票代號, 證券商, 個股股數 FROM my_stock");
+                    if (localStocks.length > 0) {
+                        localStocks[0].values.forEach(r => {
+                            const [r_code, r_broker, r_shares] = r;
+                            const uk = makeStockUniqueKey(r_code, r_broker);
+                            if (deletedStockKeys.has(uk) && Number(r_shares || 0) <= 0) {
+                                dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [r_code, r_broker]);
+                            }
+                        });
+                    }
+
+                    // 4.2 增量合流雲端 my_stock (排除墓碑)
+                    const cStocks = cloudDb.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
+                    if (cStocks.length > 0) {
+                        cStocks[0].values.forEach(r => {
+                            const [code, name, shares, price, broker, focus] = r;
+                            const uk = makeStockUniqueKey(code, broker);
+                            if (!deletedStockKeys.has(uk)) {
+                                const chk = dbInstance.exec("SELECT 股票代號 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                if (!chk.length || !chk[0].values.length) {
+                                    dbInstance.run(
+                                        "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
+                                        [code, name, shares, price, broker, focus || '否']
+                                    );
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("合流 my_stock 警告:", e);
+                }
+
                 cloudDb.close();
 
-                // 重新以本機合併後的 trade_log 滾算 my_stock
+                // 5. 重新以本機合併後的 trade_log 滾算 my_stock (排除墓碑中已刪除之自選觀察股)
                 const allHoldRes = dbInstance.exec("SELECT DISTINCT 股票代號, 證券商, 股票名稱 FROM trade_log");
                 if (allHoldRes.length > 0) {
                     allHoldRes[0].values.forEach(r => {
@@ -1610,10 +1677,16 @@ createApp({
                             });
                             curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
                         }
-                        dbInstance.run(
-                            "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
-                            [code, name, curShares, curCost, broker, '否']
-                        );
+                        
+                        const stockUk = makeStockUniqueKey(code, broker);
+                        if (curShares === 0 && deletedStockKeys.has(stockUk)) {
+                            dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                        } else {
+                            dbInstance.run(
+                                "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'))",
+                                [code, name, curShares, curCost, broker, code, broker]
+                            );
+                        }
                     });
                 }
 
