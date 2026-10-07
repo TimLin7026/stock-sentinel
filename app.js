@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261007.08');
+        const appVersion = ref('v2.20261007.09');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -131,17 +131,14 @@ createApp({
             const curFp = getLocalDbFingerprint();
             const lastFp = localStorage.getItem('sentinel_last_sync_fingerprint');
             
-            if (curFp && (!lastFp || curFp !== lastFp)) {
-                hasUnsyncedChanges.value = true;
+            if (curFp && lastFp && curFp === lastFp) {
+                hasUnsyncedChanges.value = false;
                 return;
             }
             
-            // 若雲端已有統計且筆數不同，也標記未同步
-            if (cloudDbStats.value && cloudDbStats.value.tradeLogCount !== '---' && localDbStats.value && localDbStats.value.tradeLogCount !== '---') {
-                if (Number(localDbStats.value.tradeLogCount) !== Number(cloudDbStats.value.tradeLogCount)) {
-                    hasUnsyncedChanges.value = true;
-                    return;
-                }
+            if (curFp && (!lastFp || curFp !== lastFp)) {
+                hasUnsyncedChanges.value = true;
+                return;
             }
             hasUnsyncedChanges.value = false;
         };
@@ -155,7 +152,6 @@ createApp({
                 return;
             }
             await executeTwoWaySync();
-            checkUnsyncedStatus();
         };
 
         // ─── 預設通用策略特徵結構 ───
