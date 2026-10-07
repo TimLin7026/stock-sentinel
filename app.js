@@ -838,11 +838,15 @@ createApp({
             return num.toLocaleString('en-US');
         };
 
-        // ─── 輔助：流水帳日期格式化 (只顯示年月日) ───
+        // ─── 輔助：流水帳日期時間格式化 (顯示 日期+時間) ───
         const formatTradeDate = (dStr) => {
             if (!dStr) return '';
             const clean = String(dStr).trim().replace(/-/g, '/');
-            return clean.length >= 10 ? clean.slice(0, 10) : clean;
+            // 若包含時分 (例如 2026/10/07 13:50:00 或 2026/10/07 13:50)，完整顯示到分 (長度16)
+            if (clean.length >= 16) {
+                return clean.slice(0, 16);
+            }
+            return clean;
         };
 
         // ─── 快速記帳 / 修改交易 Modal 彈窗控制 ───
