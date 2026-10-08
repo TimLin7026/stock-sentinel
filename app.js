@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.15');
+        const appVersion = ref('v2.20261008.16');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -2703,6 +2703,23 @@ createApp({
                     if (dResS.length > 0) dResS[0].values.forEach(r => deletedStockKeys.add(r[0]));
                     const dResG = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'gem_strategy'");
                     if (dResG.length > 0) dResG[0].values.forEach(r => deletedStrategyKeys.add(r[0]));
+                } catch (e) {}
+
+                // 🎯【核心防護：跨設備活躍自選股主動銷除過期墓碑】
+                try {
+                    const activeStockKeys = new Set();
+                    const lSt = dbInstance.exec("SELECT 股票代號, 證券商 FROM my_stock");
+                    if (lSt.length > 0) lSt[0].values.forEach(r => activeStockKeys.add(makeStockUniqueKey(r[0], r[1])));
+                    const cSt = cloudDb.exec("SELECT 股票代號, 證券商 FROM my_stock");
+                    if (cSt.length > 0) cSt[0].values.forEach(r => activeStockKeys.add(makeStockUniqueKey(r[0], r[1])));
+
+                    activeStockKeys.forEach(uk => {
+                        deletedStockKeys.delete(uk);
+                        try {
+                            cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                            dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                        } catch (e) {}
+                    });
                 } catch (e) {}
 
                 // 1. 清算 cloudDb 中的 trade_log 墓碑
