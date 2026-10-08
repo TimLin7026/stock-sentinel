@@ -204,9 +204,11 @@
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :id="'stock-card-' + stock.uid"
                          :class="[
-                            theme === 'dark' 
-                                ? (stock.profit >= 0 ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900')
-                                : (stock.profit >= 0 ? 'border-rose-300 bg-rose-50/50 shadow-sm' : 'border-emerald-300 bg-emerald-50/50 shadow-sm')
+                            (stock.broker === '關注' || Number(stock.shares || 0) === 0)
+                                ? (theme === 'dark' ? 'border-slate-800 bg-slate-900/90 shadow-sm' : 'border-slate-300 bg-slate-100/70 shadow-sm')
+                                : (theme === 'dark' 
+                                    ? (stock.profit >= 0 ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900')
+                                    : (stock.profit >= 0 ? 'border-rose-300 bg-rose-50/50 shadow-sm' : 'border-emerald-300 bg-emerald-50/50 shadow-sm'))
                          ]"
                          class="border rounded-2xl overflow-hidden transition shadow relative scroll-mt-[68px]">
                         
@@ -232,7 +234,10 @@
 
                                 <!-- 證券商標籤 (對齊地端樣式) -->
                                 <div class="flex items-center space-x-2">
-                                    <span :class="theme === 'dark' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/50' : 'bg-emerald-100 text-emerald-800 border-emerald-200'" class="border text-[10px] px-2 py-0.5 rounded-md font-semibold">
+                                    <span :class="stock.broker === '關注'
+                                        ? (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-200 text-slate-700 border-slate-300')
+                                        : (theme === 'dark' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/50' : 'bg-emerald-100 text-emerald-800 border-emerald-200')" 
+                                          class="border text-[10px] px-2 py-0.5 rounded-md font-semibold">
                                         {{ stock.broker || '玉山證券' }}
                                     </span>
                                 </div>
@@ -247,9 +252,14 @@
                                 <div class="flex justify-between">
                                     <span><b>持有：</b><span class="font-mono">{{ formatNumber(stock.shares) }} 股</span></span>
                                     <span><b>收益：</b>
-                                        <span :class="stock.profit >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">
-                                            {{ stock.profit >= 0 ? '+' : '' }}${{ formatNumber(stock.profit) }} ({{ stock.profitRate }}%)
-                                        </span>
+                                        <template v-if="stock.broker === '關注' || Number(stock.shares || 0) === 0">
+                                            <span class="text-slate-400 font-mono">--- (觀察中)</span>
+                                        </template>
+                                        <template v-else>
+                                            <span :class="stock.profit >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">
+                                                {{ stock.profit >= 0 ? '+' : '' }}${{ formatNumber(stock.profit) }} ({{ stock.profitRate }}%)
+                                            </span>
+                                        </template>
                                     </span>
                                 </div>
                             </div>
@@ -738,6 +748,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261008.03"></script>
+    <script src="app.js?v=2.20261008.04"></script>
 </body>
 </html>
