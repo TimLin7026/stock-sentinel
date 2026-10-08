@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.06');
+        const appVersion = ref('v2.20261008.15');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -609,32 +609,32 @@ createApp({
                                 if (currVal === undefined) currVal = -1;
                                 if (prevVal === undefined) prevVal = currVal; // 兼容舊數據
 
-                                const isPrevBull = prevVal === 1;
-                                const isCurrBull = currVal === 1;
+                                const isPrevBull = (prevVal === 1);
+                                const isCurrBull = (currVal === 1);
 
-                                let bgClass = '';
+                                let bgStyle = '';
                                 let tooltip = '';
                                 let transitionType = '';
 
                                 if (!isPrevBull && !isCurrBull) {
                                     // 🟢 ➔ 🟢 綠到綠 (持續偏空)
                                     transitionType = 'bear-bear';
-                                    bgClass = 'bg-emerald-600 text-white font-bold';
+                                    bgStyle = 'background: #00B050; color: white;';
                                     tooltip = `${displayText}：昨日偏空 ➔ 今日偏空 (持續偏空)`;
                                 } else if (!isPrevBull && isCurrBull) {
-                                    // 🟢 ➔ 🔴 綠到紅 (轉折翻紅 / 金叉)
+                                    // 🟢 ➔ 🔴 綠到紅 (轉折翻紅 🔥)
                                     transitionType = 'bear-bull';
-                                    bgClass = 'bg-gradient-to-r from-emerald-600 to-rose-600 text-white font-black shadow ring-1 ring-rose-400/40';
+                                    bgStyle = 'background: linear-gradient(90deg, #00B050 0%, #00B050 15%, #FF4B4B 35%, #FF4B4B 100%); color: white;';
                                     tooltip = `${displayText}：昨日偏空 ➔ 今日轉強 (轉折翻紅 🔥)`;
                                 } else if (isPrevBull && !isCurrBull) {
-                                    // 🔴 ➔ 🟢 紅到綠 (轉折翻綠 / 死叉)
+                                    // 🔴 ➔ 🟢 紅到綠 (轉折翻綠 ⚠️)
                                     transitionType = 'bull-bear';
-                                    bgClass = 'bg-gradient-to-r from-rose-600 to-emerald-600 text-white font-black shadow ring-1 ring-emerald-400/40';
+                                    bgStyle = 'background: linear-gradient(90deg, #FF4B4B 0%, #FF4B4B 15%, #00B050 35%, #00B050 100%); color: white;';
                                     tooltip = `${displayText}：昨日偏多 ➔ 今日轉弱 (轉折翻綠 ⚠️)`;
                                 } else {
                                     // 🔴 ➔ 🔴 紅到紅 (持續多頭)
                                     transitionType = 'bull-bull';
-                                    bgClass = 'bg-rose-600 text-white font-bold';
+                                    bgStyle = 'background: #FF4B4B; color: white;';
                                     tooltip = `${displayText}：昨日偏多 ➔ 今日偏多 (持續多頭)`;
                                 }
 
@@ -642,7 +642,7 @@ createApp({
                                     text: displayText,
                                     type: isCurrBull ? 'bull' : 'bear',
                                     transition: transitionType,
-                                    bgClass,
+                                    bgStyle,
                                     tooltip
                                 };
                             };
@@ -650,8 +650,8 @@ createApp({
                             const indicatorTags = [
                                 getIndicatorTag('MTM金', ['MTM金']),
                                 getIndicatorTag('OSC縮', ['OSC縮']),
-                                getIndicatorTag('K超', ['K超', 'K趨']),
-                                getIndicatorTag('DIF超', ['DIF超', 'DIF趨']),
+                                getIndicatorTag('K趨', ['K趨', 'K超']),
+                                getIndicatorTag('DIF趨', ['DIF趨', 'DIF超']),
                                 getIndicatorTag('KD金', ['KD金']),
                                 getIndicatorTag('MACD金', ['MACD金'])
                             ];
@@ -788,7 +788,7 @@ createApp({
             });
         });
 
-        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 && (!s.focusStatus || s.focusStatus === '否')));
+        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 || s.broker === '關注'));
 
         const currentFilteredStocks = computed(() => {
             let baseList = [];
@@ -1211,6 +1211,10 @@ createApp({
                             "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, 0, 0, '關注', '否')",
                             [codeVal, nameVal]
                         );
+                        // 🎯【核心自癒】：主動銷除可能遺留之刪除墓碑，確保雙向同步不被誤殺
+                        try {
+                            dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [makeStockUniqueKey(codeVal, '關注')]);
+                        } catch (e_tomb) {}
 
                         // 4. 自動為關注股建立空白戰報底稿 (若戰報庫查無此股)
                         const stratCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ?", [codeVal]);
@@ -1299,6 +1303,10 @@ createApp({
                         "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
                         [codeVal, nameVal, curShares, curCost, brokerName, '否']
                     );
+                    // 🎯【核心自癒】：銷除該股墓碑
+                    try {
+                        dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [makeStockUniqueKey(codeVal, brokerName)]);
+                    } catch (e_tomb) {}
 
                     await saveDbToIndexedDb();
                     // 重新全盤載入更新後的 DB
@@ -1421,6 +1429,849 @@ createApp({
                     console.error("移除個股失敗:", e);
                     alert("❌ 移除個股失敗：" + e.message);
                 }
+            }
+        };
+
+        // ─── 📋 復刻電腦版「一鍵複製 10日」戰報生成引擎 ───
+        const toastMsg = ref('');
+        const showToast = (msg, duration = 2500) => {
+            toastMsg.value = msg;
+            setTimeout(() => {
+                if (toastMsg.value === msg) {
+                    toastMsg.value = '';
+                }
+            }, duration);
+        };
+
+        const buildStock10DayReport = (stock) => {
+            if (!stock) return '';
+            const sc = String(stock.code || '').trim().padStart(4, '0');
+            const stock_name = stock.name || sc;
+            const sh = Number(stock.shares) || 0;
+            const cp = Number(stock.costPrice) || 0;
+            const cur_p = Number(stock.price) || 0;
+            const bk = stock.broker || '玉山證券';
+            const cur_d = String(stock.priceDate || '').replace(/\D/g, '') || '最新';
+
+            const profit = (cur_p - cp) * sh;
+            const roi_pct = cp > 0 ? ((cur_p - cp) / cp) * 100 : 0.0;
+            const roi_sign = roi_pct > 0 ? '+' : '';
+
+            // 1. 標頭庫存資訊區塊
+            const cur_d_clean = String(cur_d).replace(/[-/]/g, '');
+            let header_text = `📋 【格式A】${sc} ${stock_name} (證券商: ${sh > 0 ? bk : '關注'})\n`;
+            header_text += `📦 當前庫存與現況：\n`;
+            header_text += `- 最新收盤價：${cur_p.toFixed(2)} (日期: ${cur_d_clean})\n`;
+            header_text += `- 持股數：${Math.floor(sh).toLocaleString()} 股 | 成本價：${cp.toFixed(2)}\n`;
+            if (sh > 0) {
+                const pInt = Math.trunc(profit);
+                const pSign = pInt >= 0 ? '+' : '';
+                header_text += `- 預估損益：${pSign}${pInt} 元 (${roi_sign}${roi_pct.toFixed(2)}%)\n`;
+            }
+            header_text += `─────────────────────────────────────────────\n`;
+
+            let analysisRaw = null;
+            if (dbInstance) {
+                try {
+                    const aRes = dbInstance.exec("SELECT cache_data FROM stock_analysis WHERE stock_code = ?", [sc]);
+                    if (aRes.length > 0 && aRes[0].values.length > 0) {
+                        analysisRaw = JSON.parse(aRes[0].values[0][0]);
+                    }
+                } catch (e) {
+                    console.warn("讀取 stock_analysis 失敗:", e);
+                }
+            }
+
+            if (!analysisRaw || typeof analysisRaw !== 'object' || Object.keys(analysisRaw).length === 0) {
+                const fallback_msg = header_text + "⏳ 歷史數據載入中或數據真空，無法計算軌跡。";
+                return fallback_msg;
+            }
+
+            const sortedDates = Object.keys(analysisRaw).sort();
+            const rows = sortedDates.map(dStr => {
+                const val = analysisRaw[dStr] || {};
+                const p = val.price || {};
+                const c = val.chip || {};
+                const m = val.margin || {};
+                return {
+                    date: String(dStr).replace(/[-/]/g, ''),
+                    open: Number(p.open) || 0,
+                    high: Number(p.high) || 0,
+                    low: Number(p.low) || 0,
+                    close: Number(p.close) || 0,
+                    volume: Math.floor(Number(val.volume) || 0),
+                    foreign: Math.floor(Number(c.foreign_buy) || 0),
+                    sitc: Math.floor(Number(c.sitc_buy) || 0),
+                    dealers: Math.floor(Number(c.dealers_buy) || 0),
+                    margin_balance: Math.floor(Number(m.margin_balance) || 0),
+                    margin_increase: Math.floor(Number(m.margin_increase) || 0)
+                };
+            });
+
+            if (rows.length === 0) {
+                const fallback_msg = header_text + "⏳ 無足夠歷史 K 線數據。";
+                return fallback_msg;
+            }
+
+            // 滾算技術指標
+            for (let i = 0; i < rows.length; i++) {
+                // MA5
+                const s5 = rows.slice(Math.max(0, i - 4), i + 1);
+                const sum5 = s5.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                rows[i].MA5 = sum5 / s5.length;
+
+                // MA10
+                const s10 = rows.slice(Math.max(0, i - 9), i + 1);
+                const sum10 = s10.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                rows[i].MA10 = sum10 / s10.length;
+
+                // BB_Mid & BB_Std (Sample standard deviation with N-1 when N>=2)
+                const s20 = rows.slice(Math.max(0, i - 19), i + 1);
+                const sum20 = s20.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                const mean20 = sum20 / s20.length;
+                rows[i].BB_Mid = mean20;
+                if (s20.length >= 2) {
+                    const variance = s20.reduce((acc, r) => acc + Math.pow(r.close - mean20, 2), 0) / (s20.length - 1);
+                    const std = Math.sqrt(variance);
+                    rows[i].BB_Std = std;
+                    rows[i].BB_U = mean20 + 2 * std;
+                    rows[i].BB_L = mean20 - 2 * std;
+                } else {
+                    rows[i].BB_Std = 0;
+                    rows[i].BB_U = mean20;
+                    rows[i].BB_L = mean20;
+                }
+            }
+
+            // KD (7日 RSV)
+            let kCur = 50.0, dCur = 50.0;
+            for (let i = 0; i < rows.length; i++) {
+                const s7 = rows.slice(Math.max(0, i - 6), i + 1);
+                const l7 = Math.min(...s7.map(r => r.low));
+                const h7 = Math.max(...s7.map(r => r.high));
+                const rsv = 100 * ((rows[i].close - l7) / ((h7 - l7) + 1e-5));
+                kCur = (2/3) * kCur + (1/3) * rsv;
+                dCur = (2/3) * dCur + (1/3) * kCur;
+                rows[i].K = kCur;
+                rows[i].D = dCur;
+            }
+
+            // MACD (EMA6, EMA9, DIF, MACD_S, OSC)
+            let ema6 = rows[0].close, ema9 = rows[0].close;
+            let macdS = 0;
+            for (let i = 0; i < rows.length; i++) {
+                const c = rows[i].close;
+                ema6 = i === 0 ? c : (c * (2/7) + ema6 * (5/7));
+                ema9 = i === 0 ? c : (c * (2/10) + ema9 * (8/10));
+                const dif = ema6 - ema9;
+                macdS = i === 0 ? dif : (dif * (2/7) + macdS * (5/7));
+                rows[i].DIF = dif;
+                rows[i].MACD_S = macdS;
+                rows[i].OSC = dif - macdS;
+            }
+
+            // MTM (3日 diff, MA2)
+            for (let i = 0; i < rows.length; i++) {
+                rows[i].MTM = i >= 3 ? rows[i].close - rows[i - 3].close : 0;
+                const sMtm = rows.slice(Math.max(0, i - 1), i + 1);
+                rows[i].MTM_MA = sMtm.reduce((acc, r) => acc + r.MTM, 0) / sMtm.length;
+            }
+
+            // RSI4 & RSI12
+            let gain4 = 0, loss4 = 0, gain12 = 0, loss12 = 0;
+            for (let i = 0; i < rows.length; i++) {
+                if (i === 0) {
+                    rows[i].RSI4 = 50.0;
+                    rows[i].RSI12 = 50.0;
+                } else {
+                    const diff = rows[i].close - rows[i - 1].close;
+                    const u = Math.max(0, diff);
+                    const d = Math.abs(Math.min(0, diff));
+                    gain4 = u * (1/4) + gain4 * (3/4);
+                    loss4 = d * (1/4) + loss4 * (3/4);
+                    rows[i].RSI4 = (gain4 / (gain4 + loss4 + 1e-5)) * 100;
+
+                    gain12 = u * (1/12) + gain12 * (11/12);
+                    loss12 = d * (1/12) + loss12 * (11/12);
+                    rows[i].RSI12 = (gain12 / (gain12 + loss12 + 1e-5)) * 100;
+                }
+            }
+
+            // WR3 & WR50 & 法人融資熱力燈
+            for (let i = 0; i < rows.length; i++) {
+                const s3 = rows.slice(Math.max(0, i - 2), i + 1);
+                const h3 = Math.max(...s3.map(r => r.high));
+                const l3 = Math.min(...s3.map(r => r.low));
+                rows[i].WR3 = -100 * ((h3 - rows[i].close) / ((h3 - l3) + 1e-5));
+
+                const s50 = rows.slice(Math.max(0, i - 49), i + 1);
+                const h50 = Math.max(...s50.map(r => r.high));
+                const l50 = Math.min(...s50.map(r => r.low));
+                rows[i].WR50 = -100 * ((h50 - rows[i].close) / ((h50 - l50) + 1e-5));
+
+                rows[i].法人合計 = rows[i].foreign + rows[i].sitc + rows[i].dealers;
+                rows[i].融資增減 = i >= 1 ? rows[i].margin_balance - rows[i - 1].margin_balance : 0;
+                rows[i].融資餘額 = rows[i].margin_balance;
+                rows[i].外資買賣超 = rows[i].foreign;
+                rows[i].投信買賣超 = rows[i].sitc;
+                rows[i].自營買賣超 = rows[i].dealers;
+                rows[i].成交量 = rows[i].volume;
+                rows[i].開盤價 = rows[i].open;
+                rows[i].最高價 = rows[i].high;
+                rows[i].最低價 = rows[i].low;
+                rows[i].收盤價 = rows[i].close;
+                rows[i].交易日期 = rows[i].date;
+
+                // 6 燈
+                rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
+                rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
+                rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
+                rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
+                rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
+                rows[i].P2_MACD_Cross = rows[i].DIF > rows[i].MACD_S ? 1 : -1;
+            }
+
+            // 2. 策略特徵指標計算 (即時算 - 100% 精確對齊電腦端)
+            const latest_row = rows[rows.length - 1];
+            const ma5 = latest_row.MA5;
+            const ma10 = latest_row.MA10;
+            const ma20 = latest_row.BB_Mid;
+            const ma_order = [
+                { v: ma5, name: "MA5" },
+                { v: ma10, name: "MA10" },
+                { v: ma20, name: "MA20" }
+            ].sort((a, b) => b.v - a.v);
+            const ma_order_str = `(${ma_order[0].name} > ${ma_order[1].name} > ${ma_order[2].name})`;
+            const ma_align = ma5 > ma10 && ma10 > ma20 
+                ? `多頭排列 ${ma_order_str}` 
+                : (ma5 < ma10 && ma10 < ma20 ? `空頭排列 ${ma_order_str}` : `整理格局 ${ma_order_str}`);
+
+            const bias20 = ma20 > 0 ? ((latest_row.close - ma20) / ma20 * 100) : 0.0;
+            let bias_label = "";
+            if (bias20 >= 10) bias_label = `超買過熱 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(1)}%)`;
+            else if (bias20 <= -8) bias_label = `超跌恐慌 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(1)}%)`;
+            else bias_label = `溫和整理 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(2)}%)`;
+
+            const vol5Slice = rows.slice(-5);
+            const vol5_avg = vol5Slice.reduce((acc, r) => acc + r.volume, 0) / vol5Slice.length;
+            const vol_ratio = vol5_avg > 0 ? (latest_row.volume / vol5_avg) : 1.0;
+            const vol_status = vol_ratio >= 1.5 ? `爆量發動 (${vol_ratio.toFixed(1)}倍)` : `量能平穩 (${vol_ratio.toFixed(1)}倍)`;
+
+            const f_diffs = rows.slice(-5).map(r => r.foreign);
+            const s_diffs = rows.slice(-5).map(r => r.sitc);
+            const d_diffs = rows.slice(-5).map(r => r.dealers);
+
+            function get_consecutive_days(diffs) {
+                if (diffs.every(v => v === 0)) return { days: 0, dir: "不參與" };
+                const latest = diffs[diffs.length - 1];
+                if (latest === 0) return { days: 0, dir: "無明顯交易" };
+                const direction = latest > 0 ? "買" : "賣";
+                let days = 0;
+                for (let i = diffs.length - 1; i >= 0; i--) {
+                    if (direction === "買" && diffs[i] > 0) days++;
+                    else if (direction === "賣" && diffs[i] < 0) days++;
+                    else break;
+                }
+                return { days, dir: direction };
+            }
+
+            const f_info = get_consecutive_days(f_diffs);
+            const s_info = get_consecutive_days(s_diffs);
+            const d_info = get_consecutive_days(d_diffs);
+            const f_desc = f_info.days >= 3 ? `連${f_info.dir}${f_info.days}天` : (f_info.dir === "不參與" ? "不參與" : "多空拉鋸");
+            const s_desc = s_info.dir === "不參與" ? "不參與" : (s_info.days >= 3 ? `連${s_info.dir}${s_info.days}天` : "多空拉鋸");
+            const d_desc = d_info.days >= 3 ? `連${d_info.dir}${d_info.days}天` : (d_info.dir === "不參與" ? "不參與" : "多空拉鋸");
+            const inst_synergy = `外資:${f_desc} │ 投信:${s_desc} │ 自營:${d_desc}`;
+
+            const margin_diffs = rows.slice(-5).map(r => r.融資增減);
+            let margin_dec_days = 0, margin_inc_days = 0;
+            for (let i = margin_diffs.length - 1; i >= 0; i--) {
+                if (margin_diffs[i] < 0) margin_dec_days++;
+                else break;
+            }
+            if (margin_dec_days === 0) {
+                for (let i = margin_diffs.length - 1; i >= 0; i--) {
+                    if (margin_diffs[i] > 0) margin_inc_days++;
+                    else break;
+                }
+            }
+            let margin_status = "";
+            if (margin_dec_days >= 3) margin_status = `籌碼沉澱 (連減${margin_dec_days}天)`;
+            else if (margin_inc_days >= 3) margin_status = `融資堆積 (連增${margin_inc_days}天)`;
+            else margin_status = "無明顯連續增減資";
+
+            // 籌碼吸籌比 (5日)
+            const last5 = rows.slice(-5);
+            const total_vol_5 = last5.reduce((acc, r) => acc + r.volume, 0);
+            const total_inst_5 = last5.reduce((acc, r) => acc + r.法人合計, 0);
+            const absorption_ratio = total_vol_5 > 0 ? (total_inst_5 / total_vol_5 * 100) : 0.0;
+            const abs_sign = absorption_ratio >= 0 ? '+' : '';
+            let absorption_status = "";
+            if (absorption_ratio > 15.0) absorption_status = `強力吸籌 🔥 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio > 5.0) absorption_status = `偏多吸籌 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio >= -5.0) absorption_status = `籌碼變動平穩 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio >= -15.0) absorption_status = `偏空出貨 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else absorption_status = `加速出貨 🚨 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+
+            // 法人買超加速度
+            const last3 = rows.slice(-3);
+            const last10 = rows.slice(-10);
+            const inst_avg_3 = last3.reduce((acc, r) => acc + r.法人合計, 0) / (last3.length || 1);
+            const inst_avg_10 = last10.reduce((acc, r) => acc + r.法人合計, 0) / (last10.length || 1);
+            let accel_status = "量能穩定";
+            if (Math.abs(inst_avg_10) > 0) {
+                const accel = inst_avg_3 / inst_avg_10;
+                if (accel > 2.0 && inst_avg_3 > 0) accel_status = `加速買超中 (力道放大 ${accel.toFixed(1)}倍 ⚡)`;
+                else if (accel > 2.0 && inst_avg_3 < 0) accel_status = `加速賣超中 (力道放大 ${accel.toFixed(1)}倍 🚨)`;
+                else accel_status = "力道平穩";
+            } else {
+                accel_status = "量能穩定";
+            }
+
+            // 價量關係
+            const prev_row = rows.length >= 2 ? rows[rows.length - 2] : latest_row;
+            const p_change = prev_row.close > 0 ? ((latest_row.close - prev_row.close) / prev_row.close * 100) : 0.0;
+            const v_change = prev_row.volume > 0 ? ((latest_row.volume - prev_row.volume) / prev_row.volume * 100) : 0.0;
+
+            const p_dir = p_change >= 0.5 ? "價漲" : (p_change <= -0.5 ? "價跌" : "價平");
+            const v_dir_state = v_change >= 10.0 ? "量增" : (v_change <= -10.0 ? "量縮" : "量平");
+            const pv_status = `${p_dir}${v_dir_state}`;
+            let pv_desc = pv_status;
+            if (pv_status === "價漲量增") pv_desc = "價漲量增 (多頭攻擊)";
+            else if (pv_status === "價跌量增") pv_desc = "價跌量增 (殺盤鬆動)";
+            else if (pv_status === "價漲量縮" || pv_status === "價平量增") pv_desc = `${pv_status} (量價背離/換手)`;
+            else if (pv_status === "價跌量縮") pv_desc = "價跌量縮 (止跌訊號)";
+            else pv_desc = pv_status;
+
+            // 布林通道
+            const bb_u = latest_row.BB_U;
+            const bb_l = latest_row.BB_L;
+            const pct_b = (bb_u - bb_l) > 0 ? ((latest_row.close - bb_l) / (bb_u - bb_l)) : 0.5;
+
+            const bw_current = ma20 > 0 ? (bb_u - bb_l) / ma20 : 0.0;
+            const last20_rows = rows.slice(-20);
+            const bw_20_series = last20_rows.map(r => r.BB_Mid > 0 ? (r.BB_U - r.BB_L) / r.BB_Mid : 0);
+            const bw_min_val = bw_20_series.length > 0 ? Math.min(...bw_20_series) : 0;
+            const is_squeezed = bw_min_val > 0 ? (bw_current <= bw_min_val * 1.15) : false;
+            const squeeze_lbl = is_squeezed ? " (壓縮蓄勢)" : "";
+
+            let bb_status = "布林空頭軌";
+            if (pct_b >= 1.0) bb_status = "布林突破";
+            else if (pct_b > 0.5) bb_status = "布林多頭軌";
+            else if (pct_b > 0.0) bb_status = "布林空頭軌";
+            else bb_status = "布林跌破";
+            const bb_desc = `${bb_status}${squeeze_lbl} (%B:${pct_b.toFixed(2)})`;
+
+            // K 線型態實時計算 (10 種型態)
+            function _compute_k_pattern_fallback(df_rows) {
+                const pats = [];
+                const n = df_rows.length;
+                if (n < 1) return "無明顯型態";
+
+                const body_len_arr = df_rows.map(r => Math.abs(r.close - r.open));
+                const ma_b_series = [];
+                const ma20_series = [];
+                for (let i = 0; i < n; i++) {
+                    const start_10 = Math.max(0, i - 9);
+                    const slice_10 = body_len_arr.slice(start_10, i + 1);
+                    ma_b_series.push(slice_10.reduce((a, b) => a + b, 0) / slice_10.length);
+
+                    const start_20 = Math.max(0, i - 19);
+                    const slice_20 = df_rows.slice(start_20, i + 1);
+                    ma20_series.push(slice_20.reduce((a, r) => a + r.close, 0) / slice_20.length);
+                }
+
+                function get_indicators(idx) {
+                    const actual_idx = idx < 0 ? n + idx : idx;
+                    const r = df_rows[actual_idx];
+                    const o = r.open, h = r.high, c = r.close, l = r.low;
+                    const b = Math.abs(c - o);
+                    const ub = Math.max(o, c);
+                    const lb = Math.min(o, c);
+                    const us = h - ub;
+                    const ls = lb - l;
+                    const range_val = h - l > 0 ? h - l : 1e-5;
+                    const ma_b = ma_b_series[actual_idx] || 1e-5;
+                    const ma20_val = ma20_series[actual_idx] || c;
+                    const bull = c > o ? 1 : 0;
+                    const bear = c < o ? 1 : 0;
+
+                    const start_pos = Math.max(0, actual_idx - 10);
+                    const prev_10_slice = df_rows.slice(start_pos, actual_idx);
+                    const h_max_10 = prev_10_slice.length > 0 ? Math.max(...prev_10_slice.map(x => x.high)) : h;
+                    const l_min_10 = prev_10_slice.length > 0 ? Math.min(...prev_10_slice.map(x => x.low)) : l;
+
+                    return { o, h, c, l, b, ub, lb, us, ls, r: range_val, ma_b, ma20: ma20_val, bull, bear, h_max_10, l_min_10 };
+                }
+
+                const t0 = get_indicators(-1);
+                const is_doji = t0.r > 0 ? (t0.b / t0.r <= 0.10) : false;
+                const is_hammer = t0.ls >= 2 * t0.b && t0.us <= 0.3 * t0.b && t0.b <= 0.35 * t0.r;
+                const is_shooting_star = t0.us >= 2 * t0.b && t0.ls <= 0.2 * t0.b && t0.ub <= t0.l + (t0.r / 3);
+                const is_hanging_man = (t0.b <= 0.3 * t0.r) && (t0.ls >= 2 * t0.b) && (t0.us <= 0.2 * t0.b) && (t0.lb >= t0.l + 0.65 * t0.r) && (t0.c > t0.ma20) && (t0.h >= t0.h_max_10);
+                const is_gravestone = (t0.b <= 0.05 * t0.r) && (t0.us >= 0.75 * t0.r) && (t0.ls <= 0.05 * t0.r) && (t0.c > t0.ma20) && (t0.h >= t0.h_max_10);
+                const is_dragonfly = (t0.b <= 0.05 * t0.r) && (t0.ls >= 0.75 * t0.r) && (t0.us <= 0.05 * t0.r) && (t0.c < t0.ma20) && (t0.l <= t0.l_min_10);
+
+                if (is_gravestone) pats.push("🪦 墓碑線");
+                else if (is_dragonfly) pats.push("🦎 蜻蜓線");
+                else if (is_doji) pats.push("⭐ 十字星");
+
+                if (is_hanging_man) pats.push("🪢 吊人線");
+                else if (is_hammer) pats.push("🔨 底部槌子線");
+                else if (is_shooting_star) pats.push("☄️ 高檔流星線");
+
+                if (n >= 2) {
+                    const t1 = get_indicators(-2);
+                    if (t1.bear === 1 && t0.bull === 1 && t0.o <= t1.c && t0.c >= t1.o && t0.b > t1.b) pats.push("🔴 多頭吞噬");
+                    if (t1.bull === 1 && t0.bear === 1 && t0.o >= t1.c && t0.c <= t1.o && t0.b > t1.b) pats.push("🟢 空頭吞噬");
+                    if (t1.bear === 1 && t1.b >= t1.ma_b && t0.o < t1.l && t0.bull === 1 && (((t1.o + t1.c)/2 < t0.c) && (t0.c < t1.o))) pats.push("⚡ 貫穿線");
+                    if (t1.bear === 1 && t1.b >= 1.2 * t1.ma_b && (t1.c < t0.o && t0.o < t1.o) && (t1.c < t0.c && t0.c < t1.o)) pats.push("🤰 多頭孕線");
+                    if (t1.bull === 1 && t1.b >= t1.ma_b && t0.o > t1.h && t0.bear === 1 && (t1.o < t0.c && t0.c < (t1.o + t1.c)/2)) pats.push("⛈️ 烏雲罩頂");
+                }
+
+                if (n >= 3) {
+                    const t1 = get_indicators(-2);
+                    const t2 = get_indicators(-3);
+                    const is_ms_1 = t2.bear === 1 && t2.b >= 1.2 * t2.ma_b;
+                    const is_ms_2 = t1.b <= 0.3 * t2.b && t1.ub < t2.c;
+                    const is_ms_3 = t0.bull === 1 && t0.c >= (t2.o + t2.c) / 2;
+                    if (is_ms_1 && is_ms_2 && is_ms_3) pats.push("🌅 早晨之星");
+
+                    const is_es_1 = t2.bull === 1 && t2.b >= 1.2 * t2.ma_b;
+                    const is_es_2 = t1.b <= 0.3 * t2.b && t1.lb > t2.c;
+                    const is_es_3 = t0.bear === 1 && t0.c <= (t2.o + t2.c) / 2;
+                    if (is_es_1 && is_es_2 && is_es_3) pats.push("🌌 夜星");
+
+                    const is_w3_1 = t2.bull === 1 && t1.bull === 1 && t0.bull === 1;
+                    const is_w3_2 = t2.c < t1.c && t1.c < t0.c;
+                    const is_w3_3 = (t2.o <= t1.o && t1.o <= t2.c) && (t1.o <= t0.o && t0.o <= t1.c);
+                    const is_w3_4 = t2.us <= 0.2 * t2.b && t1.us <= 0.2 * t1.b && t0.us <= 0.2 * t0.b;
+                    if (is_w3_1 && is_w3_2 && is_w3_3 && is_w3_4) pats.push("📈 紅三兵");
+
+                    const is_c3_1 = t2.bear === 1 && t1.bear === 1 && t0.bear === 1;
+                    const is_c3_2 = t2.c > t1.c && t1.c > t0.c;
+                    const is_c3_3 = (t2.c <= t1.o && t1.o <= t2.o) && (t1.c <= t0.o && t0.o <= t1.o);
+                    const is_c3_4 = t2.ls <= 0.2 * t2.b && t1.ls <= 0.2 * t1.b && t0.ls <= 0.2 * t0.b;
+                    if (is_c3_1 && is_c3_2 && is_c3_3 && is_c3_4) pats.push("🐦 三隻烏鴉");
+                }
+
+                if (n >= 5) {
+                    const t1 = get_indicators(-2);
+                    const t2 = get_indicators(-3);
+                    const t3 = get_indicators(-4);
+                    const t4 = get_indicators(-5);
+                    const is_r3_1 = t4.bull === 1 && t4.b >= 1.5 * t4.ma_b;
+                    let is_r3_2 = true;
+                    for (const k of [t3, t2, t1]) {
+                        if (k.b > 0.4 * t4.b || k.h > t4.h || k.l < t4.l) is_r3_2 = false;
+                    }
+                    const is_r3_3 = t0.bull === 1 && t0.c > t4.h;
+                    if (is_r3_1 && is_r3_2 && is_r3_3) pats.push("🚀 上升三法");
+                }
+
+                return pats.length > 0 ? pats.join("、") : "無明顯型態";
+            }
+            const k_pattern = _compute_k_pattern_fallback(rows);
+
+            // RSI12 搶反彈與預估字串拼裝 (100% 精確對齊)
+            function compute_rsi12_rebound_strategy(df_rows) {
+                const df_slice = df_rows.slice(-15);
+                if (df_slice.length < 5) {
+                    return {
+                        rsi12_curr: 50.0,
+                        rsi12_min: 50.0,
+                        has_prediction: false,
+                        p_30: 0.0, p_27: 0.0, p_25: 0.0,
+                        p_30_pct: 0.0, p_27_pct: 0.0, p_25_pct: 0.0,
+                        p_sell10: 0.0, p_sell15: 0.0, p_sell20: 0.0,
+                        p_sell10_pct: 0.0, p_sell15_pct: 0.0, p_sell20_pct: 0.0,
+                        start_rsi: 0.0, start_p: 0.0,
+                        disable_sell_warnings: false,
+                        cool_reason: "",
+                        is_outdated: true
+                    };
+                }
+
+                const curr_p = df_slice[df_slice.length - 1].close;
+                const curr_rsi = df_slice[df_slice.length - 1].RSI12;
+
+                let min_rsi = Infinity, min_rsi_idx = -1;
+                for (let i = 0; i < df_slice.length; i++) {
+                    if (df_slice[i].RSI12 < min_rsi) {
+                        min_rsi = df_slice[i].RSI12;
+                        min_rsi_idx = i;
+                    }
+                }
+                const rsi_min_val = min_rsi;
+                const p_min_val = df_slice[min_rsi_idx].close;
+
+                // 1. 三方案交叉驗證尋找起跌點
+                let max_rsi = -Infinity, max_rsi_idx = -1;
+                for (let i = 0; i < df_slice.length; i++) {
+                    if (df_slice[i].RSI12 > max_rsi) {
+                        max_rsi = df_slice[i].RSI12;
+                        max_rsi_idx = i;
+                    }
+                }
+                const rsi_a = max_rsi;
+                const p_a = df_slice[max_rsi_idx].close;
+
+                let idx_b = -1;
+                for (let i = df_slice.length - 2; i > 0; i--) {
+                    const r_prev = df_slice[i - 1].RSI12;
+                    const r_c = df_slice[i].RSI12;
+                    const r_next = df_slice[i + 1].RSI12;
+                    if (r_prev < r_c && r_c > r_next && r_c >= 35) {
+                        idx_b = i;
+                        break;
+                    }
+                }
+
+                let idx_c = -1;
+                for (let i = df_slice.length - 2; i >= 0; i--) {
+                    const r_val = df_slice[i].RSI12;
+                    const p_val = df_slice[i].close;
+                    if (r_val >= 35 && r_val > curr_rsi && p_val > curr_p) {
+                        idx_c = i;
+                        break;
+                    }
+                }
+
+                let start_idx = -1;
+                if (idx_b !== -1 && df_slice[idx_b].RSI12 > curr_rsi && df_slice[idx_b].close > curr_p) {
+                    start_idx = idx_b;
+                } else if (idx_c !== -1) {
+                    start_idx = idx_c;
+                } else if (rsi_a >= 35 && rsi_a > curr_rsi && p_a > curr_p) {
+                    start_idx = max_rsi_idx;
+                }
+
+                let has_pred = false;
+                let p_30 = 0.0, p_27 = 0.0, p_25 = 0.0;
+                let p_30_pct = 0.0, p_27_pct = 0.0, p_25_pct = 0.0;
+                let start_rsi = 0.0, start_p = 0.0;
+                let sensitivity = 0.0;
+
+                if (start_idx !== -1) {
+                    const p_start = df_slice[start_idx].close;
+                    const rsi_start = df_slice[start_idx].RSI12;
+                    const delta_rsi = rsi_start - curr_rsi;
+                    const delta_p = p_start - curr_p;
+
+                    if (delta_p > 0 && delta_rsi >= 5) {
+                        sensitivity = delta_p / delta_rsi;
+                        p_30 = p_start - (rsi_start - 30) * sensitivity;
+                        p_27 = p_start - (rsi_start - 27.5) * sensitivity;
+                        p_25 = p_start - (rsi_start - 25) * sensitivity;
+
+                        p_30_pct = curr_p > 0 ? ((p_30 - curr_p) / curr_p * 100) : 0.0;
+                        p_27_pct = curr_p > 0 ? ((p_27 - curr_p) / curr_p * 100) : 0.0;
+                        p_25_pct = curr_p > 0 ? ((p_25 - curr_p) / curr_p * 100) : 0.0;
+                        start_rsi = rsi_start;
+                        start_p = p_start;
+                        has_pred = true;
+                    }
+                }
+
+                // 2. 反彈敏感度
+                let sensitivity_up = 0.0;
+                if (curr_rsi > rsi_min_val && curr_p > p_min_val) {
+                    sensitivity_up = (curr_p - p_min_val) / (curr_rsi - rsi_min_val);
+                } else if (has_pred && sensitivity > 0) {
+                    sensitivity_up = sensitivity;
+                } else {
+                    sensitivity_up = curr_p / 30.0;
+                }
+
+                const p_sell10 = p_min_val + 10 * sensitivity_up;
+                const p_sell15 = p_min_val + 15 * sensitivity_up;
+                const p_sell20 = p_min_val + 20 * sensitivity_up;
+
+                const p_sell10_pct = p_min_val > 0 ? ((p_sell10 - p_min_val) / p_min_val * 100) : 0.0;
+                const p_sell15_pct = p_min_val > 0 ? ((p_sell15 - p_min_val) / p_min_val * 100) : 0.0;
+                const p_sell20_pct = p_min_val > 0 ? ((p_sell20 - p_min_val) / p_min_val * 100) : 0.0;
+
+                // 3.0 前置驗證
+                const has_rebound_event = (rsi_min_val < 30.0);
+                if (!has_rebound_event) has_pred = false;
+
+                // 3.1 股價橫盤盤整濾網 (近 4 日收盤價最大/最小振幅 <= 2%)
+                let is_sideways = false;
+                if (df_rows.length >= 4) {
+                    const close_4d = df_rows.slice(-4).map(r => r.close);
+                    const p_min_4d = Math.min(...close_4d);
+                    const p_max_4d = Math.max(...close_4d);
+                    if (p_min_4d > 0) {
+                        const p_amp_4d = (p_max_4d - p_min_4d) / p_min_4d * 100;
+                        if (p_amp_4d <= 2.0) is_sideways = true;
+                    }
+                }
+
+                // 3.2 時效過期濾網
+                let has_touched_sell3_recently = false;
+                if (df_rows.length >= 4) {
+                    for (const offset of [-4, -3, -2]) {
+                        const idx = df_rows.length + offset;
+                        if (idx >= 15) {
+                            const df_slice_past = df_rows.slice(idx - 14, idx + 1);
+                            const past_rsi_min = Math.min(...df_slice_past.map(r => r.RSI12));
+                            const past_rsi_curr = df_rows[idx].RSI12;
+                            if (past_rsi_curr > past_rsi_min + 20) {
+                                has_touched_sell3_recently = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 3.3 反彈動能衰竭濾網
+                let is_decayed = false;
+                if (df_rows.length >= 4) {
+                    const df_15d = df_rows.slice(-15);
+                    let idx_15d_min = 0, v_15d_min = Infinity;
+                    for (let i = 0; i < df_15d.length; i++) {
+                        if (df_15d[i].RSI12 < v_15d_min) {
+                            v_15d_min = df_15d[i].RSI12;
+                            idx_15d_min = i;
+                        }
+                    }
+                    const global_min_idx = (df_rows.length - 15) + idx_15d_min;
+                    const rebound_indices = [];
+                    for (let i = global_min_idx; i < df_rows.length; i++) rebound_indices.push(i);
+
+                    for (let pos = 2; pos < rebound_indices.length; pos++) {
+                        const cur_idx = rebound_indices[pos];
+                        // A. 截至「昨日」的最高收盤價
+                        let peak_idx = rebound_indices[0];
+                        let peak_close = -Infinity;
+                        for (let k = 0; k <= pos - 1; k++) {
+                            const ki = rebound_indices[k];
+                            if (df_rows[ki].close > peak_close) {
+                                peak_close = df_rows[ki].close;
+                                peak_idx = ki;
+                            }
+                        }
+                        const p_max_low = df_rows[peak_idx].low;
+
+                        // B. RSI 勾頭
+                        const prev_rsi_max = Math.max(df_rows[rebound_indices[pos - 2]].RSI12, df_rows[rebound_indices[pos - 1]].RSI12);
+                        const cur_rsi_val = df_rows[cur_idx].RSI12;
+                        const rsi_hook = cur_rsi_val < (prev_rsi_max - 1.5);
+
+                        // C. 破見頂日低點
+                        const cur_close_val = df_rows[cur_idx].close;
+                        const price_break = cur_close_val < p_max_low;
+
+                        if (rsi_hook && price_break) {
+                            is_decayed = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 3.4 10日時效
+                let is_outdated = false;
+                if (!has_rebound_event) {
+                    is_outdated = true;
+                } else if (df_rows.length >= 4) {
+                    const df_15d = df_rows.slice(-15);
+                    let idx_15d_min = 0, v_15d_min = Infinity;
+                    for (let i = 0; i < df_15d.length; i++) {
+                        if (df_15d[i].RSI12 < v_15d_min) {
+                            v_15d_min = df_15d[i].RSI12;
+                            idx_15d_min = i;
+                        }
+                    }
+                    const days_since_rsi_min = 15 - 1 - idx_15d_min;
+                    if (days_since_rsi_min > 10) is_outdated = true;
+                }
+
+                let disable_sell_warnings = false;
+                if (is_outdated) {
+                    disable_sell_warnings = false;
+                    is_decayed = false;
+                    is_sideways = false;
+                    has_touched_sell3_recently = false;
+                } else {
+                    disable_sell_warnings = is_sideways || has_touched_sell3_recently || is_decayed;
+                }
+
+                const cool_reason_lbl = is_sideways ? " (橫盤冷卻)" : (has_touched_sell3_recently ? " (3日內已觸頂)" : (is_decayed ? " (反彈結束)" : ""));
+
+                return {
+                    rsi12_curr: curr_rsi,
+                    rsi12_min: rsi_min_val,
+                    has_prediction: has_pred,
+                    p_30, p_27, p_25,
+                    p_30_pct, p_27_pct, p_25_pct,
+                    p_sell10, p_sell15, p_sell20,
+                    p_sell10_pct, p_sell15_pct, p_sell20_pct,
+                    start_rsi, start_p,
+                    disable_sell_warnings,
+                    cool_reason: cool_reason_lbl,
+                    is_outdated
+                };
+            }
+
+            const rsi_strat = compute_rsi12_rebound_strategy(rows);
+            let rsi_pred_str = "";
+            if (rsi_strat.has_prediction) {
+                rsi_pred_str = `\n  ↳ ⚠️ 一級低吸點 (RSI=30): ${rsi_strat.p_30.toFixed(2)} 元 (預估跌幅: ${rsi_strat.p_30_pct.toFixed(2)}%)\n  ↳ 🚨 二級強力反彈 (RSI=27.5 - 首選推薦): ${rsi_strat.p_27.toFixed(2)} 元 (預估跌幅: ${rsi_strat.p_27_pct.toFixed(2)}%)\n  ↳ 🔥 三級極限冰點 (RSI=25): ${rsi_strat.p_25.toFixed(2)} 元 (預估跌幅: ${rsi_strat.p_25_pct.toFixed(2)}%)\n    (以 ${rsi_strat.start_p.toFixed(2)} 元 (RSI=${rsi_strat.start_rsi.toFixed(1)}) 為起跌點推估買點)`;
+            } else {
+                rsi_pred_str = "\n  ↳ 買點預測：目前股價強勢/橫盤，未滿足起跌條件";
+            }
+
+            if (rsi_strat.is_outdated) {
+                rsi_pred_str += "\n  ↳ 賣點預估：目前無反彈賣信號";
+            } else if (rsi_strat.disable_sell_warnings) {
+                rsi_pred_str += `\n  ↳ 賣點預估：已觸發動能衰竭或橫盤冷卻${rsi_strat.cool_reason || ''}，停止預估價位`;
+            } else {
+                rsi_pred_str += `\n  ↳ 💡 一級反彈賣點 (RSI=最低值+10): ${rsi_strat.p_sell10.toFixed(2)} 元 (相對最低點反彈幅: +${rsi_strat.p_sell10_pct.toFixed(2)}%)\n  ↳ 🚨 二級反彈賣點 (RSI=最低值+15): ${rsi_strat.p_sell15.toFixed(2)} 元 (相對最低點反彈幅: +${rsi_strat.p_sell15_pct.toFixed(2)}%)\n  ↳ 🔥 三級終極賣點 (RSI=最低值+20): ${rsi_strat.p_sell20.toFixed(2)} 元 (相對最低點反彈幅: +${rsi_strat.p_sell20_pct.toFixed(2)}%)`;
+            }
+
+            const curr_rsi_val = rsi_strat.rsi12_curr;
+            const rsi12_min_val = rsi_strat.rsi12_min;
+            let rsi_emoji = "⚪";
+            if (curr_rsi_val <= 25) rsi_emoji = "🔴";
+            else if (curr_rsi_val > 25 && curr_rsi_val <= 27.5) rsi_emoji = "🔴";
+            else if (curr_rsi_val > 27.5 && curr_rsi_val <= 30) rsi_emoji = "🟡";
+            else if (curr_rsi_val > rsi12_min_val + 20 && !rsi_strat.disable_sell_warnings && !rsi_strat.is_outdated) rsi_emoji = "🔴";
+            else if (curr_rsi_val > rsi12_min_val + 15 && !rsi_strat.disable_sell_warnings && !rsi_strat.is_outdated) rsi_emoji = "🟡";
+            else if (curr_rsi_val > rsi12_min_val + 10 && !rsi_strat.disable_sell_warnings && !rsi_strat.is_outdated) rsi_emoji = "🟢";
+            else rsi_emoji = "⚪";
+
+            function format_strategy_text() {
+                const ma_emoji = ma_align.startsWith("多頭") ? "🔴" : (ma_align.startsWith("空頭") ? "🟢" : "⚪");
+                const bb_emoji = (bb_desc.startsWith("布林突破") || bb_desc.startsWith("布林多頭軌")) ? "🔴" : ((bb_desc.startsWith("布林跌破") || bb_desc.startsWith("布林空頭軌")) ? "🟢" : "⚪");
+                const pv_emoji = pv_desc.includes("多頭攻擊") ? "🔴" : (pv_desc.includes("殺盤鬆動") ? "🟢" : (pv_desc.includes("背離") ? "🟡" : "⚪"));
+                const bias_emoji = bias_label.startsWith("超買") ? "🔴" : (bias_label.startsWith("超跌") ? "🟢" : "⚪");
+                const vol_emoji = vol_status.startsWith("爆量") ? "🔴" : "⚪";
+                const inst_emoji = inst_synergy.includes("連買") ? "🔴" : (inst_synergy.includes("連賣") ? "🟢" : "⚪");
+                const margin_emoji = margin_status.startsWith("籌碼沉澱") ? "🔴" : (margin_status.startsWith("融資堆積") ? "🟢" : "⚪");
+                const abs_emoji = (absorption_status.startsWith("強力吸籌") || absorption_status.startsWith("偏多吸籌")) ? "🔴" : ((absorption_status.startsWith("加速出貨") || absorption_status.startsWith("偏空出貨")) ? "🟢" : "⚪");
+                const accel_emoji = accel_status.includes("加速買超") ? "🔴" : (accel_status.includes("加速賣超") ? "🟢" : "⚪");
+                
+                const kp_clean = k_pattern.trim();
+                const bull_kps = ["早晨之星", "紅三兵", "多頭吞噬", "貫穿線", "多頭孕線", "底部槌子線", "上升三法", "蜻蜓線"];
+                const bear_kps = ["夜星", "三隻烏鴉", "空頭吞噬", "烏雲罩頂", "吊人線", "高檔流星線", "墓碑線"];
+                let kp_prefix_emoji = "⚪";
+                if (bull_kps.some(k => kp_clean.includes(k))) kp_prefix_emoji = "🔴";
+                else if (bear_kps.some(k => kp_clean.includes(k))) kp_prefix_emoji = "🟢";
+                else if (kp_clean.includes("十字星")) kp_prefix_emoji = "🟡";
+
+                let rsi_line = "";
+                if (rsi_pred_str) {
+                    rsi_line = `- ${rsi_emoji} RSI12搶反彈與預估：${rsi_pred_str}`;
+                }
+
+                const lines = [
+                    `🎯 策略特徵指標 (最新交易日)：`,
+                    `- ${ma_emoji} 均線趨勢：${ma_align}`,
+                    `- ${bb_emoji} 布林通道：${bb_desc}`,
+                    `- ${pv_emoji} 價量關係：${pv_desc}`,
+                    `- ${bias_emoji} 月線乖離：${bias_label}`,
+                    `- ${vol_emoji} 量能狀態：${vol_status}`,
+                    `- ${inst_emoji} 法人動態：${inst_synergy}`,
+                    `- ${margin_emoji} 籌碼沉澱：${margin_status}`,
+                    `- ${abs_emoji} 籌碼吸籌比(5日)：${absorption_status}`,
+                    `- ${accel_emoji} 法人買超加速度：${accel_status}`,
+                    `- ${kp_prefix_emoji} K線型態：${kp_clean || '無明顯型態'}`
+                ];
+                if (rsi_line) lines.push(rsi_line);
+                lines.push("─────────────────────────────────────────────\n");
+                return lines.join('\n');
+            }
+
+            const strategy_text = format_strategy_text();
+
+            // 3. 近 10 日軌跡計算
+            function get_day_title_block(idx, t_label) {
+                const latest = rows[idx];
+                const prev = idx >= 1 ? rows[idx - 1] : latest;
+
+                const fmt2 = (num) => {
+                    if (num === null || num === undefined || isNaN(num)) return '0.00';
+                    const n = Number(num);
+                    if (n < 0 && n > -0.005) {
+                        return "-0.00";
+                    }
+                    return n.toFixed(2);
+                };
+
+                function arrow_fmt(col, suffix = "", is_float = true) {
+                    const cur_v = latest[col], prv_v = prev[col];
+                    const arrow = cur_v > prv_v ? "↑" : (cur_v < prv_v ? "↓" : "=");
+                    return is_float ? `${fmt2(cur_v)}${suffix}${arrow}` : `${Math.floor(cur_v).toLocaleString()}${suffix}${arrow}`;
+                }
+
+                const is_margin_not_ready = (latest.融資餘額 === 0 || isNaN(latest.融資餘額));
+                const margin_latest = is_margin_not_ready && idx >= 1 ? rows[idx - 1] : latest;
+                const margin_prev = is_margin_not_ready && idx >= 2 ? rows[idx - 2] : prev;
+
+                function arrow_fmt_margin(col, suffix = "") {
+                    const cur_v = margin_latest[col], prv_v = margin_prev[col];
+                    const arrow = cur_v > prv_v ? "↑" : (cur_v < prv_v ? "↓" : "=");
+                    return `${Math.floor(cur_v).toLocaleString()}${suffix}${arrow}`;
+                }
+
+                const major_lbl = latest.法人合計 >= 0 ? "(買超)" : "(賣超)";
+                const foreign_lbl = latest.外資買賣超 >= 0 ? "(買超)" : "(賣超)";
+                const sitc_lbl = latest.投信買賣超 >= 0 ? "(買超)" : "(賣超)";
+                const dealers_lbl = latest.自營買賣超 >= 0 ? "(買超)" : "(賣超)";
+                const margin_lbl = margin_latest.融資增減 >= 0 ? "增加" : "減少";
+
+                const lbl = (v) => v === 1 ? "🔴" : (v === -1 ? "🟢" : "●");
+                const dStr = String(latest.交易日期);
+                const formatted_d = `${dStr.slice(0, 4)}/${dStr.slice(4, 6)}/${dStr.slice(6, 8)}`;
+                const t_suffix = t_label ? ` (${t_label})` : "";
+
+                return [
+                    `📅 日期：${formatted_d}${t_suffix}`,
+                    `📈 日K | 開: ${arrow_fmt('開盤價')} 高: ${arrow_fmt('最高價')} 低: ${arrow_fmt('最低價')} 收: ${arrow_fmt('收盤價')}`,
+                    `📈 均線 | BB_Mid: ${arrow_fmt('BB_Mid')} BB_U: ${arrow_fmt('BB_U')} BB_L: ${arrow_fmt('BB_L')} MA5: ${arrow_fmt('MA5')} MA10: ${arrow_fmt('MA10')}`,
+                    `🔥 熱力燈 | MTM金${lbl(latest.P10_MTM_Cross)} | OSC縮${lbl(latest.P1_MACD_OSC)} | K趨${lbl(latest.P5_K_Trend)} | DIF趨${lbl(latest.P3_DIF_Trend)} | KD金${lbl(latest.P4_KD_Cross)} | MACD金${lbl(latest.P2_MACD_Cross)}`,
+                    `🧪 MACD | OSC: ${arrow_fmt('OSC')} DIF: ${arrow_fmt('DIF')} MACD_S: ${arrow_fmt('MACD_S')}`,
+                    `🧪 KD | K: ${arrow_fmt('K')} D: ${arrow_fmt('D')}`,
+                    `🌀 MTM | MTM3: ${arrow_fmt('MTM')} MA2: ${arrow_fmt('MTM_MA')}`,
+                    `🧪 RSI | RSI4: ${arrow_fmt('RSI4')} RSI12: ${arrow_fmt('RSI12')}`,
+                    `🧪 WR | WR3: ${arrow_fmt('WR3')} WR50: ${arrow_fmt('WR50')}`,
+                    `📊 量能 | 成交量: ${arrow_fmt('成交量', '股', false)}`,
+                    `⚡ 融資 | 餘額: ${arrow_fmt_margin('融資餘額', '張')} 增減${margin_lbl}: ${arrow_fmt_margin('融資增減', '張')}`,
+                    `🎯 三大法人${major_lbl}: ${arrow_fmt('法人合計', '股', false)}`,
+                    `🔮 外資${foreign_lbl}: ${arrow_fmt('外資買賣超', '股', false)} | 投信${sitc_lbl}: ${arrow_fmt('投信買賣超', '股', false)} | 自營${dealers_lbl}: ${arrow_fmt('自營買賣超', '股', false)}`
+                ].join('\n');
+            }
+
+            const t10_rows_indices = rows.slice(-10).map((r, i) => rows.length - 10 + i);
+            const trajectory_lines = t10_rows_indices.map((idx, pos) => {
+                const t_label = `T-${t10_rows_indices.length - 1 - pos}`;
+                return get_day_title_block(idx, t_label);
+            });
+
+            const trajectory_text = `📈 近 10 日軌跡：\n\n` + trajectory_lines.join('\n\n');
+            return header_text + strategy_text + trajectory_text;
+        };
+
+        const copyStock10DayReport = async (stock) => {
+            if (!stock) return;
+            try {
+                const reportText = buildStock10DayReport(stock);
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(reportText);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = reportText;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                showToast(`📋 已成功複製【${stock.code} ${stock.name}】近 10 日戰報至剪貼簿！`);
+            } catch (err) {
+                console.error("複製戰報失敗:", err);
+                alert(`❌ 複製失敗：${err.message}`);
             }
         };
 
@@ -1818,7 +2669,7 @@ createApp({
                     updateLocalDbStats();
                     await fetchCloudDbStats();
                     markAsSynced();
-                    alert("✅ 雲端全量資料庫已成功鏡像同步至手機！\n最新現價、價金與特別關注名單已 100% 對齊。");
+                    alert(`✅ 雲端資料庫已成功鏡像同步至手機！\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。`);
                     return;
                 }
 
@@ -1929,6 +2780,27 @@ createApp({
 
                 // 4. 智慧合流 my_stock (自選名冊與特別關注狀態對齊)
                 try {
+                    // 4.0 本地現存自選/持股自動銷除墓碑 (代表使用者主動重新關注/持有)
+                    const lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
+                    if (lStocksAll.length > 0) {
+                        lStocksAll[0].values.forEach(r => {
+                            const [code, name, shares, cost, broker, focus] = r;
+                            const uk = makeStockUniqueKey(code, broker);
+                            if (deletedStockKeys.has(uk)) {
+                                deletedStockKeys.delete(uk);
+                                try {
+                                    cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                    dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                } catch (e) {}
+                            }
+                            // 增量注入本地自選股至 cloudDb (若雲端無此股)
+                            cloudDb.run(
+                                "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
+                                [code, name, shares, cost, broker, focus]
+                            );
+                        });
+                    }
+
                     // 4.1 清算 cloudDb 中已刪除且無庫存的自選股
                     const cStocks = cloudDb.exec("SELECT 股票代號, 證券商, 個股股數 FROM my_stock");
                     if (cStocks.length > 0) {
@@ -1942,10 +2814,9 @@ createApp({
                     }
 
                     // 4.2 本地特別關注狀態更新至 cloudDb
-                    const lStocks = dbInstance.exec("SELECT 股票代號, 證券商, 特別關注 FROM my_stock");
-                    if (lStocks.length > 0) {
-                        lStocks[0].values.forEach(r => {
-                            const [code, broker, focus] = r;
+                    if (lStocksAll.length > 0) {
+                        lStocksAll[0].values.forEach(r => {
+                            const [code, name, shares, cost, broker, focus] = r;
                             const uk = makeStockUniqueKey(code, broker);
                             if (!deletedStockKeys.has(uk) && focus && focus !== '否') {
                                 cloudDb.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [focus, code, broker]);
@@ -2003,18 +2874,16 @@ createApp({
                 const finalBuf = dbInstance.export();
                 await loadDatabaseFromArrayBuffer(finalBuf.buffer, '全量鏡像合流');
 
-                // 若本地有新增交易，才需要反向覆蓋雲端；否則雲端本就是最新
-                if (localTradesAdded > 0) {
-                    syncStatus.value.message = '正在將雙向合流後的黃金版本上傳回 Google Drive...';
-                    await uploadBufferToGoogleDrive(finalBuf);
-                }
+                // 將雙向合流後的黃金資料庫上傳回 Google Drive，確保雲端名冊與本機 100% 同步
+                syncStatus.value.message = '正在將雙向合流後的黃金版本上傳回 Google Drive...';
+                await uploadBufferToGoogleDrive(finalBuf);
 
                 updateLocalDbStats();
                 await fetchCloudDbStats();
 
                 markAsSynced();
 
-                alert("🤝 全量鏡像同步成功！\n最新現價、價金、5 家特別關注標的與完整字典已 100% 鏡像對齊。");
+                alert(`🤝 全量鏡像同步成功！\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。`);
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
@@ -2218,6 +3087,10 @@ createApp({
             isEditingTrade,
             deleteTradeRecord,
             deleteStockCard,
+            buildStock10DayReport,
+            copyStock10DayReport,
+            toastMsg,
+            showToast,
             formatTradeDate,
             localDbStats,
             cloudDbStats,
