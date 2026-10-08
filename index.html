@@ -282,8 +282,9 @@
                                 </span>
                                 <div class="grid grid-cols-6 gap-1 flex-1">
                                     <span v-for="tag in stock.indicatorTags" :key="tag.text" 
-                                          :class="tag.type === 'bull' ? 'bg-rose-600 text-white font-bold' : 'bg-emerald-600 text-white font-bold'"
-                                          class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center">
+                                          :class="tag.bgClass || (tag.type === 'bull' ? 'bg-rose-600 text-white font-bold' : 'bg-emerald-600 text-white font-bold')"
+                                          :title="tag.tooltip || tag.text"
+                                          class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center transition-all">
                                         {{ tag.text }}
                                     </span>
                                 </div>
@@ -748,6 +749,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261008.05"></script>
+    <script src="app.js?v=2.20261008.06"></script>
 </body>
 </html>

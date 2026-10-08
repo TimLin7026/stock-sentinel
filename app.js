@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.05');
+        const appVersion = ref('v2.20261008.06');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -400,6 +400,7 @@ createApp({
                                 const data = JSON.parse(r[1]);
                                 heatmapMap[String(r[0])] = {
                                     indicators: data.indicators || {},
+                                    prevIndicators: data.prev_indicators || data.prevIndicators || data.indicators || {},
                                     strategyIndicators: data.strategy_indicators || {},
                                     dataDate: data.data_date || '',
                                     updateTime: data.update_time || ''
@@ -592,15 +593,67 @@ createApp({
                                 ? buildStrategyFeaturesFromDict(hmInfo.strategyIndicators, curPrice, code) 
                                 : defaultFeatures.value;
 
-                            // 6 燈技術指標 (1: 紅燈 bull, -1: 綠燈 bear)
+                            // 6 燈技術指標 (支援「昨日 ➔ 今日」4 維動態漸近色：綠綠 / 綠紅 / 紅綠 / 紅紅)
                             const hmIndicators = hmInfo.indicators || {};
+                            const hmPrevIndicators = hmInfo.prevIndicators || hmInfo.prev_indicators || hmIndicators;
+
+                            const getIndicatorTag = (displayText, keyNames) => {
+                                let currVal = undefined;
+                                let prevVal = undefined;
+
+                                for (const k of keyNames) {
+                                    if (currVal === undefined && hmIndicators[k] !== undefined) currVal = hmIndicators[k];
+                                    if (prevVal === undefined && hmPrevIndicators[k] !== undefined) prevVal = hmPrevIndicators[k];
+                                }
+
+                                if (currVal === undefined) currVal = -1;
+                                if (prevVal === undefined) prevVal = currVal; // 兼容舊數據
+
+                                const isPrevBull = prevVal === 1;
+                                const isCurrBull = currVal === 1;
+
+                                let bgClass = '';
+                                let tooltip = '';
+                                let transitionType = '';
+
+                                if (!isPrevBull && !isCurrBull) {
+                                    // 🟢 ➔ 🟢 綠到綠 (持續偏空)
+                                    transitionType = 'bear-bear';
+                                    bgClass = 'bg-emerald-600 text-white font-bold';
+                                    tooltip = `${displayText}：昨日偏空 ➔ 今日偏空 (持續偏空)`;
+                                } else if (!isPrevBull && isCurrBull) {
+                                    // 🟢 ➔ 🔴 綠到紅 (轉折翻紅 / 金叉)
+                                    transitionType = 'bear-bull';
+                                    bgClass = 'bg-gradient-to-r from-emerald-600 to-rose-600 text-white font-black shadow ring-1 ring-rose-400/40';
+                                    tooltip = `${displayText}：昨日偏空 ➔ 今日轉強 (轉折翻紅 🔥)`;
+                                } else if (isPrevBull && !isCurrBull) {
+                                    // 🔴 ➔ 🟢 紅到綠 (轉折翻綠 / 死叉)
+                                    transitionType = 'bull-bear';
+                                    bgClass = 'bg-gradient-to-r from-rose-600 to-emerald-600 text-white font-black shadow ring-1 ring-emerald-400/40';
+                                    tooltip = `${displayText}：昨日偏多 ➔ 今日轉弱 (轉折翻綠 ⚠️)`;
+                                } else {
+                                    // 🔴 ➔ 🔴 紅到紅 (持續多頭)
+                                    transitionType = 'bull-bull';
+                                    bgClass = 'bg-rose-600 text-white font-bold';
+                                    tooltip = `${displayText}：昨日偏多 ➔ 今日偏多 (持續多頭)`;
+                                }
+
+                                return {
+                                    text: displayText,
+                                    type: isCurrBull ? 'bull' : 'bear',
+                                    transition: transitionType,
+                                    bgClass,
+                                    tooltip
+                                };
+                            };
+
                             const indicatorTags = [
-                                { text: 'MTM金', type: hmIndicators['MTM金'] === 1 ? 'bull' : 'bear' },
-                                { text: 'OSC縮', type: hmIndicators['OSC縮'] === 1 ? 'bull' : 'bear' },
-                                { text: 'K超', type: (hmIndicators['K超'] === 1 || hmIndicators['K趨'] === 1) ? 'bull' : 'bear' },
-                                { text: 'DIF超', type: (hmIndicators['DIF超'] === 1 || hmIndicators['DIF趨'] === 1) ? 'bull' : 'bear' },
-                                { text: 'KD金', type: hmIndicators['KD金'] === 1 ? 'bull' : 'bear' },
-                                { text: 'MACD金', type: hmIndicators['MACD金'] === 1 ? 'bull' : 'bear' }
+                                getIndicatorTag('MTM金', ['MTM金']),
+                                getIndicatorTag('OSC縮', ['OSC縮']),
+                                getIndicatorTag('K超', ['K超', 'K趨']),
+                                getIndicatorTag('DIF超', ['DIF超', 'DIF趨']),
+                                getIndicatorTag('KD金', ['KD金']),
+                                getIndicatorTag('MACD金', ['MACD金'])
                             ];
 
                             // 時效比對 (對齊電腦端：✅ 即時新鮮 / ⚠️ 過期或落後)
