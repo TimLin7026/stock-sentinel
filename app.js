@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.01');
+        const appVersion = ref('v2.20261008.02');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -943,13 +943,39 @@ createApp({
             date: getNowDateStr()
         });
 
+        const onBrokerSelect = (brokerName) => {
+            tradeForm.value.broker = brokerName;
+            if (brokerName === '關注') {
+                tradeForm.value.price = 0;
+                tradeForm.value.shares = 1;
+            } else {
+                if (tradeForm.value.price === 0 && tradeForm.value.shares === 1) {
+                    const trimmed = tradeForm.value.code.trim();
+                    const matched = stockList.value.find(s => s.code === trimmed);
+                    tradeForm.value.price = matched ? matched.price : null;
+                    tradeForm.value.shares = null;
+                }
+            }
+        };
+
+        const onBrokerInputChange = () => {
+            if (tradeForm.value.broker === '關注') {
+                tradeForm.value.price = 0;
+                tradeForm.value.shares = 1;
+            }
+        };
+
         const onCodeInput = () => {
             const trimmed = tradeForm.value.code.trim();
             const matched = stockList.value.find(s => s.code === trimmed);
             if (matched) {
                 tradeForm.value.name = matched.name;
-                tradeForm.value.price = matched.price;
-                if (matched.broker) tradeForm.value.broker = matched.broker;
+                if (tradeForm.value.broker !== '關注') {
+                    tradeForm.value.price = matched.price;
+                }
+                if (matched.broker && !tradeForm.value.broker) {
+                    tradeForm.value.broker = matched.broker;
+                }
             }
         };
 
@@ -971,8 +997,13 @@ createApp({
                 tradeForm.value.broker = targetStock.broker || '玉山證券';
                 tradeForm.value.code = targetStock.code;
                 tradeForm.value.name = targetStock.name;
-                tradeForm.value.price = targetStock.price;
-                tradeForm.value.shares = null; // 🌟 預設保持空白
+                if (tradeForm.value.broker === '關注') {
+                    tradeForm.value.price = 0;
+                    tradeForm.value.shares = 1;
+                } else {
+                    tradeForm.value.price = targetStock.price;
+                    tradeForm.value.shares = null; // 🌟 預設保持空白
+                }
                 tradeForm.value.date = getNowDateStr();
             } else {
                 isEditingTrade.value = false;
@@ -981,23 +1012,90 @@ createApp({
                 tradeForm.value.broker = selectedBrokerFilter.value !== '全部' ? selectedBrokerFilter.value : '玉山證券';
                 tradeForm.value.code = '';
                 tradeForm.value.name = '';
-                tradeForm.value.price = null;
-                tradeForm.value.shares = null; // 🌟 預設保持空白
+                if (tradeForm.value.broker === '關注') {
+                    tradeForm.value.price = 0;
+                    tradeForm.value.shares = 1;
+                } else {
+                    tradeForm.value.price = null;
+                    tradeForm.value.shares = null;
+                }
                 tradeForm.value.date = getNowDateStr();
             }
             showTradeModal.value = true;
         };
 
         const saveTradeRecord = async () => {
-            if (!tradeForm.value.code || !tradeForm.value.price || !tradeForm.value.shares) {
+            const brokerName = (tradeForm.value.broker || '玉山證券').trim();
+            const actionName = tradeForm.value.action || '買進';
+            const codeVal = tradeForm.value.code.trim();
+            const nameVal = tradeForm.value.name.trim() || codeVal;
+
+            if (!codeVal) {
+                alert('請填寫股票代號！');
+                return;
+            }
+
+            // 🎯【關注券商專屬寫入管道 (100% 比照電腦版)】
+            if (brokerName === '關注') {
+                if (dbInstance) {
+                    try {
+                        // 1. 檢測全域庫存中，該股是否已存在於「非關注」的實質券商帳戶中
+                        const realCheck = dbInstance.exec("SELECT 證券商, 個股股數 FROM my_stock WHERE 股票代號 = ? AND 證券商 != '關注' AND 個股股數 > 0", [codeVal]);
+                        if (realCheck.length > 0 && realCheck[0].values.length > 0) {
+                            const existBrokers = realCheck[0].values.map(r => r[0]).join(', ');
+                            alert(`⚠️ 錄入中斷：個股 [${codeVal} ${nameVal}] 目前已擁有實質券商庫存 (${existBrokers})，防禦機制已物理阻斷重複新增為『關注股』！`);
+                            return;
+                        }
+
+                        // 2. 檢測全域庫存中，該股是否已經躺在「關注」名冊內
+                        const focusCheck = dbInstance.exec("SELECT 個股股數 FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [codeVal]);
+                        if (focusCheck.length > 0 && focusCheck[0].values.length > 0) {
+                            alert(`💡 雷達提示：個股 [${codeVal} ${nameVal}] 已存在於『關注』名冊中，系統自動跳過重複建立流程。`);
+                            showTradeModal.value = false;
+                            return;
+                        }
+
+                        // 3. 寫入 my_stock (股數=0, 損平價=0, 券商='關注', 特別關注='否')
+                        dbInstance.run(
+                            "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, 0, 0, '關注', '否')",
+                            [codeVal, nameVal]
+                        );
+
+                        // 4. 自動為關注股建立空白戰報底稿 (若戰報庫查無此股)
+                        const stratCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ?", [codeVal]);
+                        if (!stratCheck.length || !stratCheck[0].values.length) {
+                            const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                            const pad = n => String(n).padStart(2, '0');
+                            const yStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth()+1)}-${pad(yesterday.getDate())} 12:00:00`;
+                            try {
+                                dbInstance.run(
+                                    "INSERT OR IGNORE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 戰情總結, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限) VALUES (?, ?, '', '', '', '', '', '', '')",
+                                    [yStr, codeVal]
+                                );
+                            } catch (e_strat) {}
+                        }
+
+                        await saveDbToIndexedDb();
+                        const u8 = dbInstance.export();
+                        await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已新增關注)');
+                        hasUnsyncedChanges.value = true;
+                    } catch (err) {
+                        console.error("寫入關注股失敗:", err);
+                        alert("寫入失敗: " + err.message);
+                        return;
+                    }
+                }
+                showTradeModal.value = false;
+                alert(`✅ 已成功將 [${codeVal} ${nameVal}] 釘選至自選觀察池！`);
+                return;
+            }
+
+            // 🎯【一般實質交易寫入管道】
+            if (tradeForm.value.price === null || tradeForm.value.price === undefined || tradeForm.value.shares === null || tradeForm.value.shares === undefined) {
                 alert('請完整填寫股票代號、價格與股數！');
                 return;
             }
 
-            const brokerName = tradeForm.value.broker || '玉山證券';
-            const actionName = tradeForm.value.action || '買進';
-            const codeVal = tradeForm.value.code.trim();
-            const nameVal = tradeForm.value.name.trim() || codeVal;
             const priceVal = Number(tradeForm.value.price);
             const sharesVal = Number(tradeForm.value.shares);
             
@@ -1124,6 +1222,55 @@ createApp({
 
             showTradeModal.value = false;
             alert("🗑️ 交易記錄已成功刪除並重新計算庫存！");
+        };
+
+        // 🗑️ 刪除個股功能 (帶持股=0防呆，100%保留歷史交易流水帳)
+        const deleteStockCard = async (stock) => {
+            if (!stock) return;
+            // 🛑 防呆第一道：若仍有實質持股 (shares > 0)，嚴禁刪除
+            if (Number(stock.shares || 0) > 0) {
+                alert(`🚨【庫存防呆攔截】\n個股 [${stock.code} ${stock.name}] 目前在 [${stock.broker || '玉山證券'}] 尚有實質持股 ${formatNumber(stock.shares)} 股！\n\n系統已物理阻斷刪除。請先結清或於交易FIFO中銷帳至 0 股後，方可移除名冊。`);
+                return;
+            }
+
+            // ⚠️ 二次確認提示
+            const confirmMsg = `⚠️ 確定要從戰情室移除 【${stock.code} ${stock.name} (${stock.broker || '關注'})】 嗎？\n\n📌 即將移除的項目：\n1. 庫存與自選觀察名冊\n2. 該股歷史策略戰報紀錄\n\n💡 注意：過往歷史交易流水帳明細將會 100% 完整保留，以利維持歷史損益對沖帳本不受影響。`;
+            if (!confirm(confirmMsg)) return;
+
+            if (dbInstance) {
+                try {
+                    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+
+                    // 1. 寫入 my_stock 刪除墓碑
+                    const stockUk = makeStockUniqueKey(stock.code, stock.broker || '關注');
+                    dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('my_stock', ?, ?)", [stockUk, nowStr]);
+
+                    // 2. 寫入 gem_strategy 刪除墓碑
+                    try {
+                        const stratRows = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
+                        if (stratRows.length > 0 && stratRows[0].values.length > 0) {
+                            stratRows[0].values.forEach(r => {
+                                const stratUk = makeStrategyUniqueKey(stock.code, r[0]);
+                                dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [stratUk, nowStr]);
+                            });
+                        }
+                    } catch (e_strat) {}
+
+                    // 3. 物理刪除 my_stock 與 gem_strategy (絕不刪除 trade_log)
+                    dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [stock.code, stock.broker || '關注']);
+                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
+
+                    await saveDbToIndexedDb();
+                    const u8 = dbInstance.export();
+                    await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已移除個股)');
+                    hasUnsyncedChanges.value = true;
+                    alert(`🗑️ 已成功將 【${stock.code} ${stock.name}】 移出自選名冊！`);
+                } catch (e) {
+                    console.error("移除個股失敗:", e);
+                    alert("❌ 移除個股失敗：" + e.message);
+                }
+            }
         };
 
         const isFetchingCloudStats = ref(false);
@@ -1913,10 +2060,13 @@ createApp({
             showTradeModal,
             tradeForm,
             onCodeInput,
+            onBrokerSelect,
+            onBrokerInputChange,
             openTradeModal,
             saveTradeRecord,
             isEditingTrade,
             deleteTradeRecord,
+            deleteStockCard,
             formatTradeDate,
             localDbStats,
             cloudDbStats,
