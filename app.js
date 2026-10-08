@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.04');
+        const appVersion = ref('v2.20261008.05');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -55,6 +55,27 @@ createApp({
 
         // ─── 交易 FIFO：時間範圍篩選狀態 (預設近1周，對齊地端歷史交易清算港) ───
         const tradeDateRangeFilter = ref('近1周'); // 近1周 | 近2周 | 近1月 | 近3月 | 全部
+
+        // ─── 全域台股字典快取 (代號 -> 名稱，內建熱門標的兜底) ───
+        const stockDictMap = ref({
+            '0050': '元大台灣50',
+            '0056': '元大高股息',
+            '00878': '國泰永續高股息',
+            '00919': '群益台灣精選高息',
+            '00929': '復華台灣科技優息',
+            '00917': '中信特選金融',
+            '00940': '元大台灣價值高息',
+            '00713': '元大台灣高息低波',
+            '00915': '凱基優選高股息30',
+            '2330': '台積電',
+            '2317': '鴻海',
+            '2454': '聯發科',
+            '2542': '興富發',
+            '2603': '長榮',
+            '2881': '富邦金',
+            '2882': '國泰金',
+            '2891': '中信金'
+        });
 
         // ─── 資料庫狀態與引擎 ───
         let SQL_ENGINE = null;
@@ -332,6 +353,24 @@ createApp({
                 const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(0);
                 dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceName})`;
 
+                // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
+                try {
+                    const dictRes = dbInstance.exec("SELECT stock_code, stock_name FROM stock_dict");
+                    if (dictRes.length > 0 && dictRes[0].values) {
+                        dictRes[0].values.forEach(r => {
+                            const sc = String(r[0] || '').trim();
+                            const sn = String(r[1] || '').trim();
+                            if (sc && sn) {
+                                stockDictMap.value[sc] = sn;
+                                stockDictMap.value[sc.padStart(4, '0')] = sn;
+                                stockDictMap.value[sc.replace(/^0+/, '')] = sn;
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("stock_dict 讀取略過:", e);
+                }
+
                 // 1. 讀取 stock_price (真實最新收盤價)
                 const priceMap = {};
                 try {
@@ -446,6 +485,12 @@ createApp({
                                 totalAmount: Math.round(price * shares)
                             });
 
+                            if (code && name && name !== code) {
+                                stockDictMap.value[code] = name;
+                                stockDictMap.value[code.padStart(4, '0')] = name;
+                                stockDictMap.value[code.replace(/^0+/, '')] = name;
+                            }
+
                             if (!latestTradeDateMap[uid]) {
                                 latestTradeDateMap[uid] = date;
                             }
@@ -527,6 +572,12 @@ createApp({
                             const broker = String(r[4] || '玉山證券').trim();
                             const focusStatus = String(r[5] || '否').trim();
                             const uid = `${code}_${broker}`;
+
+                            if (code && name && name !== code) {
+                                stockDictMap.value[code] = name;
+                                stockDictMap.value[code.padStart(4, '0')] = name;
+                                stockDictMap.value[code.replace(/^0+/, '')] = name;
+                            }
 
                             // 最新價格與日期
                             const pInfo = priceMap[code] || priceMap[code.padStart(4, '0')] || priceMap[code.replace(/^0+/, '')] || {};
@@ -966,15 +1017,51 @@ createApp({
         };
 
         const onCodeInput = () => {
-            const trimmed = tradeForm.value.code.trim();
-            const matched = stockList.value.find(s => s.code === trimmed);
-            if (matched) {
-                tradeForm.value.name = matched.name;
-                if (tradeForm.value.broker !== '關注') {
-                    tradeForm.value.price = matched.price;
+            const raw = tradeForm.value.code ? String(tradeForm.value.code).trim() : '';
+            if (!raw) return;
+
+            // 1. 多維代號比對 (原始、補0成4/5/6碼、去前導0)
+            const keysToTry = [
+                raw,
+                raw.padStart(4, '0'),
+                raw.padStart(5, '0'),
+                raw.padStart(6, '0'),
+                raw.replace(/^0+/, '')
+            ];
+
+            let foundName = '';
+            for (const k of keysToTry) {
+                if (stockDictMap.value && stockDictMap.value[k]) {
+                    foundName = stockDictMap.value[k];
+                    break;
                 }
-                if (matched.broker && !tradeForm.value.broker) {
-                    tradeForm.value.broker = matched.broker;
+            }
+
+            // 2. 若字典未找到，再找現有 stockList 或 recentTradeLogs
+            if (!foundName) {
+                const matchedInList = stockList.value.find(s => keysToTry.includes(s.code));
+                if (matchedInList && matchedInList.name) {
+                    foundName = matchedInList.name;
+                } else {
+                    const matchedInLogs = recentTradeLogs.value.find(t => keysToTry.includes(t.code));
+                    if (matchedInLogs && matchedInLogs.name) {
+                        foundName = matchedInLogs.name;
+                    }
+                }
+            }
+
+            if (foundName) {
+                tradeForm.value.name = foundName;
+            }
+
+            // 3. 現價與券商輔助帶入
+            const matchedStock = stockList.value.find(s => keysToTry.includes(s.code));
+            if (matchedStock) {
+                if (tradeForm.value.broker !== '關注' && (tradeForm.value.price === null || tradeForm.value.price === 0)) {
+                    tradeForm.value.price = matchedStock.price;
+                }
+                if (matchedStock.broker && !tradeForm.value.broker) {
+                    tradeForm.value.broker = matchedStock.broker;
                 }
             }
         };
@@ -1033,6 +1120,17 @@ createApp({
             if (!codeVal) {
                 alert('請填寫股票代號！');
                 return;
+            }
+
+            // 沉澱至本地字典與資料庫
+            if (codeVal && nameVal && nameVal !== codeVal) {
+                stockDictMap.value[codeVal] = nameVal;
+                stockDictMap.value[codeVal.padStart(4, '0')] = nameVal;
+                if (dbInstance) {
+                    try {
+                        dbInstance.run("INSERT OR REPLACE INTO stock_dict (stock_code, stock_name) VALUES (?, ?)", [codeVal, nameVal]);
+                    } catch (e_dict) {}
+                }
             }
 
             // 🎯【關注券商專屬寫入管道 (100% 比照電腦版)】
