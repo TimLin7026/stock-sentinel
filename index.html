@@ -349,11 +349,17 @@
                                 <!-- 底部操作工具列 (對齊地端：🗑️移除個股 + ➕錄入交易) -->
                                 <div :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'" class="pt-1 flex space-x-2 items-center border-t">
                                     <button @click.stop="deleteStockCard(stock)" 
-                                            :class="theme === 'dark' ? 'bg-rose-950/80 hover:bg-rose-900 text-rose-300 border-rose-900/50' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'"
+                                            :disabled="Number(stock.shares || 0) > 0"
+                                            :title="Number(stock.shares || 0) > 0 ? `尚有實質持股 (${formatNumber(stock.shares)} 股)，無法移除個股` : '從戰情室名冊中移除此個股'"
+                                            :class="[
+                                                Number(stock.shares || 0) > 0
+                                                    ? (theme === 'dark' ? 'opacity-40 cursor-not-allowed bg-slate-900 text-slate-500 border-slate-800' : 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200')
+                                                    : (theme === 'dark' ? 'bg-rose-950/80 hover:bg-rose-900 text-rose-300 border-rose-900/50 active:scale-95' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 active:scale-95')
+                                            ]"
                                             class="w-1/3 py-2 rounded-xl font-bold text-xs flex items-center justify-center border transition">
                                         <i class="fa-solid fa-trash-can mr-1.5"></i>移除個股
                                     </button>
-                                    <button @click.stop="openTradeModal(stock)" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center shadow transition">
+                                    <button @click.stop="openTradeModal(stock)" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center shadow transition active:scale-95">
                                         <i class="fa-solid fa-plus mr-1.5"></i>錄入交易
                                     </button>
                                 </div>
@@ -732,6 +738,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261008.02"></script>
+    <script src="app.js?v=2.20261008.03"></script>
 </body>
 </html>
