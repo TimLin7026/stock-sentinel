@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261007.09');
+        const appVersion = ref('v2.20261008.01');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -121,6 +121,15 @@ createApp({
             } catch(e) {
                 return '';
             }
+        };
+
+        const markAsSynced = () => {
+            if (!dbInstance) return;
+            const curFp = getLocalDbFingerprint();
+            if (curFp) {
+                localStorage.setItem('sentinel_last_sync_fingerprint', curFp);
+            }
+            hasUnsyncedChanges.value = false;
         };
 
         const checkUnsyncedStatus = () => {
@@ -1451,9 +1460,7 @@ createApp({
                 googleUser.value.lastSyncTime = nowStr;
                 localStorage.setItem('sentinel_last_sync_time', nowStr);
 
-                const newFp = getLocalDbFingerprint();
-                localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
-                hasUnsyncedChanges.value = false;
+                markAsSynced();
                 return true;
             } else {
                 throw new Error(`Google Drive API 上傳失敗 (HTTP ${upRes.status})`);
@@ -1512,9 +1519,7 @@ createApp({
                     await loadDatabaseFromArrayBuffer(cloudBuf, '雲端資料庫');
                     updateLocalDbStats();
                     await fetchCloudDbStats();
-                    const newFp = getLocalDbFingerprint();
-                    localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
-                    hasUnsyncedChanges.value = false;
+                    markAsSynced();
                     alert("✅ 雲端全量資料庫已成功鏡像同步至手機！\n最新現價、價金與特別關注名單已 100% 對齊。");
                     return;
                 }
@@ -1709,9 +1714,7 @@ createApp({
                 updateLocalDbStats();
                 await fetchCloudDbStats();
 
-                const newFp = getLocalDbFingerprint();
-                localStorage.setItem('sentinel_last_sync_fingerprint', newFp);
-                hasUnsyncedChanges.value = false;
+                markAsSynced();
 
                 alert("🤝 全量鏡像同步成功！\n最新現價、價金、5 家特別關注標的與完整字典已 100% 鏡像對齊。");
             } catch (err) {
@@ -1737,6 +1740,7 @@ createApp({
                 const u8 = dbInstance.export();
                 await uploadBufferToGoogleDrive(u8);
                 await fetchCloudDbStats();
+                markAsSynced();
                 alert("📤 單向上傳備份成功！雲端資料庫已覆蓋更新。");
             } catch (err) {
                 console.error("單向上傳失敗:", err);
@@ -1774,6 +1778,7 @@ createApp({
                     await loadDatabaseFromArrayBuffer(buffer, 'Google Drive 雲端 (單向覆蓋)');
                     updateLocalDbStats();
                     await fetchCloudDbStats();
+                    markAsSynced();
                     alert(`📥 單向下載還原成功！\n已成功載入雲端最新主檔 (${(buffer.byteLength / 1024).toFixed(0)} KB)。`);
                 } else {
                     alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。");
