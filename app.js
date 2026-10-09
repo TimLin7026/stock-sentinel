@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.05');
+        const appVersion = ref('v2.20261009.06');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -1014,9 +1014,29 @@ createApp({
             });
         };
 
-        // 監聽分頁與券商篩選切換
-        watch(currentTab, (newTab) => {
-            expandedStockUids.value.clear();
+        // 監聽分頁與券商篩選切換 (保留個股展開狀態，並支援切回平滑定錨)
+        let lastStocksScrollTop = 0;
+        watch(currentTab, (newTab, oldTab) => {
+            if (oldTab === 'stocks') {
+                lastStocksScrollTop = window.scrollY || document.documentElement.scrollTop;
+            }
+            if (newTab === 'stocks') {
+                nextTick(() => {
+                    setTimeout(() => {
+                        const openedUids = Array.from(expandedStockUids.value);
+                        if (openedUids.length > 0) {
+                            const targetEl = document.getElementById(`stock-card-${openedUids[0]}`);
+                            if (targetEl) {
+                                targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                return;
+                            }
+                        }
+                        if (lastStocksScrollTop > 0) {
+                            window.scrollTo({ top: lastStocksScrollTop, behavior: 'smooth' });
+                        }
+                    }, 50);
+                });
+            }
             if (newTab === 'dashboard') {
                 nextTick(() => {
                     setTimeout(renderAssetChart, 50);

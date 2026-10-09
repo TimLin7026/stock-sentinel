@@ -191,12 +191,21 @@
                     </button>
                 </div>
 
-                <!-- 搜尋過濾器 -->
-                <div class="relative">
-                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
-                    <input v-model="stockSearchQuery" type="text" placeholder="搜尋代號或名稱 (例: 2542 或 興富發)..." 
-                           :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'"
-                           class="w-full border rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-sky-500">
+                <!-- 搜尋過濾器與 💎 富貴 Gem 按鈕 -->
+                <div class="flex items-center space-x-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                        <input v-model="stockSearchQuery" type="text" placeholder="搜尋代號或名稱 (例: 2542 或 興富發)..." 
+                               :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'"
+                               class="w-full border rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-sky-500">
+                    </div>
+                    <a href="https://gemini.google.com/gem/1e54BS1_dFM3cVc7r0hZYAxujmT18R5tQ?usp=sharing" 
+                       target="_blank" 
+                       class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1.5 border shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border-indigo-400/30"
+                       title="開啟 Google Gemini 財經富貴 Gem (支援喚起 App)">
+                        <span class="text-xs">💎</span>
+                        <span class="whitespace-nowrap font-medium">富貴 Gem</span>
+                    </a>
                 </div>
 
                 <!-- 個股卡片列表 -->
@@ -875,6 +884,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261009.05"></script>
+    <script src="app.js?v=2.20261009.06"></script>
 </body>
 </html>
