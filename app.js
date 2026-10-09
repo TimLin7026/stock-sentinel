@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.07');
+        const appVersion = ref('v2.20261009.08');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -184,6 +184,8 @@ createApp({
         };
 
         // ─── 雲端大腦全市場快照同步與時間追蹤狀態 ───
+        let currentMarketSnapshotData = null; // 記憶體常駐快照快取
+
         const marketSyncMeta = ref({
             fetchTime: localStorage.getItem('sentinel_market_fetch_time') || '',
             marketDate: localStorage.getItem('sentinel_market_date') || '',
@@ -255,6 +257,7 @@ createApp({
         // 將全市場快照行情與指標注入前端狀態
         const applyMarketSnapshot = (snapshotData, meta = {}) => {
             if (!snapshotData || typeof snapshotData !== 'object') return 0;
+            currentMarketSnapshotData = snapshotData;
 
             // 1. 同步擴充台股代號與名稱字典
             Object.keys(snapshotData).forEach(c => {
@@ -262,13 +265,19 @@ createApp({
                 if (item && item.name) {
                     stockDictMap.value[c] = item.name;
                     stockDictMap.value[c.padStart(4, '0')] = item.name;
+                    stockDictMap.value[c.padStart(5, '0')] = item.name;
                 }
             });
 
             // 2. 更新持股與自選股之最新行情與指標
             let matchedCount = 0;
             stockList.value.forEach(s => {
-                const snap = snapshotData[s.code] || snapshotData[s.code.padStart(4, '0')] || snapshotData[s.code.replace(/^0+/, '')];
+                const rawCode = String(s.code || '').trim();
+                const snap = snapshotData[rawCode] 
+                    || snapshotData[rawCode.padStart(4, '0')] 
+                    || snapshotData[rawCode.padStart(5, '0')] 
+                    || snapshotData[rawCode.replace(/^0+/, '')];
+
                 if (snap) {
                     matchedCount++;
                     if (snap.p && snap.p > 0) {
@@ -1052,6 +1061,18 @@ createApp({
 
                 if (parsedStocks.length > 0) {
                     stockList.value = parsedStocks;
+                }
+
+                // ⚡ 若記憶體或本機存有最新行情快照，立即全盤注入最新收盤價與 6 大指標 (拒絕現價為 0)
+                if (currentMarketSnapshotData) {
+                    applyMarketSnapshot(currentMarketSnapshotData);
+                } else if (window.localforage) {
+                    try {
+                        const cachedSnap = await localforage.getItem('sentinel_market_snapshot');
+                        if (cachedSnap) {
+                            applyMarketSnapshot(cachedSnap);
+                        }
+                    } catch (e) {}
                 }
 
                 // 儲存至 IndexedDB
@@ -2526,6 +2547,30 @@ createApp({
                         }
                     }
                 } catch (ea) {}
+
+                // ⚡ 5. 結合雲端快照補完名冊中尚未有本地 K 線的個股 (如 00770 等關注股)
+                if (!currentMarketSnapshotData && window.localforage) {
+                    try {
+                        currentMarketSnapshotData = await localforage.getItem('sentinel_market_snapshot');
+                    } catch (e) {}
+                }
+
+                if (currentMarketSnapshotData) {
+                    for (const sc of stockListArr) {
+                        const snap = currentMarketSnapshotData[sc] 
+                            || currentMarketSnapshotData[sc.padStart(4, '0')] 
+                            || currentMarketSnapshotData[sc.padStart(5, '0')] 
+                            || currentMarketSnapshotData[sc.replace(/^0+/, '')];
+                        if (snap && snap.p > 0) {
+                            const pDate = snap.d ? (snap.d.length === 8 ? `${snap.d.slice(0, 4)}-${snap.d.slice(4, 6)}-${snap.d.slice(6, 8)}` : snap.d) : '2026-10-08';
+                            dbInstance.run(
+                                "INSERT OR REPLACE INTO stock_price (stock_code, price, date, change_pct) VALUES (?, ?, ?, ?)",
+                                [sc, snap.p, pDate, snap.pct || 0.0]
+                            );
+                            recomputedCount++;
+                        }
+                    }
+                }
 
                 await saveDbToIndexedDb();
                 const u8 = dbInstance.export();
