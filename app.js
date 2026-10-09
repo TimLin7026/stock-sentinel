@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.02');
+        const appVersion = ref('v2.20261009.03');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -3543,6 +3543,20 @@ createApp({
             deleteStockCard,
             buildStock10DayReport,
             copyStock10DayReport,
+            tradeSearchKeyword,
+            clearTradeSearch,
+            goToTradeHistory,
+            showImportReportModal,
+            importReportForm,
+            openImportReportModal,
+            closeImportReportModal,
+            parseReportText,
+            submitImportReport,
+            updateMarketHolidays,
+            isUpdatingHolidays,
+            batchPatchData,
+            isBatchPatching,
+            batchPatchProgress,
             toastMsg,
             showToast,
             formatTradeDate,
