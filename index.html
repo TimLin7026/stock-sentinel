@@ -70,10 +70,10 @@
                                 : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
                         ]"
                         class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
-                        title="一鍵同步">
+                        title="同步">
                     <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs text-sky-400"></i>
                     <i v-else class="fa-solid fa-rotate text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-400'"></i>
-                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '一鍵同步' }}</span>
+                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '同步' }}</span>
                 </button>
 
                 <!-- ⚙️ 雲端設定燈號按鈕 -->
