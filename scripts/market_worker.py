@@ -365,27 +365,28 @@ def init_history_db(db_path):
             trade_date TEXT,
             stock_code TEXT,
             stock_name TEXT,
-            market_type TEXT,
-            open_price REAL,
-            high_price REAL,
-            low_price REAL,
-            close_price REAL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
             volume INTEGER,
             foreign_buy INTEGER,
             sitc_buy INTEGER,
             dealers_buy INTEGER,
             margin_balance INTEGER,
+            mkt TEXT,
             PRIMARY KEY (trade_date, stock_code)
         )
     """)
-    # 自動補齊舊資料庫可能缺失的欄位
+    # 自動相容升級：檢查必要欄位
     cur.execute("PRAGMA table_info(daily_kline)")
     existing_cols = [row[1] for row in cur.fetchall()]
-    if 'market_type' not in existing_cols:
-        try:
-            cur.execute("ALTER TABLE daily_kline ADD COLUMN market_type TEXT")
-        except:
-            pass
+    for col in ['open', 'high', 'low', 'close', 'volume', 'foreign_buy', 'sitc_buy', 'dealers_buy', 'margin_balance', 'mkt']:
+        if col not in existing_cols:
+            try:
+                cur.execute(f"ALTER TABLE daily_kline ADD COLUMN {col} TEXT")
+            except:
+                pass
     cur.execute("CREATE INDEX IF NOT EXISTS idx_kline_code ON daily_kline (stock_code, trade_date)")
     conn.commit()
     return conn
