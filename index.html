@@ -88,9 +88,67 @@
         <main :class="theme === 'dark' ? 'bg-[#0b0f19]' : 'bg-slate-50'" class="flex-1 p-3.5 space-y-3.5 overflow-y-auto no-scrollbar transition-colors">
 
             <!-- ========================================== -->
+            <!-- 🔒 專屬戰情中樞・Google 帳號綁定安全閘門 (未登入時全屏引導) -->
+            <!-- ========================================== -->
+            <section v-if="!isAppUnlocked && currentTab !== 'settings'" class="py-8 px-4 flex flex-col items-center text-center space-y-6">
+                <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-sky-600 to-indigo-500 flex items-center justify-center text-3xl shadow-xl shadow-sky-500/20 animate-pulse">
+                    <i class="fa-solid fa-shield-halved text-white"></i>
+                </div>
+                
+                <div class="space-y-2">
+                    <h2 :class="theme === 'dark' ? 'text-white' : 'text-slate-900'" class="text-lg font-bold">
+                        啟用您的專屬行動戰情室
+                    </h2>
+                    <p :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-xs leading-relaxed max-w-xs mx-auto">
+                        綁定 Google 帳號後，將自動連線您的專屬 Google Drive 私人雲端帳本，並同步全市場 2,385 檔即時行情與 6 大青紅燈指標。
+                    </p>
+                </div>
+
+                <!-- 3 大安全特色 -->
+                <div class="w-full space-y-2.5 text-left text-xs">
+                    <div :class="theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'" class="p-3 rounded-xl border flex items-start space-x-3">
+                        <span class="text-sky-400 text-sm mt-0.5"><i class="fa-solid fa-lock"></i></span>
+                        <div>
+                            <div class="font-bold">100% 私人數據沙盒</div>
+                            <div class="text-slate-400 text-[11px]">交易紀錄與持股成本僅存放於您的個人 Google Drive。</div>
+                        </div>
+                    </div>
+                    <div :class="theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'" class="p-3 rounded-xl border flex items-start space-x-3">
+                        <span class="text-emerald-400 text-sm mt-0.5"><i class="fa-solid fa-bolt"></i></span>
+                        <div>
+                            <div class="font-bold">全市場 2,385 檔秒級行情</div>
+                            <div class="text-slate-400 text-[11px]">直連雲端大腦，0.3 秒極速同步最新收盤價與青紅燈。</div>
+                        </div>
+                    </div>
+                    <div :class="theme === 'dark' ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'" class="p-3 rounded-xl border flex items-start space-x-3">
+                        <span class="text-amber-400 text-sm mt-0.5"><i class="fa-solid fa-arrows-rotate"></i></span>
+                        <div>
+                            <div class="font-bold">電腦與手機雙向無縫合流</div>
+                            <div class="text-slate-400 text-[11px]">隨時隨地查看未實現損益與個人戰情報告。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 登入大按鈕 -->
+                <div class="w-full pt-2 space-y-2">
+                    <button @click="handleGoogleLogin" 
+                            class="w-full bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-bold py-3 px-4 rounded-xl text-sm shadow-lg shadow-sky-500/30 flex items-center justify-center space-x-2 transition active:scale-95">
+                        <i class="fa-brands fa-google"></i>
+                        <span>以 Google 帳號登入並啟用</span>
+                    </button>
+                    <button @click="currentTab = 'settings'" 
+                            :class="theme === 'dark' ? 'text-slate-400 hover:text-slate-300' : 'text-slate-600 hover:text-slate-800'"
+                            class="text-xs py-1 transition flex items-center justify-center space-x-1 mx-auto">
+                        <i class="fa-solid fa-gear"></i>
+                        <span>自訂 Client ID / 進階設定</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- ========================================== -->
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
-            <section v-if="currentTab === 'dashboard'" class="space-y-3.5">
+            <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
                 <!-- ⏱️ 行情資料與大腦產出時間比對徽章 -->
                 <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800/80 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" 
                      class="border rounded-xl px-3 py-2 text-[11px] flex items-center justify-between cursor-pointer hover:border-sky-500/50 transition"
@@ -170,7 +228,7 @@
             <!-- ========================================== -->
             <!-- 2️⃣ 📈 模組二：個股戰情報告 (3大分頁切換) -->
             <!-- ========================================== -->
-            <section v-if="currentTab === 'stocks'" class="space-y-3">
+            <section v-if="isAppUnlocked && currentTab === 'stocks'" class="space-y-3">
                 <!-- 3 大分類分頁標籤 (預設：現役持股區) -->
                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex p-1 rounded-xl border text-xs font-semibold">
                     <button @click="stockSubTab = 'holding'" 
@@ -439,7 +497,7 @@
             <!-- ========================================== -->
             <!-- 3️⃣ 🧮 模組三：交易 FIFO 與記帳錄入 -->
             <!-- ========================================== -->
-            <section v-if="currentTab === 'fifo'" class="space-y-3.5">
+            <section v-if="isAppUnlocked && currentTab === 'fifo'" class="space-y-3.5">
                 <!-- 記帳按鈕 -->
                 <button @click="openTradeModal()" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center space-x-2 transition">
                     <i class="fa-solid fa-pen-to-square text-base"></i>
@@ -906,6 +964,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261009.06"></script>
+    <script src="app.js?v=2.20261009.09"></script>
 </body>
 </html>

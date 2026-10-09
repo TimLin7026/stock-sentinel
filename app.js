@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.08');
+        const appVersion = ref('v2.20261009.09');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -127,6 +127,11 @@ createApp({
         const syncStatus = ref({
             loading: false,
             message: ''
+        });
+
+        // ─── 權限閘門：必須綁定 Google 帳號才可完整解鎖戰情中樞 ───
+        const isAppUnlocked = computed(() => {
+            return googleUser.value.isLoggedIn && !!googleAccessToken.value;
         });
 
         // ─── 雲地同步異動感知與未對齊高亮狀態 ───
@@ -413,6 +418,13 @@ createApp({
 
         // 🔄 一鍵同步入口 (支援全市場行情秒級同步 + 個人雲端帳本雙向同步)
         const handleOneClickSync = async () => {
+            if (!isAppUnlocked.value) {
+                if (confirm("🔒 需先綁定 Google 帳號以啟用戰情室完整功能，是否立即進行 Google 授權登入？")) {
+                    handleGoogleLogin();
+                }
+                return;
+            }
+
             if (syncStatus.value.loading) return;
             syncStatus.value.loading = true;
             syncStatus.value.message = '正在同步全市場行情...';
@@ -3493,8 +3505,14 @@ createApp({
                         }
                     } catch (e) {}
 
-                    alert('🎉 Google 帳號授權成功！已連線至 Google 雲端同步中樞。');
+                    showToast('🎉 Google 帳號授權成功！正在載入專屬戰情室...', 3000);
                     await fetchCloudDbStats();
+
+                    // ⚡ 連鎖自動載入：
+                    // 1. 同步全市場 2,385 檔行情快照
+                    syncMarketSnapshot().catch(e => console.warn("快照同步警告:", e));
+                    // 2. 雙向合流個人雲端帳本
+                    executeTwoWaySync().catch(e => console.warn("雲端帳本同步警告:", e));
                 }
             });
 
@@ -3502,12 +3520,19 @@ createApp({
         };
 
         const handleGoogleLogout = () => {
-            if (confirm('確定要解除 Google 帳號連結嗎？')) {
+            if (confirm('🔒 確定要解除 Google 帳號綁定並登出戰情室嗎？\n登出後將鎖定主要戰情功能。')) {
                 googleUser.value.isLoggedIn = false;
                 googleUser.value.email = '';
                 googleAccessToken.value = '';
                 localStorage.removeItem('sentinel_gdrive_token');
                 localStorage.removeItem('sentinel_gdrive_email');
+                localStorage.removeItem('sentinel_last_sync_time');
+                stockList.value = [];
+                isDbLoaded.value = false;
+                currentMarketSnapshotData = null;
+                if (window.localforage) {
+                    localforage.removeItem('sentinel_db_bytes').catch(() => {});
+                }
                 cloudDbStats.value = {
                     lastModified: '未連接雲端或尚未查詢',
                     tradeLogCount: '---',
@@ -3516,6 +3541,7 @@ createApp({
                     fileId: '',
                     sizeKB: 0
                 };
+                showToast('👋 已安全登出戰情室', 3000);
             }
         };
 
@@ -4353,6 +4379,7 @@ createApp({
             handleOneClickSync,
             syncMarketSnapshot,
             marketSyncMeta,
+            isAppUnlocked,
             triggerSync,
             triggerFileInput,
             handleDbFileSelected,
