@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.09');
+        const appVersion = ref('v2.20261009.10');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -454,7 +454,8 @@ createApp({
 
             if (snapInfo) {
                 const timeOnly = snapInfo.fetchTime.split(' ')[1] || snapInfo.fetchTime;
-                showToast(`✅ 一鍵同步完成！\n📅 開市日：${snapInfo.marketDate}\n☁️ 雲端產出：${snapInfo.cloudGeneratedAt}\n⏱️ 下載時間：${timeOnly}\n📊 共 ${snapInfo.totalCount} 檔股票`, 4500);
+                const cloudOnly = snapInfo.cloudGeneratedAt.split(' ')[1] || snapInfo.cloudGeneratedAt;
+                showToast(`✅ 一鍵同步完成！\n📅 開市日：${snapInfo.marketDate} (${snapInfo.totalCount} 檔)\n⏱️ 下載時間：${timeOnly} │ ☁️ 雲端產出：${cloudOnly}`, 4500);
             }
         };
 
@@ -2504,7 +2505,7 @@ createApp({
 
                 // 3. 確保資料表結構存在
                 dbInstance.run("CREATE TABLE IF NOT EXISTS stock_heatmap_cache (stock_code TEXT PRIMARY KEY, cache_data TEXT)");
-                dbInstance.run("CREATE TABLE IF NOT EXISTS stock_price (stock_code TEXT PRIMARY KEY, price REAL, date TEXT, change_pct REAL)");
+                dbInstance.run("CREATE TABLE IF NOT EXISTS stock_price (stock_code TEXT PRIMARY KEY, cache_data TEXT)");
 
                 // 4. 掃描 stock_analysis 快取並清洗休市日資料與重新計算指標
                 let totalCleaned = 0;
@@ -2547,10 +2548,15 @@ createApp({
                                             [sc, JSON.stringify(heatmapObj)]
                                         );
 
-                                        // 寫入 stock_price
+                                        // 寫入 stock_price (cache_data JSON 格式)
+                                        const pObj = {
+                                            price: calcResult.latestPrice,
+                                            date: calcResult.latestDate,
+                                            change_pct: calcResult.changePct || 0.0
+                                        };
                                         dbInstance.run(
-                                            "INSERT OR REPLACE INTO stock_price (stock_code, price, date, change_pct) VALUES (?, ?, ?, ?)",
-                                            [sc, calcResult.latestPrice, calcResult.latestDate, calcResult.changePct || 0.0]
+                                            "INSERT OR REPLACE INTO stock_price (stock_code, cache_data) VALUES (?, ?)",
+                                            [sc, JSON.stringify(pObj)]
                                         );
                                         recomputedCount++;
                                     }
@@ -2575,9 +2581,15 @@ createApp({
                             || currentMarketSnapshotData[sc.replace(/^0+/, '')];
                         if (snap && snap.p > 0) {
                             const pDate = snap.d ? (snap.d.length === 8 ? `${snap.d.slice(0, 4)}-${snap.d.slice(4, 6)}-${snap.d.slice(6, 8)}` : snap.d) : '2026-10-08';
+                            const snapPriceObj = {
+                                price: snap.p,
+                                date: pDate,
+                                change: snap.chg || 0,
+                                change_pct: snap.pct || 0
+                            };
                             dbInstance.run(
-                                "INSERT OR REPLACE INTO stock_price (stock_code, price, date, change_pct) VALUES (?, ?, ?, ?)",
-                                [sc, snap.p, pDate, snap.pct || 0.0]
+                                "INSERT OR REPLACE INTO stock_price (stock_code, cache_data) VALUES (?, ?)",
+                                [sc, JSON.stringify(snapPriceObj)]
                             );
                             recomputedCount++;
                         }

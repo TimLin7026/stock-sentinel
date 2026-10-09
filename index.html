@@ -931,11 +931,12 @@
         </div>
 
 
-        <!-- 📋 全域浮動 Toast 提示 -->
+        <!-- 📋 全域浮動 Toast 提示 (支援多行折行與頁寬完美適配) -->
         <transition name="fade">
-            <div v-if="toastMsg" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-slate-900/95 text-white border border-sky-500/50 shadow-2xl backdrop-blur text-xs font-bold flex items-center space-x-2 pointer-events-none max-w-[90vw] text-center">
-                <i class="fa-solid fa-circle-check text-sky-400 text-sm"></i>
-                <span class="truncate">{{ toastMsg }}</span>
+            <div v-if="toastMsg" 
+                 class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-slate-900/95 text-white border border-sky-500/50 shadow-2xl backdrop-blur text-xs font-medium flex items-start space-x-2.5 pointer-events-none w-[90vw] max-w-sm">
+                <i class="fa-solid fa-circle-check text-sky-400 text-sm mt-0.5 flex-shrink-0"></i>
+                <div class="whitespace-pre-line leading-relaxed flex-1 text-slate-100 text-[11px] font-mono select-none break-words">{{ toastMsg }}</div>
             </div>
         </transition>
 
@@ -964,6 +965,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261009.09"></script>
+    <script src="app.js?v=2.20261009.10"></script>
 </body>
 </html>
