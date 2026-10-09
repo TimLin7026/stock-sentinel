@@ -136,6 +136,9 @@ createApp({
                 if (res.ok) {
                     const data = await res.json();
                     healthData.value = data;
+                    if (!customTargetDate.value && latestTradingDate.value) {
+                        customTargetDate.value = latestTradingDate.value;
+                    }
                 } else {
                     console.warn("尚未生成 market_health.json");
                     healthData.value.status = "NO_DATA_YET";
@@ -260,6 +263,10 @@ createApp({
             return `${dt.slice(0, 4)}/${dt.slice(4, 6)}/${dt.slice(6, 8)}`;
         });
 
+        const resetCustomDateToLatest = () => {
+            customTargetDate.value = latestTradingDate.value;
+        };
+
         // ─── 5. 遠端觸發 GitHub Actions (workflow_dispatch) ───
         const triggerGitHubDispatch = async (targetDate = '', scanDays = '0') => {
             if (!githubPat.value) {
@@ -272,7 +279,7 @@ createApp({
             if (scanDays && Number(scanDays) > 0) {
                 promptMsg = `確定要遠端啟動【近 ${scanDays} 日數據深度檢測與自動回補】嗎？\n雲端大腦將自動比對缺失日期並依序補齊入庫。`;
             } else if (targetDate) {
-                promptMsg = `確定要手動遠端觸發 GitHub 雲端大腦，補抓 [${targetDate}] 的盤後大數據嗎？`;
+                promptMsg = `確定要手動遠端觸發 GitHub 雲端大腦，補抓與重算 [${targetDate}] 的盤後大數據並發布快照嗎？`;
             } else {
                 promptMsg = `確定要立即遠端喚醒 GitHub 雲端大腦，強制重抓今日盤後數據嗎？`;
             }
@@ -301,8 +308,7 @@ createApp({
                 });
 
                 if (res.status === 204 || res.ok) {
-                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n預計約 30~90 秒內完成檢測、指標計算與快照發布。稍後點擊「刷新狀態」即可檢視最新報表。`);
-                    customTargetDate.value = '';
+                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n正在執行 [${targetDate || '最新交易日'}] 的數據爬取、指標滾算與快照發布。\n預計約 30~90 秒內完成，稍後點擊「刷新狀態」即可檢視最新報表。`);
                 } else {
                     const errJson = await res.json().catch(() => ({}));
                     alert(`❌ 觸發失敗 (HTTP ${res.status}):\n${errJson.message || '請確認 GitHub PAT 權限是否包含 workflow 權限。'}`);
@@ -320,6 +326,9 @@ createApp({
 
         // ─── 初始化生命週期 ───
         onMounted(() => {
+            if (!customTargetDate.value && latestTradingDate.value) {
+                customTargetDate.value = latestTradingDate.value;
+            }
             const savedEmail = localStorage.getItem('sentinel_admin_email');
             if (savedEmail) {
                 verifyAdminEmail(savedEmail);
@@ -348,6 +357,7 @@ createApp({
             customTargetDate,
             latestTradingDate,
             latestTradingDateLabel,
+            resetCustomDateToLatest,
             isTriggering,
             showPatSetting,
             githubPat,

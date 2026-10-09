@@ -193,7 +193,7 @@
                     <h2 class="font-bold text-sm sm:text-base text-slate-100">遠端維運與手動重抓控制台</h2>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <!-- 1. 深度掃描並補齊近 120 日缺漏 (核心一鍵自癒) -->
                     <div class="bg-gradient-to-br from-indigo-950/40 to-slate-950 border border-indigo-800/50 rounded-2xl p-4 flex flex-col justify-between space-y-3">
                         <div>
@@ -212,35 +212,32 @@
                         </button>
                     </div>
 
-                    <!-- 2. 強制重抓最近 1 個開市日 -->
+                    <!-- 2. 指定日期重抓與計算 (預設最近開市日) -->
                     <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
                         <div>
-                            <h3 class="font-bold text-xs text-slate-200 mb-1">🚨 強制重抓開市日數據</h3>
-                            <p class="text-[11px] text-slate-400 leading-relaxed">
-                                自動鎖定並爬取 <span class="text-amber-300 font-mono font-bold">{{ latestTradingDateLabel }}</span> 全市場盤後數據，重新滾算 2,400+ 檔指標並替換快照。
-                            </p>
-                        </div>
-                        <button @click="triggerGitHubDispatch(latestTradingDate)" :disabled="isTriggering"
-                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-rose-600/30">
-                            <i class="fa-solid fa-bolt"></i>
-                            <span>{{ isTriggering ? '發送喚醒信號中...' : `重抓 ${latestTradingDateLabel}` }}</span>
-                        </button>
-                    </div>
-
-                    <!-- 3. 指定歷史日期補抓 -->
-                    <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
-                        <div>
-                            <h3 class="font-bold text-xs text-slate-200 mb-1">📅 指定歷史日期補抓</h3>
+                            <div class="flex justify-between items-center mb-1">
+                                <h3 class="font-bold text-xs text-slate-200 flex items-center space-x-1.5">
+                                    <i class="fa-solid fa-calendar-day text-rose-400"></i>
+                                    <span>指定交易日重抓與計算</span>
+                                </h3>
+                                <button @click="resetCustomDateToLatest" class="text-sky-400 hover:text-sky-300 transition text-[10px] flex items-center space-x-1 font-mono">
+                                    <i class="fa-solid fa-rotate-left text-[9px]"></i>
+                                    <span>預設最近開市日</span>
+                                </button>
+                            </div>
                             <p class="text-[11px] text-slate-400 leading-relaxed mb-2">
-                                輸入指定歷史交易日進行單日重算補完 (格式: YYYYMMDD)。
+                                輸入指定開市日爬取全市場盤後數據並重算指標。預設為最近開市日。
                             </p>
-                            <input v-model="customTargetDate" type="text" placeholder="例: 20261008" maxlength="8"
-                                   class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500">
+                            <div class="relative">
+                                <input v-model="customTargetDate" type="text" placeholder="例: 20261008" maxlength="8"
+                                       class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500">
+                                <span class="absolute right-3 top-2 text-[10px] text-slate-500 font-mono pointer-events-none">YYYYMMDD</span>
+                            </div>
                         </div>
-                        <button @click="triggerGitHubDispatch(customTargetDate)" :disabled="isTriggering || !customTargetDate"
-                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-white transition active:scale-95 flex items-center justify-center space-x-2 border border-slate-700">
-                            <i class="fa-solid fa-calendar-check"></i>
-                            <span>執行指定日期補抓</span>
+                        <button @click="triggerGitHubDispatch(customTargetDate || latestTradingDate)" :disabled="isTriggering || !(customTargetDate || latestTradingDate)"
+                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-rose-600/30 disabled:opacity-50">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>{{ isTriggering ? '發送喚醒信號中...' : `重抓並計算 ${customTargetDate || latestTradingDate}` }}</span>
                         </button>
                     </div>
                 </div>
