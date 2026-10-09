@@ -70,10 +70,10 @@
                                 : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
                         ]"
                         class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
-                        title="🔄 一鍵同步">
+                        title="一鍵同步">
                     <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs text-sky-400"></i>
                     <i v-else class="fa-solid fa-rotate text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-400'"></i>
-                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '🔄 一鍵同步' }}</span>
+                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '一鍵同步' }}</span>
                 </button>
 
                 <!-- ⚙️ 雲端設定燈號按鈕 -->
@@ -153,7 +153,7 @@
                 <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800/80 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" 
                      class="border rounded-xl px-3 py-2 text-[11px] flex items-center justify-between cursor-pointer hover:border-sky-500/50 transition"
                      @click="handleOneClickSync"
-                     title="點擊立即執行 🔄 一鍵同步">
+                     title="點擊立即執行一鍵同步">
                     <div class="flex items-center space-x-1.5 overflow-hidden">
                         <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
                         <span class="font-bold whitespace-nowrap text-sky-400">📅 {{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }}</span>
@@ -455,7 +455,7 @@
                                                 class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
                                                 title="匯入戰情報告">
                                             <i class="fa-solid fa-brain text-[10px]"></i>
-                                            <span>🧠 匯入戰報</span>
+                                            <span>匯入戰報</span>
                                         </button>
                                     </div>
                                     <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
@@ -501,7 +501,7 @@
                 <!-- 記帳按鈕 -->
                 <button @click="openTradeModal()" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center space-x-2 transition">
                     <i class="fa-solid fa-pen-to-square text-base"></i>
-                    <span class="text-sm">➕ 快速錄入交易記錄 (隨手記帳)</span>
+                    <span class="text-sm">快速錄入交易記錄 (隨手記帳)</span>
                 </button>
 
                 <!-- 最近交易紀錄清單 (歷史交易流水帳清算港) -->
@@ -665,13 +665,13 @@
                                     :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
                                     class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
                                 <i class="fa-solid fa-cloud-arrow-up text-sky-500"></i>
-                                <span>📤 單向上傳至雲端</span>
+                                <span>單向上傳至雲端</span>
                             </button>
                             <button @click="executeSingleDownload" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
                                     :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
                                     class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
                                 <i class="fa-solid fa-cloud-arrow-down text-emerald-500"></i>
-                                <span>📥 單向從雲端下載</span>
+                                <span>單向從雲端下載</span>
                             </button>
                         </div>
                     </div>
@@ -687,7 +687,7 @@
                                     class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
                                     title="同步證交所與雲端休市表">
                                 <i class="fa-solid fa-calendar-days text-sky-500" :class="isUpdatingHolidays ? 'fa-spin' : ''"></i>
-                                <span>{{ isUpdatingHolidays ? '更新中...' : '📅 更新休市日' }}</span>
+                                <span>{{ isUpdatingHolidays ? '更新中...' : '更新休市日' }}</span>
                             </button>
 
                             <button @click="batchPatchData" :disabled="isBatchPatching || !isDbLoaded"
@@ -695,7 +695,7 @@
                                     class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
                                     title="清除休市日殘留並校準指標健康度">
                                 <i class="fa-solid fa-bolt-lightning text-amber-500" :class="isBatchPatching ? 'fa-spin' : ''"></i>
-                                <span>{{ isBatchPatching ? '補完中...' : '⚡ 批量差異補完' }}</span>
+                                <span>{{ isBatchPatching ? '補完中...' : '批量差異補完' }}</span>
                             </button>
                         </div>
                     </div>
