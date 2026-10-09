@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.04');
+        const appVersion = ref('v2.20261009.05');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -1744,7 +1744,434 @@ createApp({
             }
         };
 
-        // ─── ⚡ 手機端「批量差異補完」模組 (全量個股健康度巡航與休市日清洗) ───
+        // ─── 🧠 手機端共用技術指標與策略特徵運算核心 (100% 復刻電腦版 update_stock_heatmap_cache_engine) ───
+        const calculateStockIndicatorsFromAnalysis = (analysisRaw) => {
+            if (!analysisRaw || typeof analysisRaw !== 'object' || Object.keys(analysisRaw).length === 0) {
+                return null;
+            }
+
+            const sortedDates = Object.keys(analysisRaw).sort();
+            const rows = sortedDates.map(dStr => {
+                const val = analysisRaw[dStr] || {};
+                const p = val.price || {};
+                const c = val.chip || {};
+                const m = val.margin || {};
+                return {
+                    date: String(dStr).replace(/[-/]/g, ''),
+                    open: Number(p.open) || 0,
+                    high: Number(p.high) || 0,
+                    low: Number(p.low) || 0,
+                    close: Number(p.close) || 0,
+                    volume: Math.floor(Number(val.volume) || 0),
+                    foreign: Math.floor(Number(c.foreign_buy) || 0),
+                    sitc: Math.floor(Number(c.sitc_buy) || 0),
+                    dealers: Math.floor(Number(c.dealers_buy) || 0),
+                    margin_balance: Math.floor(Number(m.margin_balance) || 0),
+                    margin_increase: Math.floor(Number(m.margin_increase) || 0)
+                };
+            }).filter(r => r.close > 0);
+
+            if (rows.length === 0) return null;
+
+            // 1. 滾算技術指標
+            for (let i = 0; i < rows.length; i++) {
+                // MA5
+                const s5 = rows.slice(Math.max(0, i - 4), i + 1);
+                const sum5 = s5.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                rows[i].MA5 = sum5 / s5.length;
+
+                // MA10
+                const s10 = rows.slice(Math.max(0, i - 9), i + 1);
+                const sum10 = s10.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                rows[i].MA10 = sum10 / s10.length;
+
+                // BB_Mid & BB_Std
+                const s20 = rows.slice(Math.max(0, i - 19), i + 1);
+                const sum20 = s20.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                const mean20 = sum20 / s20.length;
+                rows[i].BB_Mid = mean20;
+                if (s20.length >= 2) {
+                    const variance = s20.reduce((acc, r) => acc + Math.pow(r.close - mean20, 2), 0) / (s20.length - 1);
+                    const std = Math.sqrt(variance);
+                    rows[i].BB_Std = std;
+                    rows[i].BB_U = mean20 + 2 * std;
+                    rows[i].BB_L = mean20 - 2 * std;
+                } else {
+                    rows[i].BB_Std = 0;
+                    rows[i].BB_U = mean20;
+                    rows[i].BB_L = mean20;
+                }
+            }
+
+            // KD (7日 RSV)
+            let kCur = 50.0, dCur = 50.0;
+            for (let i = 0; i < rows.length; i++) {
+                const s7 = rows.slice(Math.max(0, i - 6), i + 1);
+                const l7 = Math.min(...s7.map(r => r.low));
+                const h7 = Math.max(...s7.map(r => r.high));
+                const rsv = 100 * ((rows[i].close - l7) / ((h7 - l7) + 1e-5));
+                kCur = (2/3) * kCur + (1/3) * rsv;
+                dCur = (2/3) * dCur + (1/3) * kCur;
+                rows[i].K = kCur;
+                rows[i].D = dCur;
+            }
+
+            // MACD (EMA6, EMA9, DIF, MACD_S, OSC)
+            let ema6 = rows[0].close, ema9 = rows[0].close;
+            let macdS = 0;
+            for (let i = 0; i < rows.length; i++) {
+                const c = rows[i].close;
+                ema6 = i === 0 ? c : (c * (2/7) + ema6 * (5/7));
+                ema9 = i === 0 ? c : (c * (2/10) + ema9 * (8/10));
+                const dif = ema6 - ema9;
+                macdS = i === 0 ? dif : (dif * (2/7) + macdS * (5/7));
+                rows[i].DIF = dif;
+                rows[i].MACD_S = macdS;
+                rows[i].OSC = dif - macdS;
+            }
+
+            // MTM (3日 diff, MA2)
+            for (let i = 0; i < rows.length; i++) {
+                rows[i].MTM = i >= 3 ? rows[i].close - rows[i - 3].close : 0;
+                const sMtm = rows.slice(Math.max(0, i - 1), i + 1);
+                rows[i].MTM_MA = sMtm.reduce((acc, r) => acc + r.MTM, 0) / sMtm.length;
+            }
+
+            // RSI4 & RSI12
+            let gain4 = 0, loss4 = 0, gain12 = 0, loss12 = 0;
+            for (let i = 0; i < rows.length; i++) {
+                if (i === 0) {
+                    rows[i].RSI4 = 50.0;
+                    rows[i].RSI12 = 50.0;
+                } else {
+                    const diff = rows[i].close - rows[i - 1].close;
+                    const u = Math.max(0, diff);
+                    const d = Math.abs(Math.min(0, diff));
+                    gain4 = u * (1/4) + gain4 * (3/4);
+                    loss4 = d * (1/4) + loss4 * (3/4);
+                    rows[i].RSI4 = (gain4 / (gain4 + loss4 + 1e-5)) * 100;
+
+                    gain12 = u * (1/12) + gain12 * (11/12);
+                    loss12 = d * (1/12) + loss12 * (11/12);
+                    rows[i].RSI12 = (gain12 / (gain12 + loss12 + 1e-5)) * 100;
+                }
+            }
+
+            // WR3 & WR50 & 法人融資熱力燈
+            for (let i = 0; i < rows.length; i++) {
+                const s3 = rows.slice(Math.max(0, i - 2), i + 1);
+                const h3 = Math.max(...s3.map(r => r.high));
+                const l3 = Math.min(...s3.map(r => r.low));
+                rows[i].WR3 = -100 * ((h3 - rows[i].close) / ((h3 - l3) + 1e-5));
+
+                const s50 = rows.slice(Math.max(0, i - 49), i + 1);
+                const h50 = Math.max(...s50.map(r => r.high));
+                const l50 = Math.min(...s50.map(r => r.low));
+                rows[i].WR50 = -100 * ((h50 - rows[i].close) / ((h50 - l50) + 1e-5));
+
+                rows[i].法人合計 = rows[i].foreign + rows[i].sitc + rows[i].dealers;
+                rows[i].融資增減 = i >= 1 ? rows[i].margin_balance - rows[i - 1].margin_balance : 0;
+                rows[i].融資餘額 = rows[i].margin_balance;
+                rows[i].外資買賣超 = rows[i].foreign;
+                rows[i].投信買賣超 = rows[i].sitc;
+                rows[i].自營買賣超 = rows[i].dealers;
+                rows[i].成交量 = rows[i].volume;
+                rows[i].開盤價 = rows[i].open;
+                rows[i].最高價 = rows[i].high;
+                rows[i].最低價 = rows[i].low;
+                rows[i].收盤價 = rows[i].close;
+                rows[i].交易日期 = rows[i].date;
+
+                // 6 燈
+                rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
+                rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
+                rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
+                rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
+                rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
+                rows[i].P2_MACD_Cross = rows[i].DIF > rows[i].MACD_S ? 1 : -1;
+            }
+
+            const latest_row = rows[rows.length - 1];
+            const prev_row = rows.length >= 2 ? rows[rows.length - 2] : latest_row;
+
+            // 6 大核心信號
+            const pulse_keys = ["P10_MTM_Cross", "P1_MACD_OSC", "P5_K_Trend", "P3_DIF_Trend", "P4_KD_Cross", "P2_MACD_Cross"];
+            const pulse_names = ["MTM金", "OSC縮", "K趨", "DIF趨", "KD金", "MACD金"];
+
+            const indicators = {};
+            const prev_indicators = {};
+            pulse_names.forEach((name, idx) => {
+                const key = pulse_keys[idx];
+                indicators[name] = latest_row[key] !== undefined ? latest_row[key] : -1;
+                prev_indicators[name] = prev_row[key] !== undefined ? prev_row[key] : indicators[name];
+            });
+
+            // 策略特徵指標
+            const ma5 = latest_row.MA5;
+            const ma10 = latest_row.MA10;
+            const ma20 = latest_row.BB_Mid;
+            const ma_order = [
+                { v: ma5, name: "MA5" },
+                { v: ma10, name: "MA10" },
+                { v: ma20, name: "MA20" }
+            ].sort((a, b) => b.v - a.v);
+            const ma_order_str = `(${ma_order[0].name} > ${ma_order[1].name} > ${ma_order[2].name})`;
+            const ma_align = ma5 > ma10 && ma10 > ma20 
+                ? `多頭排列 ${ma_order_str}` 
+                : (ma5 < ma10 && ma10 < ma20 ? `空頭排列 ${ma_order_str}` : `整理格局 ${ma_order_str}`);
+
+            const bias20 = ma20 > 0 ? ((latest_row.close - ma20) / ma20 * 100) : 0.0;
+            let bias_label = "";
+            if (bias20 >= 10) bias_label = `短線超買過熱 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(1)}%)`;
+            else if (bias20 <= -8) bias_label = `短線超跌恐慌 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(1)}%)`;
+            else bias_label = `溫和整理 (${bias20 >= 0 ? '+' : ''}${bias20.toFixed(2)}%)`;
+
+            const vol5Slice = rows.slice(-5);
+            const vol5_avg = vol5Slice.reduce((acc, r) => acc + r.volume, 0) / vol5Slice.length;
+            const vol_ratio = vol5_avg > 0 ? (latest_row.volume / vol5_avg) : 1.0;
+            const vol_status = vol_ratio >= 1.5 ? `爆量發動 (${vol_ratio.toFixed(1)}倍)` : `量能平穩 (${vol_ratio.toFixed(1)}倍)`;
+
+            const f_diffs = rows.slice(-5).map(r => r.foreign);
+            const s_diffs = rows.slice(-5).map(r => r.sitc);
+            const d_diffs = rows.slice(-5).map(r => r.dealers);
+
+            function get_consecutive_days(diffs) {
+                if (diffs.every(v => v === 0)) return { days: 0, dir: "不參與" };
+                const latest = diffs[diffs.length - 1];
+                if (latest === 0) return { days: 0, dir: "無明顯交易" };
+                const direction = latest > 0 ? "買" : "賣";
+                let days = 0;
+                for (let i = diffs.length - 1; i >= 0; i--) {
+                    if (direction === "買" && diffs[i] > 0) days++;
+                    else if (direction === "賣" && diffs[i] < 0) days++;
+                    else break;
+                }
+                return { days, dir: direction };
+            }
+
+            const f_info = get_consecutive_days(f_diffs);
+            const s_info = get_consecutive_days(s_diffs);
+            const d_info = get_consecutive_days(d_diffs);
+            const f_desc = f_info.days >= 3 ? `連${f_info.dir}${f_info.days}天` : (f_info.dir === "不參與" ? "不參與" : "多空拉鋸");
+            const s_desc = s_info.dir === "不參與" ? "不參與" : (s_info.days >= 3 ? `連${s_info.dir}${s_info.days}天` : "多空拉鋸");
+            const d_desc = d_info.days >= 3 ? `連${d_info.dir}${d_info.days}天` : (d_info.dir === "不參與" ? "不參與" : "多空拉鋸");
+            const inst_synergy = `外資:${f_desc} │ 投信:${s_desc} │ 自營:${d_desc}`;
+
+            const margin_diffs = rows.slice(-5).map(r => r.融資增減);
+            let margin_dec_days = 0, margin_inc_days = 0;
+            for (let i = margin_diffs.length - 1; i >= 0; i--) {
+                if (margin_diffs[i] < 0) margin_dec_days++;
+                else break;
+            }
+            if (margin_dec_days === 0) {
+                for (let i = margin_diffs.length - 1; i >= 0; i--) {
+                    if (margin_diffs[i] > 0) margin_inc_days++;
+                    else break;
+                }
+            }
+            let margin_status = "";
+            if (margin_dec_days >= 3) margin_status = `籌碼沉澱 (融資連減 ${margin_dec_days} 天 🛡️)`;
+            else if (margin_inc_days >= 3) margin_status = `融資堆積 (融資連增 ${margin_inc_days} 天 ⚠️)`;
+            else margin_status = "無明顯連續增減資";
+
+            // 籌碼吸籌比 (5日)
+            const last5 = rows.slice(-5);
+            const total_vol_5 = last5.reduce((acc, r) => acc + r.volume, 0);
+            const total_inst_5 = last5.reduce((acc, r) => acc + r.法人合計, 0);
+            const absorption_ratio = total_vol_5 > 0 ? (total_inst_5 / total_vol_5 * 100) : 0.0;
+            const abs_sign = absorption_ratio >= 0 ? '+' : '';
+            let absorption_status = "";
+            if (absorption_ratio > 15.0) absorption_status = `法人強力吸籌 🔥 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio > 5.0) absorption_status = `法人偏多吸籌 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio >= -5.0) absorption_status = `籌碼變動平穩 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else if (absorption_ratio >= -15.0) absorption_status = `法人偏空出貨 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+            else absorption_status = `法人加速出貨 🚨 (${abs_sign}${absorption_ratio.toFixed(1)}%)`;
+
+            // 法人買超加速度
+            const last3 = rows.slice(-3);
+            const last10 = rows.slice(-10);
+            const inst_avg_3 = last3.reduce((acc, r) => acc + r.法人合計, 0) / (last3.length || 1);
+            const inst_avg_10 = last10.reduce((acc, r) => acc + r.法人合計, 0) / (last10.length || 1);
+            let accel_status = "量能穩定";
+            if (Math.abs(inst_avg_10) > 0) {
+                const accel = inst_avg_3 / inst_avg_10;
+                if (accel > 2.0 && inst_avg_3 > 0) accel_status = `加速買超中 (力道放大 ${accel.toFixed(1)}倍 ⚡)`;
+                else if (accel > 2.0 && inst_avg_3 < 0) accel_status = `加速賣超中 (力道放大 ${accel.toFixed(1)}倍 🚨)`;
+                else accel_status = "買賣超力道平穩";
+            } else {
+                accel_status = "量能穩定";
+            }
+
+            // 價量關係
+            const p_change = prev_row.close > 0 ? ((latest_row.close - prev_row.close) / prev_row.close * 100) : 0.0;
+            const v_change = prev_row.volume > 0 ? ((latest_row.volume - prev_row.volume) / prev_row.volume * 100) : 0.0;
+
+            const p_dir = p_change >= 0.5 ? "價漲" : (p_change <= -0.5 ? "價跌" : "價平");
+            const v_dir_state = v_change >= 10.0 ? "量增" : (v_change <= -10.0 ? "量縮" : "量平");
+            const pv_status = `${p_dir}${v_dir_state}`;
+            let pv_desc = pv_status;
+            if (pv_status === "價漲量增") pv_desc = "價漲量增 (多頭攻擊)";
+            else if (pv_status === "價跌量增") pv_desc = "價跌量增 (殺盤鬆動)";
+            else if (pv_status === "價漲量縮" || pv_status === "價平量增") pv_desc = `${pv_status} (量價背離/換手)`;
+            else if (pv_status === "價跌量縮") pv_desc = "價跌量縮 (止跌訊號)";
+            else pv_desc = pv_status;
+
+            // 布林通道
+            const bb_u = latest_row.BB_U;
+            const bb_l = latest_row.BB_L;
+            const pct_b = (bb_u - bb_l) > 0 ? ((latest_row.close - bb_l) / (bb_u - bb_l)) : 0.5;
+
+            const bw_current = ma20 > 0 ? (bb_u - bb_l) / ma20 : 0.0;
+            const last20_rows = rows.slice(-20);
+            const bw_20_series = last20_rows.map(r => r.BB_Mid > 0 ? (r.BB_U - r.BB_L) / r.BB_Mid : 0);
+            const bw_min_val = bw_20_series.length > 0 ? Math.min(...bw_20_series) : 0;
+            const is_squeezed = bw_min_val > 0 ? (bw_current <= bw_min_val * 1.15) : false;
+            const squeeze_lbl = is_squeezed ? " (壓縮蓄勢)" : "";
+
+            let bb_status = "布林空頭軌";
+            if (pct_b >= 1.0) bb_status = "布林突破";
+            else if (pct_b > 0.5) bb_status = "布林多頭軌";
+            else if (pct_b > 0.0) bb_status = "布林空頭軌";
+            else bb_status = "布林跌破";
+            const bb_desc = `${bb_status}${squeeze_lbl} (%B:${pct_b.toFixed(2)})`;
+
+            // K 線型態辨識
+            function _compute_k_pattern(df_rows) {
+                const pats = [];
+                const n = df_rows.length;
+                if (n < 1) return "無明顯型態";
+
+                const body_len_arr = df_rows.map(r => Math.abs(r.close - r.open));
+                const ma_b_series = [];
+                const ma20_series = [];
+                for (let i = 0; i < n; i++) {
+                    const start_10 = Math.max(0, i - 9);
+                    const slice_10 = body_len_arr.slice(start_10, i + 1);
+                    ma_b_series.push(slice_10.reduce((a, b) => a + b, 0) / slice_10.length);
+
+                    const start_20 = Math.max(0, i - 19);
+                    const slice_20 = df_rows.slice(start_20, i + 1);
+                    ma20_series.push(slice_20.reduce((a, r) => a + r.close, 0) / slice_20.length);
+                }
+
+                function get_indicators(idx) {
+                    const actual_idx = idx < 0 ? n + idx : idx;
+                    const r = df_rows[actual_idx];
+                    const o = r.open, h = r.high, c = r.close, l = r.low;
+                    const b = Math.abs(c - o);
+                    const ub = Math.max(o, c);
+                    const lb = Math.min(o, c);
+                    const us = h - ub;
+                    const ls = lb - l;
+                    const range_val = h - l > 0 ? h - l : 1e-5;
+                    const ma_b = ma_b_series[actual_idx] || 1e-5;
+                    const ma20_val = ma20_series[actual_idx] || c;
+                    const bull = c > o ? 1 : 0;
+                    const bear = c < o ? 1 : 0;
+
+                    const start_pos = Math.max(0, actual_idx - 10);
+                    const prev_10_slice = df_rows.slice(start_pos, actual_idx);
+                    const h_max_10 = prev_10_slice.length > 0 ? Math.max(...prev_10_slice.map(x => x.high)) : h;
+                    const l_min_10 = prev_10_slice.length > 0 ? Math.min(...prev_10_slice.map(x => x.low)) : l;
+
+                    return { o, h, c, l, b, ub, lb, us, ls, r: range_val, ma_b, ma20: ma20_val, bull, bear, h_max_10, l_min_10 };
+                }
+
+                const t0 = get_indicators(-1);
+                const is_doji = t0.r > 0 ? (t0.b / t0.r <= 0.10) : false;
+                const is_hammer = t0.ls >= 2 * t0.b && t0.us <= 0.3 * t0.b && t0.b <= 0.35 * t0.r;
+                const is_shooting_star = t0.us >= 2 * t0.b && t0.ls <= 0.2 * t0.b && t0.ub <= t0.l + (t0.r / 3);
+                const is_hanging_man = (t0.b <= 0.3 * t0.r) && (t0.ls >= 2 * t0.b) && (t0.us <= 0.2 * t0.b) && (t0.lb >= t0.l + 0.65 * t0.r) && (t0.c > t0.ma20) && (t0.h >= t0.h_max_10);
+                const is_gravestone = (t0.b <= 0.05 * t0.r) && (t0.us >= 0.75 * t0.r) && (t0.ls <= 0.05 * t0.r) && (t0.c > t0.ma20) && (t0.h >= t0.h_max_10);
+                const is_dragonfly = (t0.b <= 0.05 * t0.r) && (t0.ls >= 0.75 * t0.r) && (t0.us <= 0.05 * t0.r) && (t0.c < t0.ma20) && (t0.l <= t0.l_min_10);
+
+                if (is_gravestone) pats.push("🪦 墓碑線");
+                else if (is_dragonfly) pats.push("🦎 蜻蜓線");
+                else if (is_doji) pats.push("⭐ 十字星");
+
+                if (is_hanging_man) pats.push("🪢 吊人線");
+                else if (is_hammer) pats.push("🔨 底部槌子線");
+                else if (is_shooting_star) pats.push("☄️ 高檔流星線");
+
+                if (n >= 2) {
+                    const t1 = get_indicators(-2);
+                    if (t1.bear === 1 && t0.bull === 1 && t0.o <= t1.c && t0.c >= t1.o && t0.b > t1.b) pats.push("🔴 多頭吞噬");
+                    if (t1.bull === 1 && t0.bear === 1 && t0.o >= t1.c && t0.c <= t1.o && t0.b > t1.b) pats.push("🟢 空頭吞噬");
+                    if (t1.bear === 1 && t1.b >= t1.ma_b && t0.o < t1.l && t0.bull === 1 && (((t1.o + t1.c)/2 < t0.c) && (t0.c < t1.o))) pats.push("⚡ 貫穿線");
+                    if (t1.bear === 1 && t1.b >= 1.2 * t1.ma_b && (t1.c < t0.o && t0.o < t1.o) && (t1.c < t0.c && t0.c < t1.o)) pats.push("🤰 多頭孕線");
+                    if (t1.bull === 1 && t1.b >= t1.ma_b && t0.o > t1.h && t0.bear === 1 && (t1.o < t0.c && t0.c < (t1.o + t1.c)/2)) pats.push("⛈️ 烏雲罩頂");
+                }
+
+                if (n >= 3) {
+                    const t1 = get_indicators(-2);
+                    const t2 = get_indicators(-3);
+                    const is_ms_1 = t2.bear === 1 && t2.b >= 1.2 * t2.ma_b;
+                    const is_ms_2 = t1.b <= 0.3 * t2.b && t1.ub < t2.c;
+                    const is_ms_3 = t0.bull === 1 && t0.c >= (t2.o + t2.c) / 2;
+                    if (is_ms_1 && is_ms_2 && is_ms_3) pats.push("🌅 早晨之星");
+
+                    const is_es_1 = t2.bull === 1 && t2.b >= 1.2 * t2.ma_b;
+                    const is_es_2 = t1.b <= 0.3 * t2.b && t1.lb > t2.c;
+                    const is_es_3 = t0.bear === 1 && t0.c <= (t2.o + t2.c) / 2;
+                    if (is_es_1 && is_es_2 && is_es_3) pats.push("🌌 夜星");
+
+                    const is_w3_1 = t2.bull === 1 && t1.bull === 1 && t0.bull === 1;
+                    const is_w3_2 = t2.c < t1.c && t1.c < t0.c;
+                    const is_w3_3 = (t2.o <= t1.o && t1.o <= t2.c) && (t1.o <= t0.o && t0.o <= t1.c);
+                    const is_w3_4 = t2.us <= 0.2 * t2.b && t1.us <= 0.2 * t1.b && t0.us <= 0.2 * t0.b;
+                    if (is_w3_1 && is_w3_2 && is_w3_3 && is_w3_4) pats.push("📈 紅三兵");
+
+                    const is_c3_1 = t2.bear === 1 && t1.bear === 1 && t0.bear === 1;
+                    const is_c3_2 = t2.c > t1.c && t1.c > t0.c;
+                    const is_c3_3 = (t2.c <= t1.o && t1.o <= t2.o) && (t1.c <= t0.o && t0.o <= t1.o);
+                    const is_c3_4 = t2.ls <= 0.2 * t2.b && t1.ls <= 0.2 * t1.b && t0.ls <= 0.2 * t0.b;
+                    if (is_c3_1 && is_c3_2 && is_c3_3 && is_c3_4) pats.push("🐦 三隻烏鴉");
+                }
+
+                if (n >= 5) {
+                    const t1 = get_indicators(-2);
+                    const t2 = get_indicators(-3);
+                    const t3 = get_indicators(-4);
+                    const t4 = get_indicators(-5);
+                    const is_r3_1 = t4.bull === 1 && t4.b >= 1.5 * t4.ma_b;
+                    let is_r3_2 = true;
+                    for (const k of [t3, t2, t1]) {
+                        if (k.b > 0.4 * t4.b || k.h > t4.h || k.l < t4.l) is_r3_2 = false;
+                    }
+                    const is_r3_3 = t0.bull === 1 && t0.c > t4.h;
+                    if (is_r3_1 && is_r3_2 && is_r3_3) pats.push("🚀 上升三法");
+                }
+
+                return pats.length > 0 ? pats.join("、") : "無明顯型態";
+            }
+
+            const k_pattern = _compute_k_pattern(rows);
+            const rawDate = String(latest_row.date);
+            const formattedDataDate = rawDate.length === 8 ? `${rawDate.slice(0, 4)}/${rawDate.slice(4, 6)}/${rawDate.slice(6, 8)}` : rawDate;
+
+            return {
+                latestPrice: latest_row.close,
+                latestDate: formattedDataDate,
+                changePct: p_change,
+                indicators,
+                prev_indicators,
+                strategy_indicators: {
+                    ma_align,
+                    bb_desc,
+                    pv_desc,
+                    bias_label,
+                    vol_status,
+                    inst_synergy,
+                    margin_status,
+                    absorption_status,
+                    accel_status,
+                    k_pattern
+                },
+                rows
+            };
+        };
+
+        // ─── ⚡ 手機端「批量差異補完」模組 (全量個股健康度巡航、休市日清洗與技術指標自癒) ───
         const batchPatchData = async () => {
             if (!dbInstance) {
                 alert("⚠️ 本機尚未載入資料庫，無法執行補完。");
@@ -1776,13 +2203,18 @@ createApp({
                     if (hRows.length > 0 && hRows[0].values) hRows[0].values.forEach(r => holidaysSet.add(String(r[0])));
                 } catch (e) {}
 
-                // 3. 掃描 stock_analysis 快取並清洗休市日資料
+                // 3. 確保資料表結構存在
+                dbInstance.run("CREATE TABLE IF NOT EXISTS stock_heatmap_cache (stock_code TEXT PRIMARY KEY, cache_data TEXT)");
+                dbInstance.run("CREATE TABLE IF NOT EXISTS stock_price (stock_code TEXT PRIMARY KEY, price REAL, date TEXT, change_pct REAL)");
+
+                // 4. 掃描 stock_analysis 快取並清洗休市日資料與重新計算指標
                 let totalCleaned = 0;
+                let recomputedCount = 0;
                 try {
                     const aRows = dbInstance.exec("SELECT stock_code, cache_data FROM stock_analysis");
                     if (aRows.length > 0 && aRows[0].values) {
-                        aRows[0].values.forEach(r => {
-                            const sc = r[0];
+                        for (const r of aRows[0].values) {
+                            const sc = String(r[0]).trim();
                             try {
                                 const parsed = JSON.parse(r[1]);
                                 if (parsed && typeof parsed === 'object') {
@@ -1797,9 +2229,35 @@ createApp({
                                     if (changed) {
                                         dbInstance.run("UPDATE stock_analysis SET cache_data = ? WHERE stock_code = ?", [JSON.stringify(parsed), sc]);
                                     }
+
+                                    // ⚡ 核心計算：為每檔個股重新計算 6 大青紅燈與策略指標特徵
+                                    const calcResult = calculateStockIndicatorsFromAnalysis(parsed);
+                                    if (calcResult) {
+                                        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                                        const heatmapObj = {
+                                            indicators: calcResult.indicators,
+                                            prev_indicators: calcResult.prev_indicators,
+                                            data_date: calcResult.latestDate,
+                                            update_time: nowStr,
+                                            strategy_indicators: calcResult.strategy_indicators
+                                        };
+
+                                        // 寫入 stock_heatmap_cache
+                                        dbInstance.run(
+                                            "INSERT OR REPLACE INTO stock_heatmap_cache (stock_code, cache_data) VALUES (?, ?)",
+                                            [sc, JSON.stringify(heatmapObj)]
+                                        );
+
+                                        // 寫入 stock_price
+                                        dbInstance.run(
+                                            "INSERT OR REPLACE INTO stock_price (stock_code, price, date, change_pct) VALUES (?, ?, ?, ?)",
+                                            [sc, calcResult.latestPrice, calcResult.latestDate, calcResult.changePct || 0.0]
+                                        );
+                                        recomputedCount++;
+                                    }
                                 }
                             } catch (ep) {}
-                        });
+                        }
                     }
                 } catch (ea) {}
 
@@ -1808,7 +2266,7 @@ createApp({
                 await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已批量補完)');
                 hasUnsyncedChanges.value = true;
 
-                alert(`✨ [批量差異補完完成！]\n• 巡航名冊：${stockListArr.length} 檔個股\n• 清除休市殘留：${totalCleaned} 筆\n本地資料庫指標與健康度已全盤校準完畢！`);
+                alert(`✨ [批量差異補完完成！]\n• 巡航名冊：${stockListArr.length} 檔個股\n• 清除休市殘留：${totalCleaned} 筆\n• 重新計算青紅燈與現價：${recomputedCount} 檔個股！\n本地資料庫指標與健康度已全盤校準完畢！`);
             } catch (err) {
                 console.error("批量補完失敗:", err);
                 alert("❌ 批量補完失敗：" + err.message);
