@@ -187,6 +187,7 @@ createApp({
         const getStatusBadgeText = (st) => {
             switch (st) {
                 case 'READY': return '🟢 大腦就緒 (可同步)';
+                case 'PENDING': return '⏳ 官方未開盤/未結算 (維持原快照)';
                 case 'PROCESSING': return '⏳ 數據抓取中';
                 case 'CLEANING': return '🧹 指標清洗審計中';
                 case 'HOLIDAY': return '☕ 市場休市';
@@ -198,6 +199,7 @@ createApp({
         const getStatusBadgeClass = (st) => {
             switch (st) {
                 case 'READY': return 'bg-emerald-950 border-emerald-800 text-emerald-300';
+                case 'PENDING': return 'bg-amber-950 border-amber-800 text-amber-300';
                 case 'PROCESSING': return 'bg-amber-950 border-amber-800 text-amber-300 animate-pulse';
                 case 'CLEANING': return 'bg-sky-950 border-sky-800 text-sky-300 animate-pulse';
                 case 'HOLIDAY': return 'bg-slate-800 border-slate-700 text-slate-300';

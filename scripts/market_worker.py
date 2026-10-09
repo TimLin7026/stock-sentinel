@@ -755,13 +755,15 @@ def main():
     health_report["nodes"]["chip"] = {"count": len(chip_map), "elapsed": round(t3 - t2, 2), "status": "OK" if len(chip_map) >= 1000 else "FAIL"}
     health_report["nodes"]["margin"] = {"count": len(margin_map), "elapsed": round(t4 - t3, 2), "status": "OK" if len(margin_map) >= 1000 else "FAIL"}
 
-    # 審計門檻檢查：若核心節點未達標，判定官方未結算，觸發保護中斷
+    # 審計門檻檢查：若核心節點未達標，判定官方未結算，觸發藍綠分區保護 (維持原快照)
     if len(twse_map) < 900 or len(tpex_map) < 700:
-        print("🚨 [審計攔截] 上市櫃數據檔數未達門檻 (TWSE < 900 或 TPEx < 700)，官方可能尚未結算完成！")
-        health_report["status"] = "ERROR"
-        health_report["progress"] = "官方盤後數據尚未結算完全，已暫停發布以保護現有行情。"
+        print(f"⚠️ [保護攔截] {target_date} 上市櫃數據檔數未達門檻 (TWSE: {len(twse_map)}, TPEx: {len(tpex_map)})，官方尚未結算完成！")
+        health_report["status"] = "PENDING"
+        health_report["progress"] = f"官方 [{target_date}] 盤後數據尚未結算或無交易，維持前一交易日健康快照。"
+        health_report["total_elapsed"] = round(time.time() - start_total_time, 2)
         update_health_status(health_report)
-        sys.exit(1)
+        print("🛡️ [藍綠分區保護] 維持現有下載區快照，終止本次熱替換。")
+        sys.exit(0)
 
     # 3. 存入歷史資料庫
     health_report["status"] = "CLEANING"
