@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.06');
+        const appVersion = ref('v2.20261009.07');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -183,16 +183,262 @@ createApp({
             hasUnsyncedChanges.value = false;
         };
 
-        const handleHeaderSyncClick = async () => {
-            if (syncStatus.value.loading) return;
-            if (!googleUser.value.isLoggedIn || !googleAccessToken.value) {
-                if (confirm("☁️ 尚未連線 Google 雲端帳號，是否立即進行 Google 授權登入？")) {
-                    handleGoogleLogin();
-                }
-                return;
+        // ─── 雲端大腦全市場快照同步與時間追蹤狀態 ───
+        const marketSyncMeta = ref({
+            fetchTime: localStorage.getItem('sentinel_market_fetch_time') || '',
+            marketDate: localStorage.getItem('sentinel_market_date') || '',
+            cloudGeneratedAt: localStorage.getItem('sentinel_market_cloud_time') || '',
+            totalStocks: Number(localStorage.getItem('sentinel_market_total_stocks')) || 0,
+            healthScore: Number(localStorage.getItem('sentinel_market_health_score')) || 100,
+            status: localStorage.getItem('sentinel_market_status') || 'READY'
+        });
+
+        // 現代瀏覽器標準原生極速 Gzip 解壓 (<10ms)
+        const decompressGzip = async (arrayBuffer) => {
+            if ('DecompressionStream' in window) {
+                const stream = new Response(arrayBuffer).body.pipeThrough(new DecompressionStream('gzip'));
+                const text = await new Response(stream).text();
+                return JSON.parse(text);
             }
-            await executeTwoWaySync();
+            throw new Error('您的瀏覽器不支援原生 DecompressionStream 解壓');
         };
+
+        // 根據快照中的 6 大指標燈號建立 4 維動態漸層標籤
+        const buildIndicatorTagsFromSnapshot = (lights = {}, prev_ind = {}) => {
+            const mapTag = (displayText, key) => {
+                const curr = lights[key] || 'yellow';
+                const prev = (prev_ind && prev_ind[key]) ? prev_ind[key] : curr;
+                const isPrevBull = (prev === 'red');
+                const isCurrBull = (curr === 'red');
+
+                let bgStyle = '';
+                let tooltip = '';
+                let transitionType = '';
+
+                if (!isPrevBull && !isCurrBull) {
+                    transitionType = 'bear-bear';
+                    bgStyle = 'background: #00B050; color: white;';
+                    tooltip = `${displayText}：昨日偏空 ➔ 今日偏空 (持續偏空)`;
+                } else if (!isPrevBull && isCurrBull) {
+                    transitionType = 'bear-bull';
+                    bgStyle = 'background: linear-gradient(90deg, #00B050 0%, #00B050 15%, #FF4B4B 35%, #FF4B4B 100%); color: white;';
+                    tooltip = `${displayText}：昨日偏空 ➔ 今日轉強 (轉折翻紅 🔥)`;
+                } else if (isPrevBull && !isCurrBull) {
+                    transitionType = 'bull-bear';
+                    bgStyle = 'background: linear-gradient(90deg, #FF4B4B 0%, #FF4B4B 15%, #00B050 35%, #00B050 100%); color: white;';
+                    tooltip = `${displayText}：昨日偏多 ➔ 今日轉弱 (轉折翻綠 ⚠️)`;
+                } else {
+                    transitionType = 'bull-bull';
+                    bgStyle = 'background: #FF4B4B; color: white;';
+                    tooltip = `${displayText}：昨日偏多 ➔ 今日偏多 (持續多頭)`;
+                }
+
+                return {
+                    text: displayText,
+                    type: isCurrBull ? 'bull' : 'bear',
+                    transition: transitionType,
+                    bgStyle,
+                    tooltip
+                };
+            };
+
+            return [
+                mapTag('MTM金', 'trend'),
+                mapTag('OSC縮', 'vol'),
+                mapTag('K趨', 'kd'),
+                mapTag('DIF趨', 'macd'),
+                mapTag('KD金', 'rsi'),
+                mapTag('MACD金', 'chip')
+            ];
+        };
+
+        // 將全市場快照行情與指標注入前端狀態
+        const applyMarketSnapshot = (snapshotData, meta = {}) => {
+            if (!snapshotData || typeof snapshotData !== 'object') return 0;
+
+            // 1. 同步擴充台股代號與名稱字典
+            Object.keys(snapshotData).forEach(c => {
+                const item = snapshotData[c];
+                if (item && item.name) {
+                    stockDictMap.value[c] = item.name;
+                    stockDictMap.value[c.padStart(4, '0')] = item.name;
+                }
+            });
+
+            // 2. 更新持股與自選股之最新行情與指標
+            let matchedCount = 0;
+            stockList.value.forEach(s => {
+                const snap = snapshotData[s.code] || snapshotData[s.code.padStart(4, '0')] || snapshotData[s.code.replace(/^0+/, '')];
+                if (snap) {
+                    matchedCount++;
+                    if (snap.p && snap.p > 0) {
+                        s.price = snap.p;
+                    }
+                    s.change = snap.chg !== undefined ? snap.chg : 0;
+                    s.changePercent = snap.pct !== undefined ? snap.pct : 0;
+
+                    if (s.shares > 0 && s.costPrice > 0) {
+                        s.profit = Math.round((s.price - s.costPrice) * s.shares);
+                        s.profitRate = (((s.price - s.costPrice) / s.costPrice) * 100).toFixed(2);
+                        s.todayProfit = Math.round(s.change * s.shares);
+                    }
+
+                    if (snap.d) {
+                        s.priceDate = snap.d.length === 8 ? `${snap.d.slice(0, 4)}/${snap.d.slice(4, 6)}/${snap.d.slice(6, 8)}` : snap.d;
+                        s.isPriceFresh = true;
+                    }
+
+                    if (snap.lights) {
+                        s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind);
+                    }
+
+                    if (snap.strat) {
+                        s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
+                    }
+                }
+            });
+
+            renderAssetChart();
+            return matchedCount;
+        };
+
+        // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取)
+        const syncMarketSnapshot = async () => {
+            const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
+            const fallbackBaseUrl = '.';
+
+            // 1. 探測健康報表
+            let healthData = null;
+            try {
+                const hRes = await fetch(`${rawBaseUrl}/market_health.json?_t=${Date.now()}`, { cache: 'no-store' });
+                if (hRes.ok) healthData = await hRes.json();
+            } catch (e) {
+                console.warn("Raw 健康報表拉取失敗，嘗試備用路徑...", e);
+            }
+
+            if (!healthData) {
+                try {
+                    const hRes = await fetch(`${fallbackBaseUrl}/market_health.json?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (hRes.ok) healthData = await hRes.json();
+                } catch (e) {}
+            }
+
+            if (!healthData) {
+                throw new Error("無法連線至雲端大腦健康報表，請確認網路連線。");
+            }
+
+            if (healthData.status !== 'READY') {
+                throw new Error(`雲端大腦目前狀態為【${healthData.status}】，可能正在結算清洗中，請稍候重試。`);
+            }
+
+            // 2. 下載 gzip 快照二進位串流
+            let snapshotBuffer = null;
+            try {
+                const sRes = await fetch(`${rawBaseUrl}/market_snapshot.json.gz?_t=${Date.now()}`, { cache: 'no-store' });
+                if (sRes.ok) snapshotBuffer = await sRes.arrayBuffer();
+            } catch (e) {
+                console.warn("Raw 快照下載失敗，嘗試備用路徑...", e);
+            }
+
+            if (!snapshotBuffer) {
+                try {
+                    const sRes = await fetch(`${fallbackBaseUrl}/market_snapshot.json.gz?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (sRes.ok) snapshotBuffer = await sRes.arrayBuffer();
+                } catch (e) {}
+            }
+
+            if (!snapshotBuffer) {
+                throw new Error("下載雲端行情快照失敗，請稍候重試。");
+            }
+
+            // 3. 原生極速解壓
+            const snapshotData = await decompressGzip(snapshotBuffer);
+            const totalCount = Object.keys(snapshotData).length;
+
+            // 4. 精確記錄執行時間、開市日與大腦產出時間
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const fetchTimeStr = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+            let marketDateStr = String(healthData.target_date || '');
+            if (marketDateStr.length === 8) {
+                marketDateStr = `${marketDateStr.slice(0, 4)}/${marketDateStr.slice(4, 6)}/${marketDateStr.slice(6, 8)}`;
+            }
+
+            const cloudTimeStr = healthData.run_time || healthData.timestamp || '---';
+
+            marketSyncMeta.value = {
+                fetchTime: fetchTimeStr,
+                marketDate: marketDateStr,
+                cloudGeneratedAt: cloudTimeStr,
+                totalStocks: totalCount,
+                healthScore: 100,
+                status: healthData.status
+            };
+
+            localStorage.setItem('sentinel_market_fetch_time', fetchTimeStr);
+            localStorage.setItem('sentinel_market_date', marketDateStr);
+            localStorage.setItem('sentinel_market_cloud_time', cloudTimeStr);
+            localStorage.setItem('sentinel_market_total_stocks', String(totalCount));
+            localStorage.setItem('sentinel_market_status', healthData.status);
+
+            // 5. 注入應用並刷新持股損益
+            applyMarketSnapshot(snapshotData, healthData);
+
+            // 6. 離線快取寫入 IndexedDB
+            if (window.localforage) {
+                try {
+                    await localforage.setItem('sentinel_market_snapshot', snapshotData);
+                } catch (e) {
+                    console.warn("快照離線儲存失敗:", e);
+                }
+            }
+
+            return {
+                fetchTime: fetchTimeStr,
+                marketDate: marketDateStr,
+                cloudGeneratedAt: cloudTimeStr,
+                totalCount
+            };
+        };
+
+        // 🔄 一鍵同步入口 (支援全市場行情秒級同步 + 個人雲端帳本雙向同步)
+        const handleOneClickSync = async () => {
+            if (syncStatus.value.loading) return;
+            syncStatus.value.loading = true;
+            syncStatus.value.message = '正在同步全市場行情...';
+
+            let snapInfo = null;
+
+            try {
+                // 1. 同步全台股行情快照
+                snapInfo = await syncMarketSnapshot();
+            } catch (err) {
+                console.error("行情快照同步失敗:", err);
+                showToast(`⚠️ 行情同步提醒: ${err.message}`, 4000);
+            }
+
+            // 2. 若有 Google 登入，同時執行個人帳本雙向同步
+            if (googleUser.value.isLoggedIn && googleAccessToken.value) {
+                try {
+                    syncStatus.value.message = '正在同步個人雲端帳本...';
+                    await executeTwoWaySync();
+                } catch (err) {
+                    console.error("雲端帳本同步失敗:", err);
+                }
+            }
+
+            syncStatus.value.loading = false;
+            syncStatus.value.message = '';
+
+            if (snapInfo) {
+                const timeOnly = snapInfo.fetchTime.split(' ')[1] || snapInfo.fetchTime;
+                showToast(`✅ 一鍵同步完成！\n📅 開市日：${snapInfo.marketDate}\n☁️ 雲端產出：${snapInfo.cloudGeneratedAt}\n⏱️ 下載時間：${timeOnly}\n📊 共 ${snapInfo.totalCount} 檔股票`, 4500);
+            }
+        };
+
+        const handleHeaderSyncClick = handleOneClickSync;
+
 
         // ─── 預設通用策略特徵結構 ───
         const defaultFeatures = ref([
@@ -3969,6 +4215,18 @@ createApp({
                 }
             }
 
+            // 優先讀取 IndexedDB 行情快照實現秒開
+            if (window.localforage) {
+                try {
+                    const cachedSnap = await localforage.getItem('sentinel_market_snapshot');
+                    if (cachedSnap) {
+                        applyMarketSnapshot(cachedSnap);
+                    }
+                } catch (e) {
+                    console.warn("讀取行情快照快取失敗:", e);
+                }
+            }
+
             // 啟動 Google 智慧心跳監控與背景自動檢測
             initGoogleHeartbeat();
             await checkGoogleTokenFreshness();
@@ -4047,6 +4305,9 @@ createApp({
             handleGoogleLogout,
             hasUnsyncedChanges,
             handleHeaderSyncClick,
+            handleOneClickSync,
+            syncMarketSnapshot,
+            marketSyncMeta,
             triggerSync,
             triggerFileInput,
             handleDbFileSelected,

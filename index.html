@@ -60,7 +60,7 @@
                     <i :class="theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
                 </button>
 
-                <!-- ☁️ 頂部一鍵雙向同步按鈕 (異動時紅色呼吸燈高亮提醒) -->
+                <!-- 🔄 頂部一鍵同步按鈕 (包含全市場行情秒級更新與 Google 雲端個人帳本同步) -->
                 <button @click="handleHeaderSyncClick" 
                         :disabled="syncStatus.loading"
                         :class="[
@@ -70,10 +70,10 @@
                                 : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
                         ]"
                         class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
-                        title="一鍵雙向同步">
-                    <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs"></i>
-                    <i v-else class="fa-solid fa-cloud text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-500'"></i>
-                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '同步' }}</span>
+                        title="🔄 一鍵同步">
+                    <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs text-sky-400"></i>
+                    <i v-else class="fa-solid fa-rotate text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-400'"></i>
+                    <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '🔄 一鍵同步' }}</span>
                 </button>
 
                 <!-- ⚙️ 雲端設定燈號按鈕 -->
@@ -91,6 +91,28 @@
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
             <section v-if="currentTab === 'dashboard'" class="space-y-3.5">
+                <!-- ⏱️ 行情資料與大腦產出時間比對徽章 -->
+                <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800/80 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" 
+                     class="border rounded-xl px-3 py-2 text-[11px] flex items-center justify-between cursor-pointer hover:border-sky-500/50 transition"
+                     @click="handleOneClickSync"
+                     title="點擊立即執行 🔄 一鍵同步">
+                    <div class="flex items-center space-x-1.5 overflow-hidden">
+                        <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
+                        <span class="font-bold whitespace-nowrap text-sky-400">📅 {{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }}</span>
+                        <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }}檔)</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 font-mono text-right truncate pl-1 flex items-center space-x-1">
+                        <span v-if="marketSyncMeta.fetchTime" class="text-emerald-400/90 font-medium">
+                            <i class="fa-solid fa-cloud-arrow-down mr-0.5"></i>下載: {{ marketSyncMeta.fetchTime.split(' ')[1] || marketSyncMeta.fetchTime }}
+                        </span>
+                        <span v-else class="text-amber-400 font-medium">
+                            <i class="fa-solid fa-arrow-rotate-right mr-0.5"></i>點擊同步
+                        </span>
+                        <span v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="text-slate-500 hidden sm:inline" :title="'雲端產出: ' + marketSyncMeta.cloudGeneratedAt">
+                            (大腦: {{ marketSyncMeta.cloudGeneratedAt.split(' ')[1] || marketSyncMeta.cloudGeneratedAt }})
+                        </span>
+                    </div>
+                </div>
                 <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
                 <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
                     <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
