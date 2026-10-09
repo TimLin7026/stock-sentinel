@@ -172,6 +172,8 @@ createApp({
                     : 'bg-rose-950 border-rose-800 text-rose-300';
             }
             return 'bg-slate-800 border-slate-700 text-slate-400';
+        };
+
         const getStatusBadgeText = (st) => {
             switch (st) {
                 case 'READY': return '🟢 大腦就緒 (可同步)';
