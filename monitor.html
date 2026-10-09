@@ -205,7 +205,7 @@
                         <button @click="triggerGitHubDispatch(latestTradingDate)" :disabled="isTriggering"
                                 class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-rose-600/30">
                             <i class="fa-solid fa-bolt"></i>
-                            <span>{{ isTriggering ? '發送喚醒信號中...' : `⚡ 立即遠端強制重抓 (${latestTradingDateLabel})` }}</span>
+                            <span>{{ isTriggering ? '發送喚醒信號中...' : `⚡ 重抓 ${latestTradingDateLabel}` }}</span>
                         </button>
                     </div>
 
@@ -307,6 +307,6 @@
     </div>
 
     <!-- 載入監控邏輯腳本 -->
-    <script src="monitor.js?v=20261009.04"></script>
+    <script src="monitor.js?v=20261009.05"></script>
 </body>
 </html>
