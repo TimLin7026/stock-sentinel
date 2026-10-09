@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.10');
+        const appVersion = ref('v2.20261009.11');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -300,14 +300,21 @@ createApp({
                     if (snap.d) {
                         s.priceDate = snap.d.length === 8 ? `${snap.d.slice(0, 4)}/${snap.d.slice(4, 6)}/${snap.d.slice(6, 8)}` : snap.d;
                         s.isPriceFresh = true;
+                        s.isIndicatorFresh = true;
+                        s.isStrategyFresh = true;
                     }
 
-                    if (snap.lights) {
-                        s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind);
+                    // ⚡ 保護本地黃金指標：僅當本地尚未有指標時才以快照兜底，避免覆蓋電腦端精確 6 燈
+                    if (!s.indicatorTags || s.indicatorTags.length === 0) {
+                        if (snap.lights) {
+                            s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind);
+                        }
                     }
 
-                    if (snap.strat) {
-                        s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
+                    if (!s.strategyFeatures || s.strategyFeatures.length === 0) {
+                        if (snap.strat) {
+                            s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
+                        }
                     }
                 }
             });
