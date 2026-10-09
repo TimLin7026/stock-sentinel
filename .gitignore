@@ -19,7 +19,8 @@
 !.github/**
 !scripts/
 !scripts/**
-scripts/*.db
 *.db
+scripts/*.db
+!scripts/market_history.db
 
 !requirements.txt

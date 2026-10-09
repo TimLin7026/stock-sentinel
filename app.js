@@ -211,12 +211,13 @@ createApp({
         };
 
         // 根據快照中的 6 大指標燈號建立 4 維動態漸層標籤
-        const buildIndicatorTagsFromSnapshot = (lights = {}, prev_ind = {}) => {
-            const mapTag = (displayText, key) => {
-                const curr = lights[key] || 'yellow';
-                const prev = (prev_ind && prev_ind[key]) ? prev_ind[key] : curr;
-                const isPrevBull = (prev === 'red');
-                const isCurrBull = (curr === 'red');
+        const buildIndicatorTagsFromSnapshot = (lights = {}, prev_ind = {}, prev_lights = {}) => {
+            const mapTag = (displayText, keyOld, keyChinese) => {
+                let currVal = lights[keyChinese] !== undefined ? lights[keyChinese] : lights[keyOld];
+                let prevVal = prev_lights[keyChinese] !== undefined ? prev_lights[keyChinese] : (prev_ind && prev_ind[keyOld] !== undefined ? prev_ind[keyOld] : currVal);
+
+                const isCurrBull = (currVal === 1 || currVal === 'red' || currVal === true || currVal === '1');
+                const isPrevBull = (prevVal === 1 || prevVal === 'red' || prevVal === true || prevVal === '1');
 
                 let bgStyle = '';
                 let tooltip = '';
@@ -250,12 +251,12 @@ createApp({
             };
 
             return [
-                mapTag('MTM金', 'trend'),
-                mapTag('OSC縮', 'vol'),
-                mapTag('K趨', 'kd'),
-                mapTag('DIF趨', 'macd'),
-                mapTag('KD金', 'rsi'),
-                mapTag('MACD金', 'chip')
+                mapTag('MTM金', 'trend', 'MTM金'),
+                mapTag('OSC縮', 'vol', 'OSC縮'),
+                mapTag('K趨', 'kd', 'K趨'),
+                mapTag('DIF趨', 'macd', 'DIF趨'),
+                mapTag('KD金', 'rsi', 'KD金'),
+                mapTag('MACD金', 'chip', 'MACD金')
             ];
         };
 
@@ -304,17 +305,13 @@ createApp({
                         s.isStrategyFresh = true;
                     }
 
-                    // ⚡ 保護本地黃金指標：僅當本地尚未有指標時才以快照兜底，避免覆蓋電腦端精確 6 燈
-                    if (!s.indicatorTags || s.indicatorTags.length === 0) {
-                        if (snap.lights) {
-                            s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind);
-                        }
+                    // 🎯 雲端大腦全量 6 燈注入
+                    if (snap.lights) {
+                        s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind, snap.prev_lights);
                     }
 
-                    if (!s.strategyFeatures || s.strategyFeatures.length === 0) {
-                        if (snap.strat) {
-                            s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
-                        }
+                    if (snap.strat) {
+                        s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
                     }
                 }
             });
