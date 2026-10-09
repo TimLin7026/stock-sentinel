@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 鈔能戰情室 - 雲端盤後行情大腦與數據品質審計引擎
+🚀 鈔能戰情室 - 雲端盤後行情大腦與智慧自動回補引擎
 ======================================================
 核心功能：
-1. 🛡️ 休市日智慧哨兵 (0.1 秒精準跳過週末/國定假日/颱風假)
-2. 📡 全市場盤後數據爬取 (上市/上櫃/三大法人/融資融券，比照電腦版有效性驗證)
-3. 💾 歷史 K 線與籌碼存儲，全量滾算 2,400+ 檔 6 大青紅燈指標 + 10 項策略特徵
-4. 🧹 數據品質審計與 0 值異常排查 (完全對齊電腦版三維健檢矩陣)
-5. 🟢 藍綠雙分區隔離發布 (Staging 清洗沙盒 -> 審計通過 -> 原子熱替換 Production)
+1. 🔍 智慧缺漏日曆探測 (比對資料庫 MAX(date) ➔ 計算缺失交易日清單)
+2. 🛡️ 休市日智慧哨兵 (0.1 秒精準跳過週末/國定假日/颱風假)
+3. ⏳ 友善間隔逐日回補 (Polite Loop Crawling，防證交所擋 IP，逐日清洗入庫)
+4. 🧹 歷史庫滾動修剪 (Rolling Retention，自動維持 120 天，容量精準控制 < 45MB)
+5. ⚡ 全量指標矩陣滾算 (100% 對齊電腦端 6 大青紅燈指標 + 10 項策略特徵)
+6. 🟢 藍綠雙分區原子熱替換發布 (Staging 清洗沙盒 -> 審計通過 -> Production)
 """
 
 import os
@@ -49,7 +50,7 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "mobile_web") if os.path.exists(os.path.
 HISTORY_DB_PATH = os.path.join(BASE_DIR, "market_history.db")
 
 # ==========================================
-# 0. 電腦版對齊：暴力數字清洗器與 Numpy 序列化器
+# 0. 電腦版對齊：數字清洗器與 Numpy 序列化器
 # ==========================================
 
 class NumpyEncoder(json.JSONEncoder):
@@ -86,7 +87,7 @@ def get_taipei_now():
     tz_tw = datetime.timezone(datetime.timedelta(hours=8))
     return datetime.datetime.now(tz_tw)
 
-def get_target_date():
+def parse_manual_target_date():
     for arg in sys.argv[1:]:
         if arg.startswith("--target-date="):
             return arg.split("=")[1].strip()
@@ -94,20 +95,7 @@ def get_target_date():
             return arg.strip()
     if len(sys.argv) > 2 and sys.argv[1] == "--target-date":
         return sys.argv[2].strip()
-
-    now = get_taipei_now()
-    cur = now
-    if cur.hour < 21:
-        cur = cur - datetime.timedelta(days=1)
-        
-    for _ in range(15):
-        d_str = cur.strftime("%Y%m%d")
-        holiday, _ = is_market_holiday(d_str)
-        if not holiday:
-            return d_str
-        cur = cur - datetime.timedelta(days=1)
-        
-    return now.strftime("%Y%m%d")
+    return None
 
 _TWSE_HOLIDAYS_CACHE = None
 
@@ -135,7 +123,11 @@ def get_twse_official_holidays():
     return _TWSE_HOLIDAYS_CACHE
 
 def is_market_holiday(date_str):
-    dt = datetime.datetime.strptime(date_str, "%Y%m%d")
+    try:
+        dt = datetime.datetime.strptime(date_str, "%Y%m%d")
+    except Exception:
+        return True, "無效日期格式"
+        
     if dt.weekday() >= 5:
         return True, f"週末例假日 ({dt.strftime('%A')})"
     
@@ -172,7 +164,7 @@ def http_get_json(url, retries=3, delay=2):
     return None
 
 # ==========================================
-# 1. 爬取全市場盤後行情 (比照電腦版有效性驗證)
+# 1. 爬取全市場盤後行情模組
 # ==========================================
 
 def fetch_twse_market(target_date):
@@ -198,7 +190,7 @@ def fetch_twse_market(target_date):
         
     for row in stock_rows:
         code = str(row[0]).strip()
-        if not code or len(code) > 6:
+        if not code or len(code) > 5:  # 過濾 >5 碼權證
             continue
         name = str(row[1]).strip()
         vol = safe_int(row[2])
@@ -227,7 +219,7 @@ def fetch_tpex_market(target_date):
     stock_rows = data.get('tables', [{}])[0].get('data', []) if 'tables' in data else data.get('aaData', [])
     for row in stock_rows:
         code = str(row[0]).strip()
-        if not code or len(code) > 6:
+        if not code or len(code) > 5:  # 過濾 >5 碼權證
             continue
         name = str(row[1]).strip()
         close_p = safe_float(row[2])
@@ -254,6 +246,7 @@ def fetch_institutional_investors(target_date):
         rows = twse_data.get('data', []) if 'data' in twse_data else twse_data.get('tables', [{}])[0].get('data', [])
         for r in rows:
             code = str(r[0]).strip()
+            if len(code) > 5: continue
             fb = safe_int(r[4]) if len(r) > 4 else 0
             sb = safe_int(r[7]) if len(r) > 7 else 0
             db = safe_int(r[11]) if len(r) > 11 else (safe_int(r[10]) if len(r) > 10 else 0)
@@ -269,6 +262,7 @@ def fetch_institutional_investors(target_date):
         for r in rows:
             if len(r) >= 23:
                 code = str(r[0]).strip()
+                if len(code) > 5: continue
                 fb = safe_int(r[10])
                 sb = safe_int(r[13])
                 db = safe_int(r[22])
@@ -293,6 +287,7 @@ def fetch_margin_trading(target_date):
             target_data = twse_data.get('data7') if twse_data.get('data7') else twse_data.get('data', [])
         for r in target_data:
             code = str(r[0]).strip()
+            if len(code) > 5: continue
             if len(r) > 5:
                 margin_map[code] = {'margin_balance': safe_int(r[5])}
                 
@@ -305,6 +300,7 @@ def fetch_margin_trading(target_date):
         rows = tpex_data.get('tables', [{}])[0].get('data', []) if 'tables' in tpex_data else tpex_data.get('aaData', [])
         for r in rows:
             code = str(r[0]).strip()
+            if len(code) > 5: continue
             if len(r) > 6:
                 margin_map[code] = {'margin_balance': safe_int(r[6])}
                 
@@ -312,7 +308,7 @@ def fetch_margin_trading(target_date):
     return margin_map
 
 # ==========================================
-# 2. 歷史資料庫存儲與維護
+# 2. 智慧日曆探測、逐日回補與歷史庫維護
 # ==========================================
 
 def init_history_db(db_path):
@@ -342,13 +338,52 @@ def init_history_db(db_path):
     conn.commit()
     return conn
 
+def get_missing_market_dates(conn, manual_target_date=None):
+    """
+    🔍 智慧缺漏探測：
+    比對資料庫 MAX(trade_date) 與當前最新有效開市日，回傳所有缺失日期清單
+    """
+    if manual_target_date:
+        return [manual_target_date]
+        
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
+    row = cur.fetchone()
+    last_db_date = row[0] if row and row[0] else None
+    
+    now = get_taipei_now().replace(tzinfo=None)
+    # 決定回補終點：若當前未滿 21:00 (官方尚未完全結算法人與資券)，終點為昨日；否則為今日
+    end_dt = now if now.hour >= 21 else (now - datetime.timedelta(days=1))
+    # 去除時分秒
+    end_dt = datetime.datetime(end_dt.year, end_dt.month, end_dt.day)
+    
+    if not last_db_date:
+        start_dt = end_dt - datetime.timedelta(days=30)
+    else:
+        last_dt = datetime.datetime.strptime(last_db_date, "%Y%m%d")
+        start_dt = last_dt + datetime.timedelta(days=1)
+        
+    if start_dt > end_dt:
+        print(f"✅ [最新狀態] 歷史資料庫已是最最新狀態 (最新日期: {last_db_date})。")
+        return []
+        
+    missing_dates = []
+    curr_dt = start_dt
+    while curr_dt <= end_dt:
+        d_str = curr_dt.strftime("%Y%m%d")
+        is_holiday, reason = is_market_holiday(d_str)
+        if not is_holiday:
+            missing_dates.append(d_str)
+        curr_dt += datetime.timedelta(days=1)
+        
+    return missing_dates
+
 def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_map, margin_map):
     cur = conn.cursor()
     all_codes = set(twse_map.keys()).union(set(tpex_map.keys()))
     records = []
     
     for code in all_codes:
-        # 排除 6 碼以上權證與非標的衍生商品，聚焦 2,400+ 檔股票與 ETF
         if len(code) > 5:
             continue
         meta = twse_map.get(code) or tpex_map.get(code) or {}
@@ -382,7 +417,29 @@ def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_m
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, records)
     conn.commit()
-    print(f"✅ [歷史庫] 成功更新 {len(records)} 筆個股於 {target_date} 之日 K 線與籌碼紀錄。")
+    print(f"💾 [入庫成功] 成功寫入 {len(records)} 筆個股於 {target_date} 之日 K 線與籌碼紀錄。")
+
+def prune_history_db(conn, max_days=120):
+    """
+    🧹 歷史庫滾動修剪：
+    自動保留最近 max_days 個交易日，清除過舊數據並 VACUUM 瘦身，確保 SQLite 維持在 30~45 MB
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(DISTINCT trade_date) FROM daily_kline")
+    total_days = cur.fetchone()[0]
+    
+    if total_days > max_days:
+        print(f"🧹 [修剪瘦身] 當前歷史庫累積 {total_days} 天，啟動滾動修剪保留最近 {max_days} 天...")
+        cur.execute(f"""
+            DELETE FROM daily_kline
+            WHERE trade_date NOT IN (
+                SELECT DISTINCT trade_date FROM daily_kline ORDER BY trade_date DESC LIMIT {max_days}
+            )
+        """)
+        conn.commit()
+        cur.execute("VACUUM")
+        conn.commit()
+        print(f"✨ [修剪完成] 已成功精簡至最近 {max_days} 個交易日。")
 
 # ==========================================
 # 3. 🎯 全市場 2,400+ 檔 6 大青紅燈 + 10 項策略特徵 100% 電腦端對齊滾算引擎
@@ -419,7 +476,7 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
         df_raw = df_raw.reset_index(drop=True)
         
         # 1. 基礎量價與籌碼指標全量滾算 (完全對齊 Stock_Sentinel.py:2540)
-        df_raw["MA5"] = df_raw["收盤價" if "收盤價" in df_raw else "close"].rolling(5, min_periods=1).mean()
+        df_raw["MA5"] = df_raw["close"].rolling(5, min_periods=1).mean()
         df_raw["MA10"] = df_raw["close"].rolling(10, min_periods=1).mean()
         df_raw["BB_Mid"] = df_raw["close"].rolling(20, min_periods=1).mean()
         df_raw["BB_Std"] = df_raw["close"].rolling(20, min_periods=2).std().fillna(0)
@@ -732,7 +789,7 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
     return snapshot_map, calc_elapsed
 
 # ==========================================
-# 4. 主執行流程：藍綠雙分區發布與品質審計
+# 4. 主執行流程：智慧回補、修剪與藍綠雙分區發布
 # ==========================================
 
 def update_health_status(health_data):
@@ -747,20 +804,24 @@ def update_health_status(health_data):
             print(f"⚠️ 寫入 {d}/market_health.json 失敗: {e}")
 
 def main():
-    target_date = get_target_date()
     start_total_time = time.time()
-    print(f"======================================================")
-    print(f"🚀 鈔能戰情室 - 雲端行情大腦啟動 [目標日期: {target_date}]")
-    print(f"======================================================")
+    manual_date = parse_manual_target_date()
+    
+    print("======================================================")
+    print("🚀 鈔能戰情室 - 雲端行情大腦智慧回補與滾算引擎啟動")
+    print("======================================================")
 
-    # 0. 初始化健康狀態 (廣播 PROCESSING 鎖定信號)
+    os.makedirs(BASE_DIR, exist_ok=True)
+    conn = init_history_db(HISTORY_DB_PATH)
+
+    # 1. 🔍 智慧缺漏探測 (比對資料庫最後日期與當前開市日)
+    missing_dates = get_missing_market_dates(conn, manual_date)
+    
     health_report = {
-        "target_date": target_date,
         "run_time": get_taipei_now().strftime("%Y-%m-%d %H:%M:%S"),
         "status": "PROCESSING",
-        "progress": "大盤數據抓取中...",
-        "is_holiday": False,
-        "holiday_reason": "",
+        "progress": "缺漏日曆探測中...",
+        "missing_dates": missing_dates,
         "nodes": {},
         "audit": {
             "zero_volume_count": 0,
@@ -771,59 +832,60 @@ def main():
     }
     update_health_status(health_report)
 
-    # 1. 休市日智慧哨兵防禦
-    is_holiday, holiday_reason = is_market_holiday(target_date)
-    health_report["is_holiday"] = is_holiday
-    health_report["holiday_reason"] = holiday_reason
+    if not missing_dates:
+        print("☕ [最新狀態] 目前無任何缺失開市日需要回補。")
+    else:
+        print(f"📊 [發現缺失] 共偵測到 {len(missing_dates)} 個交易日需要回補: {missing_dates}")
 
-    if is_holiday:
-        print(f"☕ [休市哨兵] 今日為 {holiday_reason}，市場未開盤，自動略過。")
-        health_report["status"] = "HOLIDAY"
-        health_report["progress"] = f"今日為 {holiday_reason}，市場未開盤。"
+    # 2. 🔄 友善間隔逐日回補迴圈 (Polite Loop Crawling)
+    for idx, d_str in enumerate(missing_dates):
+        print(f"\n📡 ─── [回補進度 {idx+1}/{len(missing_dates)}] 正在抓取 {d_str} 盤後行情 ───")
+        health_report["progress"] = f"正在回補 [{d_str}] 盤後數據 ({idx+1}/{len(missing_dates)})..."
         update_health_status(health_report)
-        sys.exit(0)
+        
+        twse_map = fetch_twse_market(d_str)
+        time.sleep(2.0)  # 友善間隔防擋 IP
+        
+        tpex_map = fetch_tpex_market(d_str)
+        time.sleep(2.0)
+        
+        chip_map = fetch_institutional_investors(d_str)
+        time.sleep(2.0)
+        
+        margin_map = fetch_margin_trading(d_str)
+        time.sleep(2.0)
 
-    # 2. 爬取全市場盤後 (Staging 清洗沙盒區)
-    t0 = time.time()
-    twse_map = fetch_twse_market(target_date)
-    t1 = time.time()
-    tpex_map = fetch_tpex_market(target_date)
-    t2 = time.time()
-    chip_map = fetch_institutional_investors(target_date)
-    t3 = time.time()
-    margin_map = fetch_margin_trading(target_date)
-    t4 = time.time()
+        # 審計檢查
+        if len(twse_map) < 900 or len(tpex_map) < 700:
+            print(f"⚠️ [跳過回補] {d_str} 上市櫃數據檔數未達門檻 (TWSE: {len(twse_map)}, TPEx: {len(tpex_map)})，可能未開盤或尚未結算。")
+            continue
 
-    health_report["nodes"]["twse"] = {"count": len(twse_map), "elapsed": round(t1 - t0, 2), "status": "OK" if len(twse_map) >= 900 else "FAIL"}
-    health_report["nodes"]["tpex"] = {"count": len(tpex_map), "elapsed": round(t2 - t1, 2), "status": "OK" if len(tpex_map) >= 700 else "FAIL"}
-    health_report["nodes"]["chip"] = {"count": len(chip_map), "elapsed": round(t3 - t2, 2), "status": "OK" if len(chip_map) >= 1000 else "FAIL"}
-    health_report["nodes"]["margin"] = {"count": len(margin_map), "elapsed": round(t4 - t3, 2), "status": "OK" if len(margin_map) >= 1000 else "FAIL"}
+        save_daily_snapshot_to_history(conn, d_str, twse_map, tpex_map, chip_map, margin_map)
 
-    # 審計門檻檢查：若核心節點未達標，判定官方未結算，觸發藍綠分區保護 (維持原快照)
-    if len(twse_map) < 900 or len(tpex_map) < 700:
-        print(f"⚠️ [保護攔截] {target_date} 上市櫃數據檔數未達門檻 (TWSE: {len(twse_map)}, TPEx: {len(tpex_map)})，官方尚未結算完成！")
-        health_report["status"] = "PENDING"
-        health_report["progress"] = f"官方 [{target_date}] 盤後數據尚未結算或無交易，維持前一交易日健康快照。"
-        health_report["total_elapsed"] = round(time.time() - start_total_time, 2)
-        update_health_status(health_report)
-        print("🛡️ [藍綠分區保護] 維持現有下載區快照，終止本次熱替換。")
-        sys.exit(0)
+    # 3. 🧹 歷史庫容量滾動修剪 (維持最近 120 天，確保資料庫體積 < 45MB)
+    prune_history_db(conn, max_days=120)
 
-    # 3. 存入歷史資料庫
+    # 4. ⚡ 針對資料庫最新交易日執行全量指標滾算
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
+    latest_trade_date = cur.fetchone()[0]
+    
+    if not latest_trade_date:
+        print("❌ [錯誤] 歷史資料庫無任何有效交易日數據！")
+        conn.close()
+        sys.exit(1)
+
+    health_report["target_date"] = latest_trade_date
     health_report["status"] = "CLEANING"
-    health_report["progress"] = "歷史 K 線寫入與全市場指標滾算清洗中..."
+    health_report["progress"] = f"以最新交易日 [{latest_trade_date}] 進行全市場 6 燈與策略特徵滾算..."
     update_health_status(health_report)
 
-    os.makedirs(BASE_DIR, exist_ok=True)
-    conn = init_history_db(HISTORY_DB_PATH)
-    save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_map, margin_map)
-
-    # 4. 全市場指標矩陣滾算
     snapshot_map, calc_elapsed = calculate_all_stock_indicators(conn)
     conn.close()
+    
     health_report["nodes"]["indicators"] = {"count": len(snapshot_map), "elapsed": calc_elapsed, "status": "OK"}
 
-    # 5. 數據品質審計與 0 值排查 (對齊電腦版三維健檢矩陣)
+    # 5. 數據品質審計與 0 值排查
     zero_vol_samples = []
     zero_chip_samples = []
     for code, item in snapshot_map.items():
@@ -841,7 +903,7 @@ def main():
     health_report["audit"]["zero_chip_samples"] = zero_chip_samples
     health_report["total_elapsed"] = round(time.time() - start_total_time, 2)
 
-    # 6. 藍綠雙分區熱切換：先寫入暫存檔 staging_snapshot.json.gz
+    # 6. 藍綠雙分區熱切換：暫存至 staging_snapshot.json.gz
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     json_bytes = json.dumps(snapshot_map, ensure_ascii=False, cls=NumpyEncoder).encode('utf-8')
     staging_gz_path = os.path.join(OUTPUT_DIR, "staging_snapshot.json.gz")
@@ -862,13 +924,13 @@ def main():
 
     # 8. 更新健康狀態為 READY
     health_report["status"] = "READY"
-    health_report["progress"] = "全流程清洗審計合格，快照已就緒提供更新！"
+    health_report["progress"] = f"全流程清洗審計合格，最新 [{latest_trade_date}] 快照已就緒提供更新！"
     update_health_status(health_report)
 
     print(f"📊 [產出] 數據健康報表已發布 -> {os.path.join(OUTPUT_DIR, 'market_health.json')}")
-    print(f"======================================================")
-    print(f"🎉 盤後大腦全流程順利完成！總耗時: {health_report['total_elapsed']} 秒。")
-    print(f"======================================================")
+    print("======================================================")
+    print(f"🎉 雲端大腦全流程順利完成！總耗時: {health_report['total_elapsed']} 秒。")
+    print("======================================================")
 
 if __name__ == "__main__":
     main()
