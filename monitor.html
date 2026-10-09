@@ -229,7 +229,7 @@
                                 輸入指定開市日爬取全市場盤後數據並重算指標。預設為最近開市日。
                             </p>
                             <div class="relative">
-                                <input v-model="customTargetDate" type="text" placeholder="例: 20261008" maxlength="8"
+                                <input v-model="customTargetDate" @input="isUserModifiedDate = true" type="text" placeholder="例: 20261008" maxlength="8"
                                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500">
                                 <span class="absolute right-3 top-2 text-[10px] text-slate-500 font-mono pointer-events-none">YYYYMMDD</span>
                             </div>

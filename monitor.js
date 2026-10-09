@@ -36,6 +36,7 @@ createApp({
 
         // ─── 遠端控制與 GitHub API ───
         const customTargetDate = ref('');
+        const isUserModifiedDate = ref(false);
         const isTriggering = ref(false);
         const showPatSetting = ref(false);
         const githubPat = ref(localStorage.getItem('sentinel_github_pat') || '');
@@ -136,8 +137,8 @@ createApp({
                 if (res.ok) {
                     const data = await res.json();
                     healthData.value = data;
-                    if (!customTargetDate.value && latestTradingDate.value) {
-                        customTargetDate.value = latestTradingDate.value;
+                    if (!isUserModifiedDate.value && data.target_date) {
+                        customTargetDate.value = data.target_date;
                     }
                 } else {
                     console.warn("尚未生成 market_health.json");
@@ -148,7 +149,11 @@ createApp({
                 try {
                     const fallbackRes = await fetch(`market_health.json?_t=${Date.now()}`, { cache: 'no-store' });
                     if (fallbackRes.ok) {
-                        healthData.value = await fallbackRes.json();
+                        const fbData = await fallbackRes.json();
+                        healthData.value = fbData;
+                        if (!isUserModifiedDate.value && fbData.target_date) {
+                            customTargetDate.value = fbData.target_date;
+                        }
                     }
                 } catch (e) {}
             } finally {
@@ -264,7 +269,8 @@ createApp({
         });
 
         const resetCustomDateToLatest = () => {
-            customTargetDate.value = latestTradingDate.value;
+            isUserModifiedDate.value = false;
+            customTargetDate.value = (healthData.value && healthData.value.target_date) ? healthData.value.target_date : latestTradingDate.value;
         };
 
         // ─── 5. 遠端觸發 GitHub Actions (workflow_dispatch) ───
@@ -326,9 +332,8 @@ createApp({
 
         // ─── 初始化生命週期 ───
         onMounted(() => {
-            if (!customTargetDate.value && latestTradingDate.value) {
-                customTargetDate.value = latestTradingDate.value;
-            }
+            // 一載入頁面即背景拉取健康報表以獲取官方驗證過的真實 target_date
+            fetchHealthReport();
             const savedEmail = localStorage.getItem('sentinel_admin_email');
             if (savedEmail) {
                 verifyAdminEmail(savedEmail);
@@ -355,6 +360,7 @@ createApp({
             filteredZeroList,
             searchQuery,
             customTargetDate,
+            isUserModifiedDate,
             latestTradingDate,
             latestTradingDateLabel,
             resetCustomDateToLatest,
