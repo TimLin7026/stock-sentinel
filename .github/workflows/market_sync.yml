@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: 📥 檢出專案代碼
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🐍 設定 Python 環境
         uses: actions/setup-python@v5
@@ -40,6 +42,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add mobile_web/market_snapshot.json.gz mobile_web/market_health.json market_snapshot.json.gz market_health.json || true
+          git add -f market_snapshot.json.gz market_health.json mobile_web/market_snapshot.json.gz mobile_web/market_health.json || true
+          git status
           git commit -m "chore(data): auto-update market snapshot and health audit [skip ci]" || echo "No changes to commit"
-          git push origin main || echo "Git push skipped"
+          git push origin main

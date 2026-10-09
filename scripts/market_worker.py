@@ -86,11 +86,16 @@ def safe_int(v, default=0):
     except:
         return default
 
+def get_taipei_now():
+    """取得標準台灣時間 (UTC+8)，避免 GitHub Actions 倫敦時區落差"""
+    tz_tw = datetime.timezone(datetime.timedelta(hours=8))
+    return datetime.datetime.now(tz_tw)
+
 def get_target_date():
     """取得目標執行日期 (支援手動傳參 YYYYMMDD，預設為今日)"""
     if len(sys.argv) > 1 and len(sys.argv[1].strip()) == 8 and sys.argv[1].strip().isdigit():
         return sys.argv[1].strip()
-    return datetime.datetime.now().strftime("%Y%m%d")
+    return get_taipei_now().strftime("%Y%m%d")
 
 def is_market_holiday(date_str):
     """
@@ -707,7 +712,7 @@ def main():
     # 0. 初始化健康狀態 (廣播 PROCESSING 鎖定信號)
     health_report = {
         "target_date": target_date,
-        "run_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "run_time": get_taipei_now().strftime("%Y-%m-%d %H:%M:%S"),
         "status": "PROCESSING",
         "progress": "大盤數據抓取中...",
         "is_holiday": False,
