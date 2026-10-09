@@ -1,0 +1,46 @@
+name: Market Daily Data & Health Sync
+
+on:
+  schedule:
+    # 台灣時間週一至週五 21:15 (UTC 13:15) 自動執行
+    - cron: '15 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: '指定補抓日期 (格式: YYYYMMDD，留空則預設今日)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 檢出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 🐍 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 安裝必要依賴套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests
+
+      - name: 🚀 執行雲端行情大腦與指標審計
+        run: |
+          python scripts/market_worker.py "${{ github.event.inputs.target_date }}"
+
+      - name: 💾 同步快照與健康報表至發佈區
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add mobile_web/market_snapshot.json.gz mobile_web/market_health.json market_snapshot.json.gz market_health.json || true
+          git commit -m "chore(data): auto-update market snapshot and health audit [skip ci]" || echo "No changes to commit"
+          git push origin main || echo "Git push skipped"

@@ -10,3 +10,14 @@
 !一鍵升級雲端連結.bat
 !Sentinel_Control_Center.exe
 
+# 雲端盤後大腦與專屬監控台
+!monitor.html
+!monitor.js
+!market_health.json
+!market_snapshot.json.gz
+!.github/
+!.github/**
+!scripts/
+!scripts/**
+scripts/*.db
+*.db
