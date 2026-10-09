@@ -112,16 +112,47 @@ def get_target_date():
         
     return now.strftime("%Y%m%d")
 
+_TWSE_HOLIDAYS_CACHE = None
+
+def get_twse_official_holidays():
+    """取得證交所官方開休市日曆 (https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule)"""
+    global _TWSE_HOLIDAYS_CACHE
+    if _TWSE_HOLIDAYS_CACHE is not None:
+        return _TWSE_HOLIDAYS_CACHE
+    
+    _TWSE_HOLIDAYS_CACHE = {}
+    try:
+        api_url = "https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule"
+        records = http_get_json(api_url, retries=2, delay=1)
+        if records and isinstance(records, list):
+            for row in records:
+                name = str(row.get("Name", ""))
+                roc_date = str(row.get("Date", "")).strip()
+                if "開始交易" in name:
+                    continue
+                if len(roc_date) == 7 and roc_date.isdigit():
+                    ad_year = int(roc_date[:3]) + 1911
+                    ad_date_str = f"{ad_year}{roc_date[3:]}"
+                    _TWSE_HOLIDAYS_CACHE[ad_date_str] = name
+    except Exception as e:
+        print(f"⚠️ 連線證交所官方休市日曆 API 略過: {e}")
+    return _TWSE_HOLIDAYS_CACHE
+
 def is_market_holiday(date_str):
     """
-    休市日智慧哨兵：比對行事曆、週末與自訂休市檔 (typhone_day.txt)
+    休市日智慧哨兵：比對證交所官方行事曆、週末與自訂休市檔 (typhone_day.txt)
     """
     dt = datetime.datetime.strptime(date_str, "%Y%m%d")
     # 1. 週末過濾
     if dt.weekday() >= 5:
         return True, f"週末例假日 ({dt.strftime('%A')})"
     
-    # 2. 比對 typhone_day.txt
+    # 2. 比對證交所官方公告開休市日曆
+    official_holidays = get_twse_official_holidays()
+    if date_str in official_holidays:
+        return True, f"證交所公告休市 ({official_holidays[date_str]})"
+    
+    # 3. 比對 typhone_day.txt 自訂休市/颱風假
     typhone_file = os.path.join(PROJECT_ROOT, "typhone_day.txt")
     if os.path.exists(typhone_file):
         try:

@@ -229,6 +229,11 @@ createApp({
 
         // ─── 4.5. 智慧計算最近 1 個開市日 ───
         const latestTradingDate = computed(() => {
+            // 優先對齊健康報表中已驗證的最後一個開市日
+            if (healthData.value && healthData.value.target_date && healthData.value.target_date.length === 8) {
+                return healthData.value.target_date;
+            }
+            
             const now = new Date();
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
             const twNow = new Date(utc + (3600000 * 8));
