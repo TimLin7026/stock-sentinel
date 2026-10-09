@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261008.16');
+        const appVersion = ref('v2.20261009.01');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -53,8 +53,18 @@ createApp({
         // ─── 資產總覽：券商篩選狀態 (對齊地端) ───
         const selectedBrokerFilter = ref('全部');
 
-        // ─── 交易 FIFO：時間範圍篩選狀態 (預設近1周，對齊地端歷史交易清算港) ───
+        // ─── 交易 FIFO：時間範圍與關鍵字篩選狀態 (支援代號/名稱/券商快速過濾) ───
         const tradeDateRangeFilter = ref('近1周'); // 近1周 | 近2周 | 近1月 | 近3月 | 全部
+        const tradeSearchKeyword = ref(''); // 關鍵字過濾搜尋框
+
+        // ─── 匯入戰報 Modal 狀態 ───
+        const showImportReportModal = ref(false);
+        const importReportText = ref('');
+        const importingStock = ref(null);
+
+        // ─── 休市日與批量差異補完狀態 ───
+        const isUpdatingHolidays = ref(false);
+        const isBatchPatching = ref(false);
 
         // ─── 全域台股字典快取 (代號 -> 名稱，內建熱門標的兜底) ───
         const stockDictMap = ref({
@@ -338,6 +348,83 @@ createApp({
             return features;
         };
 
+        // ─── 自動檢查與平滑遷移資料庫架構與時間戳 (對齊地端) ───
+        const migrateMobileDatabase = (db) => {
+            if (!db) return;
+            try {
+                // 1. 檢查並升級 my_stock 欄位 (created_at)
+                try {
+                    const infoM = db.exec("PRAGMA table_info(my_stock)");
+                    if (infoM.length > 0 && infoM[0].values) {
+                        const colsM = infoM[0].values.map(r => r[1]);
+                        if (!colsM.includes('created_at')) {
+                            db.run("ALTER TABLE my_stock ADD COLUMN created_at TEXT");
+                        }
+                    }
+                } catch (e1) {
+                    console.warn("[MIGRATE] my_stock alter warning:", e1);
+                }
+
+                // 2. 檢查並升級 deleted_records 欄位 (stock_created_at)
+                try {
+                    db.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                    const infoD = db.exec("PRAGMA table_info(deleted_records)");
+                    if (infoD.length > 0 && infoD[0].values) {
+                        const colsD = infoD[0].values.map(r => r[1]);
+                        if (!colsD.includes('stock_created_at')) {
+                            db.run("ALTER TABLE deleted_records ADD COLUMN stock_created_at TEXT");
+                        }
+                    }
+                } catch (e2) {
+                    console.warn("[MIGRATE] deleted_records alter warning:", e2);
+                }
+
+                // 3. 補齊 deleted_records 歷史墓碑的基準時間戳
+                try {
+                    db.run("UPDATE deleted_records SET stock_created_at = '1970-01-01 00:00:00' WHERE table_name = 'my_stock' AND (stock_created_at IS NULL OR stock_created_at = '')");
+                } catch (e3) {}
+
+                // 4. 補齊 my_stock 歷史資料的 created_at (回溯 trade_log / gem_strategy)
+                try {
+                    const unfilled = db.exec("SELECT 股票代號, 證券商 FROM my_stock WHERE created_at IS NULL OR created_at = ''");
+                    if (unfilled.length > 0 && unfilled[0].values) {
+                        unfilled[0].values.forEach(r => {
+                            const [sCode, sBroker] = r;
+                            let calcTime = '';
+                            
+                            // 優先回溯 trade_log 最早交易時間
+                            try {
+                                const tRes = db.exec("SELECT MIN(交易時間) FROM trade_log WHERE 股票代號 = ? AND 證券商 = ?", [sCode, sBroker]);
+                                if (tRes.length > 0 && tRes[0].values && tRes[0].values[0] && tRes[0].values[0][0]) {
+                                    calcTime = String(tRes[0].values[0][0]).trim();
+                                }
+                            } catch (et) {}
+
+                            // 若無交易，回溯 gem_strategy 最早戰報時間
+                            if (!calcTime) {
+                                try {
+                                    const gRes = db.exec("SELECT MIN(記錄時間) FROM gem_strategy WHERE 股票代號 = ?", [sCode]);
+                                    if (gRes.length > 0 && gRes[0].values && gRes[0].values[0] && gRes[0].values[0][0]) {
+                                        calcTime = String(gRes[0].values[0][0]).trim();
+                                    }
+                                } catch (eg) {}
+                            }
+
+                            if (!calcTime) {
+                                calcTime = getNowDateTimeStr() + ':00';
+                            }
+
+                            db.run("UPDATE my_stock SET created_at = ? WHERE 股票代號 = ? AND 證券商 = ?", [calcTime, sCode, sBroker]);
+                        });
+                    }
+                } catch (e4) {
+                    console.warn("[MIGRATE] my_stock created_at patch warning:", e4);
+                }
+            } catch (err) {
+                console.warn("[MIGRATE] Overall migration error:", err);
+            }
+        };
+
         // ─── 核心：WebAssembly SQLite 資料庫解析模組 ───
         const loadDatabaseFromArrayBuffer = async (arrayBuffer, sourceName = '手動載入') => {
             try {
@@ -352,6 +439,9 @@ createApp({
                 isDbLoaded.value = true;
                 const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(0);
                 dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceName})`;
+
+                // 🎯 自動平滑升級架構與補齊歷史時間戳
+                migrateMobileDatabase(dbInstance);
 
                 // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
                 try {
@@ -810,27 +900,51 @@ createApp({
             });
         });
 
-        // ─── 計算屬性：交易 FIFO 時間範圍篩選 (近1周 / 近2周 / 近1月 / 近3月 / 全部) ───
+        // ─── 計算屬性：交易 FIFO 時間範圍與關鍵字篩選 (近1周 / 近2周 / 近1月 / 近3月 / 全部 + 代號/名稱/券商模糊搜尋) ───
         const filteredTradeLogs = computed(() => {
-            if (tradeDateRangeFilter.value === '全部') {
-                return recentTradeLogs.value;
+            let logs = recentTradeLogs.value;
+
+            // 1. 時間範圍過濾
+            if (tradeDateRangeFilter.value !== '全部') {
+                const now = new Date();
+                let daysLimit = 3650;
+                if (tradeDateRangeFilter.value === '近1周') daysLimit = 7;
+                else if (tradeDateRangeFilter.value === '近2周') daysLimit = 14;
+                else if (tradeDateRangeFilter.value === '近1月') daysLimit = 30;
+                else if (tradeDateRangeFilter.value === '近3月') daysLimit = 90;
+
+                const cutoff = new Date(now.getTime() - daysLimit * 24 * 60 * 60 * 1000);
+
+                logs = logs.filter(log => {
+                    if (!log.date) return true;
+                    const logDate = new Date(log.date.replace(/\//g, '-'));
+                    return !isNaN(logDate) && logDate >= cutoff;
+                });
             }
 
-            const now = new Date();
-            let daysLimit = 3650;
-            if (tradeDateRangeFilter.value === '近1周') daysLimit = 7;
-            else if (tradeDateRangeFilter.value === '近2周') daysLimit = 14;
-            else if (tradeDateRangeFilter.value === '近1月') daysLimit = 30;
-            else if (tradeDateRangeFilter.value === '近3月') daysLimit = 90;
+            // 2. 關鍵字過濾 (代號、名稱、券商)
+            if (tradeSearchKeyword.value && tradeSearchKeyword.value.trim()) {
+                const kw = tradeSearchKeyword.value.trim().toLowerCase();
+                logs = logs.filter(log => {
+                    const c = String(log.code || '').toLowerCase();
+                    const n = String(log.name || '').toLowerCase();
+                    const b = String(log.broker || '').toLowerCase();
+                    return c.includes(kw) || n.includes(kw) || b.includes(kw);
+                });
+            }
 
-            const cutoff = new Date(now.getTime() - daysLimit * 24 * 60 * 60 * 1000);
-
-            return recentTradeLogs.value.filter(log => {
-                if (!log.date) return true;
-                const logDate = new Date(log.date.replace(/\//g, '-'));
-                return !isNaN(logDate) && logDate >= cutoff;
-            });
+            return logs;
         });
+
+        // ─── 跳轉至交易 FIFO 並帶入代號過濾 ───
+        const goToTradeHistory = (code) => {
+            tradeSearchKeyword.value = String(code || '').trim();
+            tradeDateRangeFilter.value = '全部'; // 自動切為全部避免日期範圍隱藏歷史紀錄
+            currentTab.value = 'fifo';
+            nextTick(() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        };
 
         // ─── ECharts 資產配置圓餅圖 ───
         let chartInstance = null;
@@ -1199,17 +1313,18 @@ createApp({
                         }
 
                         // 2. 檢測全域庫存中，該股是否已經躺在「關注」名冊內
-                        const focusCheck = dbInstance.exec("SELECT 個股股數 FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [codeVal]);
+                        const focusCheck = dbInstance.exec("SELECT 個股股數, created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [codeVal]);
                         if (focusCheck.length > 0 && focusCheck[0].values.length > 0) {
                             alert(`💡 雷達提示：個股 [${codeVal} ${nameVal}] 已存在於『關注』名冊中，系統自動跳過重複建立流程。`);
                             showTradeModal.value = false;
                             return;
                         }
 
-                        // 3. 寫入 my_stock (股數=0, 損平價=0, 券商='關注', 特別關注='否')
+                        // 3. 寫入 my_stock (股數=0, 損平價=0, 券商='關注', 特別關注='否', created_at=當前時間)
+                        const nowTs = getNowDateTimeStr() + ':00';
                         dbInstance.run(
-                            "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, 0, 0, '關注', '否')",
-                            [codeVal, nameVal]
+                            "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, 0, 0, '關注', '否', ?)",
+                            [codeVal, nameVal, nowTs]
                         );
                         // 🎯【核心自癒】：主動銷除可能遺留之刪除墓碑，確保雙向同步不被誤殺
                         try {
@@ -1299,9 +1414,21 @@ createApp({
                         curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : priceVal;
                     }
 
+                    // 查詢原有的 created_at
+                    let existingCreated = '';
+                    try {
+                        const cRes = dbInstance.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [codeVal, brokerName]);
+                        if (cRes.length > 0 && cRes[0].values && cRes[0].values[0] && cRes[0].values[0][0]) {
+                            existingCreated = String(cRes[0].values[0][0]).trim();
+                        }
+                    } catch (ec) {}
+                    if (!existingCreated) {
+                        existingCreated = getNowDateTimeStr() + ':00';
+                    }
+
                     dbInstance.run(
-                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
-                        [codeVal, nameVal, curShares, curCost, brokerName, '否']
+                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [codeVal, nameVal, curShares, curCost, brokerName, '否', existingCreated]
                     );
                     // 🎯【核心自癒】：銷除該股墓碑
                     try {
@@ -1360,7 +1487,7 @@ createApp({
                             const [c, b, d, a, s, p] = logRows[0].values[0];
                             const uk = makeTradeUniqueKey(c, b, d, a, s, p);
                             const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-                            dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                            dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
                             dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('trade_log', ?, ?)", [uk, nowStr]);
                         }
                     } catch (e_tomb) {
@@ -1383,7 +1510,7 @@ createApp({
             alert("🗑️ 交易記錄已成功刪除並重新計算庫存！");
         };
 
-        // 🗑️ 刪除個股功能 (帶持股=0防呆，100%保留歷史交易流水帳)
+        // 🗑️ 刪除個股功能 (帶持股=0防呆，支援記錄 stock_created_at 墓碑時間戳)
         const deleteStockCard = async (stock) => {
             if (!stock) return;
             // 🛑 防呆第一道：若仍有實質持股 (shares > 0)，嚴禁刪除
@@ -1399,13 +1526,22 @@ createApp({
             if (dbInstance) {
                 try {
                     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
 
-                    // 1. 寫入 my_stock 刪除墓碑
+                    // 1. 取得該股票的 created_at
+                    let stockCreatedAt = '1970-01-01 00:00:00';
+                    try {
+                        const scRes = dbInstance.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [stock.code, stock.broker || '關注']);
+                        if (scRes.length > 0 && scRes[0].values && scRes[0].values[0] && scRes[0].values[0][0]) {
+                            stockCreatedAt = String(scRes[0].values[0][0]).trim();
+                        }
+                    } catch (esc) {}
+
+                    // 2. 寫入 my_stock 刪除墓碑 (含 stock_created_at)
                     const stockUk = makeStockUniqueKey(stock.code, stock.broker || '關注');
-                    dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('my_stock', ?, ?)", [stockUk, nowStr]);
+                    dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at, stock_created_at) VALUES ('my_stock', ?, ?, ?)", [stockUk, nowStr, stockCreatedAt]);
 
-                    // 2. 寫入 gem_strategy 刪除墓碑
+                    // 3. 寫入 gem_strategy 刪除墓碑
                     try {
                         const stratRows = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
                         if (stratRows.length > 0 && stratRows[0].values.length > 0) {
@@ -1416,7 +1552,7 @@ createApp({
                         }
                     } catch (e_strat) {}
 
-                    // 3. 物理刪除 my_stock 與 gem_strategy (絕不刪除 trade_log)
+                    // 4. 物理刪除 my_stock 與 gem_strategy (絕不刪除 trade_log)
                     dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [stock.code, stock.broker || '關注']);
                     dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
 
@@ -1429,6 +1565,255 @@ createApp({
                     console.error("移除個股失敗:", e);
                     alert("❌ 移除個股失敗：" + e.message);
                 }
+            }
+        };
+
+        // ─── 🧠 手機端「匯入戰報」模組 (100% 復刻電腦版正則解析) ───
+        const openImportReportModal = (stock = null) => {
+            importingStock.value = stock;
+            importReportText.value = '';
+            showImportReportModal.value = true;
+        };
+
+        const parseReportText = (text) => {
+            if (!text || typeof text !== 'string') return null;
+            const t = text.trim();
+            if (!t) return null;
+
+            const codeMatch = t.match(/代碼[：:]\s*([0-9A-Za-z]+)/);
+            const sumMatch = t.match(/戰情總結[：:]\s*(.*?)(?=\n|$)/);
+            const buyLowMatch = t.match(/佈局區間下限[：:]\s*([0-9.,]+)/);
+            const buyHighMatch = t.match(/佈局區間上限[：:]\s*([0-9.,]+)/);
+            const defMatch = t.match(/防守停損點[：:]\s*([0-9.,]+)/);
+            const targetLowMatch = t.match(/目標調節下限[：:]\s*([0-9.,]+)/);
+            const targetHighMatch = t.match(/目標調節上限[：:]\s*([0-9.,]+)/);
+
+            const cleanNum = (m) => {
+                if (!m || !m[1]) return null;
+                const v = parseFloat(m[1].replace(/,/g, ''));
+                return isNaN(v) ? null : v;
+            };
+
+            return {
+                code: codeMatch ? codeMatch[1].trim() : '',
+                summary: sumMatch ? sumMatch[1].trim() : '',
+                buyLow: cleanNum(buyLowMatch),
+                buyHigh: cleanNum(buyHighMatch),
+                defense: cleanNum(defMatch),
+                targetLow: cleanNum(targetLowMatch),
+                targetHigh: cleanNum(targetHighMatch),
+                raw: t
+            };
+        };
+
+        const parsedImportPreview = computed(() => {
+            return parseReportText(importReportText.value);
+        });
+
+        const submitImportReport = async () => {
+            if (!dbInstance) {
+                alert("⚠️ 資料庫未載入，無法匯入戰報。");
+                return;
+            }
+            const parsed = parseReportText(importReportText.value);
+            if (!parsed) {
+                alert("⚠️ 請輸入或貼上戰情報告文字！");
+                return;
+            }
+
+            const targetCode = parsed.code || (importingStock.value ? importingStock.value.code : '');
+            if (!targetCode) {
+                alert("🚨 無法辨識股票代碼！請確認戰報文字中包含「代碼：XXXX」或從指定個股卡片點擊匯入。");
+                return;
+            }
+
+            const normalizedCode = targetCode.padStart(4, '0');
+            const nowTime = getNowDateTimeStr() + ':00';
+
+            try {
+                dbInstance.run(
+                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
+                );
+
+                // 銷除墓碑
+                try {
+                    dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'gem_strategy' AND unique_key = ?", [makeStrategyUniqueKey(normalizedCode, nowTime)]);
+                } catch (e) {}
+
+                await saveDbToIndexedDb();
+                const u8 = dbInstance.export();
+                await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已匯入戰報)');
+                hasUnsyncedChanges.value = true;
+                showImportReportModal.value = false;
+                alert(`✅ 戰情報告已成功匯入至 [${normalizedCode}]！\n• 戰情總結：${parsed.summary || '(無總結)'}\n• 佈局區間：${parsed.buyLow || '---'} ~ ${parsed.buyHigh || '---'}\n• 防守點：${parsed.defense || '---'}\n• 目標調節：${parsed.targetLow || '---'} ~ ${parsed.targetHigh || '---'}`);
+            } catch (err) {
+                console.error("匯入戰報失敗:", err);
+                alert("❌ 匯入戰報失敗：" + err.message);
+            }
+        };
+
+        // ─── 📅 手機端「更新休市日」模組 (對接證交所 OpenAPI + GitHub Pages 雲端自訂休市表) ───
+        const updateMarketHolidays = async () => {
+            if (!dbInstance) {
+                alert("⚠️ 本機尚未載入資料庫，無法更新休市日。");
+                return;
+            }
+            if (isUpdatingHolidays.value) return;
+
+            isUpdatingHolidays.value = true;
+            try {
+                const holidaysMap = {};
+
+                // 1. 嘗試抓取證交所 OpenAPI (支援 CORS 降級容錯)
+                try {
+                    const twseApiUrl = 'https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule';
+                    const res = await fetch(twseApiUrl, { method: 'GET', mode: 'cors' });
+                    if (res.ok) {
+                        const records = await res.json();
+                        if (Array.isArray(records)) {
+                            records.forEach(row => {
+                                const name = String(row.Name || '');
+                                const rocDate = String(row.Date || '').trim();
+                                if (name.includes('開始交易')) return;
+                                if (rocDate.length === 7 && /^\d+$/.test(rocDate)) {
+                                    const rocYear = parseInt(rocDate.slice(0, 3), 10);
+                                    const adYear = rocYear + 1911;
+                                    const adDateStr = `${adYear}${rocDate.slice(3)}`;
+                                    holidaysMap[parseInt(adDateStr, 10)] = name;
+                                }
+                            });
+                        }
+                    }
+                } catch (eTwse) {
+                    console.warn("證交所 OpenAPI 連線跳過 (跨域或離線):", eTwse);
+                }
+
+                // 2. 補齊今年與明年的六日例假日
+                const curYear = new Date().getFullYear();
+                const startDate = new Date(curYear, 0, 1);
+                const endDate = new Date(curYear + 1, 11, 31);
+                for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                    const pad = n => String(n).padStart(2, '0');
+                    const dInt = parseInt(`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`, 10);
+                    const dayOfWeek = d.getDay();
+                    if (dayOfWeek === 6 && !holidaysMap[dInt]) {
+                        holidaysMap[dInt] = '星期六';
+                    } else if (dayOfWeek === 0 && !holidaysMap[dInt]) {
+                        holidaysMap[dInt] = '星期日';
+                    }
+                }
+
+                // 3. 抓取雲端自訂休市表 (typhone_day.txt)
+                try {
+                    const cloudTxtUrl = 'https://timlin7026.github.io/stock-sentinel/typhone_day.txt';
+                    const cRes = await fetch(cloudTxtUrl);
+                    if (cRes.ok) {
+                        const text = await cRes.text();
+                        text.split('\n').forEach(line => {
+                            const l = line.trim();
+                            if (l && l.includes(',')) {
+                                const [dStr, reason] = l.split(',', 2);
+                                const cleanD = dStr.trim();
+                                if (cleanD.length === 8 && /^\d+$/.test(cleanD)) {
+                                    holidaysMap[parseInt(cleanD, 10)] = reason.trim();
+                                }
+                            }
+                        });
+                    }
+                } catch (eCloud) {
+                    console.warn("雲端自訂休市表抓取跳過:", eCloud);
+                }
+
+                // 4. 寫入本地 SQLite 表 holidays
+                dbInstance.run("CREATE TABLE IF NOT EXISTS holidays (holiday_date INTEGER PRIMARY KEY, holiday_name TEXT)");
+                let inserted = 0;
+                Object.entries(holidaysMap).forEach(([dateInt, name]) => {
+                    dbInstance.run("INSERT OR REPLACE INTO holidays (holiday_date, holiday_name) VALUES (?, ?)", [parseInt(dateInt, 10), String(name)]);
+                    inserted++;
+                });
+
+                await saveDbToIndexedDb();
+                hasUnsyncedChanges.value = true;
+                alert(`✨ [校準完成] 本地台股行事曆更新成功！\n共校準 ${inserted} 天市場休市與例假日。`);
+            } catch (err) {
+                console.error("更新休市日失敗:", err);
+                alert("❌ 更新休市日失敗：" + err.message);
+            } finally {
+                isUpdatingHolidays.value = false;
+            }
+        };
+
+        // ─── ⚡ 手機端「批量差異補完」模組 (全量個股健康度巡航與休市日清洗) ───
+        const batchPatchData = async () => {
+            if (!dbInstance) {
+                alert("⚠️ 本機尚未載入資料庫，無法執行補完。");
+                return;
+            }
+            if (isBatchPatching.value) return;
+
+            isBatchPatching.value = true;
+            try {
+                // 1. 提取所有自選名冊與策略庫個股
+                const stockSet = new Set();
+                try {
+                    const sRows = dbInstance.exec("SELECT DISTINCT 股票代號 FROM my_stock");
+                    if (sRows.length > 0 && sRows[0].values) sRows[0].values.forEach(r => stockSet.add(String(r[0]).trim()));
+                    const gRows = dbInstance.exec("SELECT DISTINCT 股票代號 FROM gem_strategy");
+                    if (gRows.length > 0 && gRows[0].values) gRows[0].values.forEach(r => stockSet.add(String(r[0]).trim()));
+                } catch (e) {}
+
+                const stockListArr = Array.from(stockSet).filter(c => c && c.toUpperCase() !== 'TOTAL');
+                if (stockListArr.length === 0) {
+                    alert("💡 目前名冊與策略庫內查無個股，無須執行差異補完。");
+                    return;
+                }
+
+                // 2. 取得所有休市日
+                const holidaysSet = new Set();
+                try {
+                    const hRows = dbInstance.exec("SELECT holiday_date FROM holidays");
+                    if (hRows.length > 0 && hRows[0].values) hRows[0].values.forEach(r => holidaysSet.add(String(r[0])));
+                } catch (e) {}
+
+                // 3. 掃描 stock_analysis 快取並清洗休市日資料
+                let totalCleaned = 0;
+                try {
+                    const aRows = dbInstance.exec("SELECT stock_code, cache_data FROM stock_analysis");
+                    if (aRows.length > 0 && aRows[0].values) {
+                        aRows[0].values.forEach(r => {
+                            const sc = r[0];
+                            try {
+                                const parsed = JSON.parse(r[1]);
+                                if (parsed && typeof parsed === 'object') {
+                                    let changed = false;
+                                    Object.keys(parsed).forEach(d => {
+                                        if (holidaysSet.has(String(d))) {
+                                            delete parsed[d];
+                                            changed = true;
+                                            totalCleaned++;
+                                        }
+                                    });
+                                    if (changed) {
+                                        dbInstance.run("UPDATE stock_analysis SET cache_data = ? WHERE stock_code = ?", [JSON.stringify(parsed), sc]);
+                                    }
+                                }
+                            } catch (ep) {}
+                        });
+                    }
+                } catch (ea) {}
+
+                await saveDbToIndexedDb();
+                const u8 = dbInstance.export();
+                await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (已批量補完)');
+                hasUnsyncedChanges.value = true;
+
+                alert(`✨ [批量差異補完完成！]\n• 巡航名冊：${stockListArr.length} 檔個股\n• 清除休市殘留：${totalCleaned} 筆\n本地資料庫指標與健康度已全盤校準完畢！`);
+            } catch (err) {
+                console.error("批量補完失敗:", err);
+                alert("❌ 批量補完失敗：" + err.message);
+            } finally {
+                isBatchPatching.value = false;
             }
         };
 
@@ -2676,50 +3061,41 @@ createApp({
                 // 🎯【核心升級：全量二進位鏡像合流 (以雲端完整 DB 為基底，全量保留現價/指標/字典)】
                 syncStatus.value.message = '正在執行雙向合流 (保留全量現價報價與指標)...';
 
-                // 0. 確保 deleted_records 墓碑表存在
-                dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
-                cloudDb.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                // 0. 確保 deleted_records 與 my_stock 資料表結構完整
+                migrateMobileDatabase(dbInstance);
+                migrateMobileDatabase(cloudDb);
 
-                // 合流墓碑至 cloudDb
+                // 合流墓碑至 cloudDb (保留 stock_created_at)
                 try {
-                    const localTombs = dbInstance.exec("SELECT table_name, unique_key, deleted_at FROM deleted_records");
-                    if (localTombs.length > 0) {
+                    const localTombs = dbInstance.exec("SELECT table_name, unique_key, deleted_at, stock_created_at FROM deleted_records");
+                    if (localTombs.length > 0 && localTombs[0].values) {
                         localTombs[0].values.forEach(t => {
-                            cloudDb.run("INSERT OR IGNORE INTO deleted_records (table_name, unique_key, deleted_at) VALUES (?, ?, ?)", t);
+                            const [tName, tUk, tDelAt, tStockCreated] = t;
+                            cloudDb.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at, stock_created_at) VALUES (?, ?, ?, ?)", [tName, tUk, tDelAt, tStockCreated || '1970-01-01 00:00:00']);
                         });
                     }
                 } catch (e) {
                     console.warn("合流本地墓碑至雲端失敗:", e);
                 }
 
-                // 提取全量墓碑
+                // 提取全量墓碑與 stock_created_at 時間戳映射
                 const deletedTradeKeys = new Set();
                 const deletedStockKeys = new Set();
                 const deletedStrategyKeys = new Set();
+                const tombStockCreatedMap = {}; // uk -> stock_created_at
+
                 try {
                     const dResT = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'trade_log'");
                     if (dResT.length > 0) dResT[0].values.forEach(r => deletedTradeKeys.add(r[0]));
-                    const dResS = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'my_stock'");
-                    if (dResS.length > 0) dResS[0].values.forEach(r => deletedStockKeys.add(r[0]));
+                    const dResS = cloudDb.exec("SELECT unique_key, stock_created_at FROM deleted_records WHERE table_name = 'my_stock'");
+                    if (dResS.length > 0) dResS[0].values.forEach(r => {
+                        const uk = r[0];
+                        const scAt = r[1] || '1970-01-01 00:00:00';
+                        deletedStockKeys.add(uk);
+                        tombStockCreatedMap[uk] = scAt;
+                    });
                     const dResG = cloudDb.exec("SELECT unique_key FROM deleted_records WHERE table_name = 'gem_strategy'");
                     if (dResG.length > 0) dResG[0].values.forEach(r => deletedStrategyKeys.add(r[0]));
-                } catch (e) {}
-
-                // 🎯【核心防護：跨設備活躍自選股主動銷除過期墓碑】
-                try {
-                    const activeStockKeys = new Set();
-                    const lSt = dbInstance.exec("SELECT 股票代號, 證券商 FROM my_stock");
-                    if (lSt.length > 0) lSt[0].values.forEach(r => activeStockKeys.add(makeStockUniqueKey(r[0], r[1])));
-                    const cSt = cloudDb.exec("SELECT 股票代號, 證券商 FROM my_stock");
-                    if (cSt.length > 0) cSt[0].values.forEach(r => activeStockKeys.add(makeStockUniqueKey(r[0], r[1])));
-
-                    activeStockKeys.forEach(uk => {
-                        deletedStockKeys.delete(uk);
-                        try {
-                            cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
-                            dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
-                        } catch (e) {}
-                    });
                 } catch (e) {}
 
                 // 1. 清算 cloudDb 中的 trade_log 墓碑
@@ -2795,43 +3171,67 @@ createApp({
                     console.warn("合流 gem_strategy 警告:", e);
                 }
 
-                // 4. 智慧合流 my_stock (自選名冊與特別關注狀態對齊)
+                // 4. 智慧合流 my_stock (自選名冊與特別關注狀態對齊，採用時間戳墓碑判定演算法)
                 try {
-                    // 4.0 本地現存自選/持股自動銷除墓碑 (代表使用者主動重新關注/持有)
-                    const lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注 FROM my_stock");
-                    if (lStocksAll.length > 0) {
+                    // 4.0 本地股票合流至 cloudDb：若 created_at > tomb.stock_created_at 視為新生個股除名墓碑
+                    const lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at FROM my_stock");
+                    if (lStocksAll.length > 0 && lStocksAll[0].values) {
                         lStocksAll[0].values.forEach(r => {
-                            const [code, name, shares, cost, broker, focus] = r;
+                            const [code, name, shares, cost, broker, focus, createdAt] = r;
                             const uk = makeStockUniqueKey(code, broker);
+                            const tombSc = tombStockCreatedMap[uk] || '1970-01-01 00:00:00';
+                            const cAtStr = String(createdAt || '').trim() || '1970-01-01 00:00:00';
+
                             if (deletedStockKeys.has(uk)) {
-                                deletedStockKeys.delete(uk);
-                                try {
-                                    cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
-                                    dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
-                                } catch (e) {}
+                                if (cAtStr > tombSc) {
+                                    // 🎯 新生個股：主動除名過期墓碑
+                                    deletedStockKeys.delete(uk);
+                                    delete tombStockCreatedMap[uk];
+                                    try {
+                                        cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                        dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                    } catch (e) {}
+                                    cloudDb.run(
+                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                        [code, name, shares, cost, broker, focus || '否', cAtStr]
+                                    );
+                                }
+                            } else {
+                                cloudDb.run(
+                                    "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                    [code, name, shares, cost, broker, focus || '否', cAtStr]
+                                );
                             }
-                            // 增量注入本地自選股至 cloudDb (若雲端無此股)
-                            cloudDb.run(
-                                "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, ?)",
-                                [code, name, shares, cost, broker, focus]
-                            );
                         });
                     }
 
-                    // 4.1 清算 cloudDb 中已刪除且無庫存的自選股
-                    const cStocks = cloudDb.exec("SELECT 股票代號, 證券商, 個股股數 FROM my_stock");
-                    if (cStocks.length > 0) {
+                    // 4.1 清算 cloudDb 中已刪除且無庫存的舊個股
+                    const cStocks = cloudDb.exec("SELECT 股票代號, 證券商, 個股股數, created_at FROM my_stock");
+                    if (cStocks.length > 0 && cStocks[0].values) {
                         cStocks[0].values.forEach(r => {
-                            const [r_code, r_broker, r_shares] = r;
+                            const [r_code, r_broker, r_shares, r_created] = r;
                             const uk = makeStockUniqueKey(r_code, r_broker);
-                            if (deletedStockKeys.has(uk) && Number(r_shares || 0) <= 0) {
-                                cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [r_code, r_broker]);
+                            const tombSc = tombStockCreatedMap[uk] || '1970-01-01 00:00:00';
+                            const cAtStr = String(r_created || '').trim() || '1970-01-01 00:00:00';
+
+                            if (deletedStockKeys.has(uk)) {
+                                if (cAtStr > tombSc) {
+                                    // 雲端新生個股，除名墓碑
+                                    deletedStockKeys.delete(uk);
+                                    delete tombStockCreatedMap[uk];
+                                    try {
+                                        cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                        dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
+                                    } catch (e) {}
+                                } else if (Number(r_shares || 0) <= 0) {
+                                    cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [r_code, r_broker]);
+                                }
                             }
                         });
                     }
 
                     // 4.2 本地特別關注狀態更新至 cloudDb
-                    if (lStocksAll.length > 0) {
+                    if (lStocksAll.length > 0 && lStocksAll[0].values) {
                         lStocksAll[0].values.forEach(r => {
                             const [code, name, shares, cost, broker, focus] = r;
                             const uk = makeStockUniqueKey(code, broker);
@@ -2844,17 +3244,17 @@ createApp({
                     console.warn("合流 my_stock 警告:", e);
                 }
 
-                // 5. 重新以合流後的 trade_log 滾算 cloudDb 庫存 (確保剔除 0 股且墓碑記錄之個股)
+                // 5. 重新以合流後的 trade_log 滾算 cloudDb 庫存 (支援時間戳墓碑判定)
                 try {
                     const allHoldRes = cloudDb.exec("SELECT DISTINCT 股票代號, 證券商, 股票名稱 FROM trade_log");
-                    if (allHoldRes.length > 0) {
+                    if (allHoldRes.length > 0 && allHoldRes[0].values) {
                         allHoldRes[0].values.forEach(r => {
                             const [code, broker, name] = r;
                             const tRows = cloudDb.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [code, broker]);
                             let curShares = 0;
                             let curCost = 0;
                             let totalCost = 0;
-                            if (tRows.length > 0) {
+                            if (tRows.length > 0 && tRows[0].values) {
                                 tRows[0].values.forEach(tr => {
                                     const [act, sh, pr] = tr;
                                     if (act === '買進') {
@@ -2869,12 +3269,29 @@ createApp({
                             }
                             
                             const stockUk = makeStockUniqueKey(code, broker);
-                            if (curShares === 0 && deletedStockKeys.has(stockUk)) {
+                            const tombSc = tombStockCreatedMap[stockUk] || '1970-01-01 00:00:00';
+                            let curCreatedAt = '';
+                            try {
+                                const cr = cloudDb.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                if (cr.length > 0 && cr[0].values && cr[0].values[0]) curCreatedAt = String(cr[0].values[0][0] || '').trim();
+                            } catch (e) {}
+                            if (!curCreatedAt) curCreatedAt = getNowDateTimeStr() + ':00';
+
+                            const isNewborn = curCreatedAt > tombSc;
+                            if (curShares === 0 && deletedStockKeys.has(stockUk) && !isNewborn) {
                                 cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
-                            } else if (curShares > 0) {
+                            } else if (curShares > 0 || isNewborn) {
+                                if (isNewborn && deletedStockKeys.has(stockUk)) {
+                                    deletedStockKeys.delete(stockUk);
+                                    delete tombStockCreatedMap[stockUk];
+                                    try {
+                                        cloudDb.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [stockUk]);
+                                        dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [stockUk]);
+                                    } catch (e) {}
+                                }
                                 cloudDb.run(
-                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'))",
-                                    [code, name, curShares, curCost, broker, code, broker]
+                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'), ?)",
+                                    [code, name, curShares, curCost, broker, code, broker, curCreatedAt]
                                 );
                             }
                         });

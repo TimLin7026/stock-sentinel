@@ -353,18 +353,28 @@
                                     </div>
                                 </div>
 
-                                <!-- 戰報戰情總結 (顯示資訊日期與時效燈號) -->
+                                 <!-- 戰報戰情總結 (顯示資訊日期與時效燈號 + 單一入口匯入戰報按鈕) -->
                                 <div>
-                                    <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center">
-                                        <span class="mr-1 text-xs">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
-                                        <span class="mr-1.5">📖</span>戰情報告短評 ({{ stock.reportDate || '最新' }})
+                                    <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center justify-between">
+                                        <div class="flex items-center">
+                                            <span class="mr-1 text-xs">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
+                                            <span class="mr-1.5">📖</span>戰情報告短評 ({{ stock.reportDate || '最新' }})
+                                        </div>
+                                        <!-- 🧠 單一入口：匯入戰報小按鈕 -->
+                                        <button @click.stop="openImportReportModal(stock)" 
+                                                :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
+                                                class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
+                                                title="匯入戰情報告">
+                                            <i class="fa-solid fa-brain text-[10px]"></i>
+                                            <span>🧠 匯入戰報</span>
+                                        </button>
                                     </div>
                                     <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
                                         {{ stock.summaryText || '暫無策略總結，請於 PC 端進行全量掃描分析。' }}
                                     </div>
                                 </div>
 
-                                <!-- 底部操作工具列 (對齊地端：🗑️移除個股 + 📋複製10日 + ➕錄入交易) -->
+                                <!-- 底部操作工具列 (對齊地端：🗑️移除個股 + 🔍查交易 + ➕錄入交易) -->
                                 <div :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'" class="pt-1 flex space-x-2 items-center border-t">
                                     <button @click.stop="deleteStockCard(stock)" 
                                             :disabled="Number(stock.shares || 0) > 0"
@@ -377,11 +387,12 @@
                                             class="w-1/4 py-2 rounded-xl font-bold text-xs flex items-center justify-center border transition">
                                         <i class="fa-solid fa-trash-can mr-1"></i>移除
                                     </button>
-                                    <button @click.stop="copyStock10DayReport(stock)" 
-                                            :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50 active:scale-95' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 active:scale-95'"
+                                    <!-- 🔍 查交易按鈕 (跳轉至交易 FIFO 帶入代號過濾) -->
+                                    <button @click.stop="goToTradeHistory(stock.code)" 
+                                            :class="theme === 'dark' ? 'bg-amber-950/80 hover:bg-amber-900 text-amber-300 border-amber-900/50 active:scale-95' : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 active:scale-95'"
                                             class="w-1/3 py-2 rounded-xl font-bold text-xs flex items-center justify-center border transition shadow-sm"
-                                            title="一鍵複製近 10 日戰情報告">
-                                        <i class="fa-regular fa-copy mr-1"></i>複製10日
+                                            title="跳轉至交易 FIFO 查詢歷史記錄">
+                                        <i class="fa-solid fa-magnifying-glass mr-1"></i>查交易
                                     </button>
                                     <button @click.stop="openTradeModal(stock)" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center shadow transition active:scale-95">
                                         <i class="fa-solid fa-plus mr-1"></i>錄入交易
@@ -411,6 +422,19 @@
                             <i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>歷史交易流水帳
                         </h2>
                         <span class="text-[10px] text-slate-400 font-mono">共 {{ filteredTradeLogs.length }} 筆</span>
+                    </div>
+
+                    <!-- 🔍 關鍵字搜尋框 (支援代號/名稱/券商快速過濾) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex items-center px-3 py-1.5 rounded-xl border space-x-2">
+                        <i class="fa-solid fa-magnifying-glass text-xs text-slate-400"></i>
+                        <input v-model="tradeSearchKeyword" 
+                               type="text" 
+                               placeholder="搜尋股票代號 / 名稱 / 券商..." 
+                               :class="theme === 'dark' ? 'text-slate-100 placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'"
+                               class="bg-transparent border-none outline-none text-xs flex-1">
+                        <button v-if="tradeSearchKeyword" @click="tradeSearchKeyword = ''" class="text-xs text-slate-400 hover:text-slate-200">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
                     </div>
 
                     <!-- 時間範圍篩選標籤列 (對齊地端：近1周 | 近2周 | 近1月 | 近3月 | 全部) -->
@@ -563,6 +587,30 @@
                         </div>
                     </div>
 
+                    <!-- 📅 市場曆法與數據健康維護 (對齊電腦端) -->
+                    <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                        <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
+                            📅 市場曆法與數據健康維護：
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="updateMarketHolidays" :disabled="isUpdatingHolidays || !isDbLoaded"
+                                    :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
+                                    class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
+                                    title="同步證交所與雲端休市表">
+                                <i class="fa-solid fa-calendar-days text-sky-500" :class="isUpdatingHolidays ? 'fa-spin' : ''"></i>
+                                <span>{{ isUpdatingHolidays ? '更新中...' : '📅 更新休市日' }}</span>
+                            </button>
+
+                            <button @click="batchPatchData" :disabled="isBatchPatching || !isDbLoaded"
+                                    :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
+                                    class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
+                                    title="清除休市日殘留並校準指標健康度">
+                                <i class="fa-solid fa-bolt-lightning text-amber-500" :class="isBatchPatching ? 'fa-spin' : ''"></i>
+                                <span>{{ isBatchPatching ? '補完中...' : '⚡ 批量差異補完' }}</span>
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- 本機手動備援操作 (匯入 / 匯出) -->
                     <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
                         <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
@@ -616,6 +664,63 @@
                 </div>
             </section>
         </main>
+
+
+        <!-- ========================================== -->
+        <!-- 🧠 匯入戰情報告 Modal 彈窗 -->
+        <!-- ========================================== -->
+        <div v-if="showImportReportModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'" class="border w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto no-scrollbar">
+                <div :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'" class="flex justify-between items-center border-b pb-3">
+                    <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-brain text-indigo-500 mr-2"></i>
+                        匯入戰情報告短評
+                        <span v-if="importingStock" class="text-xs text-slate-400 font-normal ml-2">({{ importingStock.code }} {{ importingStock.name }})</span>
+                    </h3>
+                    <button @click="showImportReportModal = false" class="text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="block mb-1 font-semibold">請貼上戰情報告文字：</label>
+                        <textarea v-model="importReportText" rows="6" placeholder="請貼上包含「代碼：XXXX」、「戰情總結：...」、「佈局區間：...」之完整戰報內容..."
+                                  :class="theme === 'dark' ? 'bg-slate-950 border-slate-800 text-slate-200 placeholder-slate-600' : 'bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400'"
+                                  class="w-full border rounded-xl p-3 text-xs leading-relaxed focus:outline-none focus:border-indigo-500 font-mono"></textarea>
+                    </div>
+
+                    <!-- 即時正則解析預覽看板 -->
+                    <div v-if="parsedImportPreview && (parsedImportPreview.code || parsedImportPreview.summary || parsedImportPreview.buyLow)" 
+                         :class="theme === 'dark' ? 'bg-slate-950/80 border-indigo-900/50' : 'bg-indigo-50/70 border-indigo-200'" 
+                         class="p-3 rounded-2xl border text-xs space-y-1.5">
+                        <div class="font-bold text-indigo-500 flex items-center justify-between text-xs border-b pb-1">
+                            <span><i class="fa-solid fa-magnifying-glass-chart mr-1"></i>即時結構化解析預覽</span>
+                            <span v-if="parsedImportPreview.code" class="font-mono bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded text-[10px]">
+                                {{ parsedImportPreview.code }}
+                            </span>
+                        </div>
+                        <div class="text-[11px] space-y-1 text-slate-400 font-mono">
+                            <div>• 戰情總結：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ parsedImportPreview.summary || '(未辨識到總結)' }}</span></div>
+                            <div class="grid grid-cols-2 gap-1 pt-1">
+                                <div>• 佈局區間：<span class="text-rose-400 font-bold">{{ parsedImportPreview.buyLow || '---' }} ~ {{ parsedImportPreview.buyHigh || '---' }}</span></div>
+                                <div>• 防守停損：<span class="text-emerald-400 font-bold">{{ parsedImportPreview.defense || '---' }}</span></div>
+                                <div>• 目標調節：<span class="text-amber-400 font-bold">{{ parsedImportPreview.targetLow || '---' }} ~ {{ parsedImportPreview.targetHigh || '---' }}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-2 flex space-x-2">
+                    <button @click="showImportReportModal = false" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'" class="flex-1 font-bold py-2.5 rounded-xl text-xs transition">
+                        取消
+                    </button>
+                    <button @click="submitImportReport" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg">
+                        確認匯入並同步
+                    </button>
+                </div>
+            </div>
+        </div>
 
 
         <!-- ========================================== -->
