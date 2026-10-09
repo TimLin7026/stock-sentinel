@@ -149,28 +149,6 @@
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
-                <!-- ⏱️ 行情資料與大腦產出時間比對徽章 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800/80 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" 
-                     class="border rounded-xl px-3 py-2 text-[11px] flex items-center justify-between cursor-pointer hover:border-sky-500/50 transition"
-                     @click="handleOneClickSync"
-                     title="點擊立即執行一鍵同步">
-                    <div class="flex items-center space-x-1.5 overflow-hidden">
-                        <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
-                        <span class="font-bold whitespace-nowrap text-sky-400">📅 {{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }}</span>
-                        <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }}檔)</span>
-                    </div>
-                    <div class="text-[10px] text-slate-400 font-mono text-right truncate pl-1 flex items-center space-x-1">
-                        <span v-if="marketSyncMeta.fetchTime" class="text-emerald-400/90 font-medium">
-                            <i class="fa-solid fa-cloud-arrow-down mr-0.5"></i>下載: {{ marketSyncMeta.fetchTime.split(' ')[1] || marketSyncMeta.fetchTime }}
-                        </span>
-                        <span v-else class="text-amber-400 font-medium">
-                            <i class="fa-solid fa-arrow-rotate-right mr-0.5"></i>點擊同步
-                        </span>
-                        <span v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="text-slate-500 hidden sm:inline" :title="'雲端產出: ' + marketSyncMeta.cloudGeneratedAt">
-                            (大腦: {{ marketSyncMeta.cloudGeneratedAt.split(' ')[1] || marketSyncMeta.cloudGeneratedAt }})
-                        </span>
-                    </div>
-                </div>
                 <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
                 <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
                     <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
@@ -605,6 +583,37 @@
                         <i class="fa-solid fa-right-from-bracket"></i>
                         <span>解除 Google 帳號連結</span>
                     </button>
+                </div>
+
+                <!-- 📊 全市場盤後行情快照狀態 -->
+                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <h3 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs font-bold flex items-center space-x-2">
+                            <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
+                            <i class="fa-solid fa-chart-line text-sky-500"></i>
+                            <span>全市場盤後行情快照</span>
+                        </h3>
+                        <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
+                                class="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 border border-sky-500/30 px-2 py-0.5 rounded-lg transition active:scale-95 disabled:opacity-50">
+                            <i class="fa-solid fa-rotate text-[9px]" :class="syncStatus.loading ? 'fa-spin' : ''"></i>
+                            <span>立即同步</span>
+                        </button>
+                    </div>
+
+                    <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border text-[11px] font-mono space-y-1.5">
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-400">📅 最新開市日：</span>
+                            <span class="font-bold text-sky-400">{{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }} <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }} 檔)</span></span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-400">📥 本機下載時間：</span>
+                            <span :class="marketSyncMeta.fetchTime ? 'text-emerald-400 font-medium' : 'text-amber-400'">{{ marketSyncMeta.fetchTime || '尚未下載' }}</span>
+                        </div>
+                        <div v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="flex justify-between items-center">
+                            <span class="text-slate-400">🧠 大腦產出時間：</span>
+                            <span class="text-slate-300">{{ marketSyncMeta.cloudGeneratedAt }}</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 雲端同步操作區 -->
