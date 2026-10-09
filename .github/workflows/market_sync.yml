@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       target_date:
-        description: '指定補抓日期 (格式: YYYYMMDD，留空則預設最近1個開市日)'
+        description: '指定補抓日期 (格式: YYYYMMDD，留空則自動探測)'
         required: false
         default: ''
+      scan_days:
+        description: '深度掃描最近 N 個開市日 (例如: 120，留空或0為一般模式)'
+        required: false
+        default: '0'
 
 permissions:
   contents: write
@@ -36,13 +40,13 @@ jobs:
 
       - name: 🚀 執行雲端行情大腦與指標審計
         run: |
-          python scripts/market_worker.py "${{ github.event.inputs.target_date }}"
+          python scripts/market_worker.py --target-date="${{ github.event.inputs.target_date }}" --scan-days="${{ github.event.inputs.scan_days }}"
 
-      - name: 💾 自動提交並推播快照與健康報表至 GitHub
+      - name: 💾 自動提交並推播快照、歷史庫與健康報表至 GitHub
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore(data): auto-update market snapshot and health audit [skip ci]"
-          file_pattern: "market_snapshot.json.gz market_health.json"
+          commit_message: "chore(data): auto-update market snapshot, history db and health audit [skip ci]"
+          file_pattern: "market_snapshot.json.gz market_health.json scripts/market_history.db"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"

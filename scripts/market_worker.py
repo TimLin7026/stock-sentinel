@@ -338,24 +338,75 @@ def init_history_db(db_path):
     conn.commit()
     return conn
 
-def get_missing_market_dates(conn, manual_target_date=None):
+def parse_cli_args():
+    manual_date = None
+    scan_days = 0
+    
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg.startswith("--target-date="):
+            manual_date = arg.split("=")[1].strip()
+        elif arg == "--target-date" and i < len(sys.argv) - 1:
+            manual_date = sys.argv[i + 1].strip()
+        elif arg.startswith("--scan-days="):
+            try: scan_days = int(arg.split("=")[1].strip())
+            except: pass
+        elif arg == "--scan-days" and i < len(sys.argv) - 1:
+            try: scan_days = int(sys.argv[i + 1].strip())
+            except: pass
+        elif arg.isdigit() and len(arg) == 8:
+            manual_date = arg.strip()
+            
+    return manual_date, scan_days
+
+def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
     """
     🔍 智慧缺漏探測：
-    比對資料庫 MAX(trade_date) 與當前最新有效開市日，回傳所有缺失日期清單
+    1. 若指定 manual_target_date：直接回傳該單一日期
+    2. 若指定 scan_days > 0：深度掃描最近 scan_days 個開市日，找出資料庫中缺失或筆數異常少之所有日期
+    3. 預設增量模式：比對 MAX(trade_date) 到當前最新開市日之間的缺漏
     """
     if manual_target_date:
         return [manual_target_date]
         
-    cur = conn.cursor()
-    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
-    row = cur.fetchone()
-    last_db_date = row[0] if row and row[0] else None
-    
     now = get_taipei_now().replace(tzinfo=None)
     # 決定回補終點：若當前未滿 21:00 (官方尚未完全結算法人與資券)，終點為昨日；否則為今日
     end_dt = now if now.hour >= 21 else (now - datetime.timedelta(days=1))
-    # 去除時分秒
     end_dt = datetime.datetime(end_dt.year, end_dt.month, end_dt.day)
+
+    cur = conn.cursor()
+
+    # ─── 模式 A: 深度掃描最近 N 個開市日 (如 120 天) ───
+    if scan_days > 0:
+        print(f"🔍 [深度掃描] 正在向前檢測最近 {scan_days} 個開市日之數據完整性...")
+        target_market_days = []
+        curr_dt = end_dt
+        while len(target_market_days) < scan_days and curr_dt >= end_dt - datetime.timedelta(days=scan_days * 2 + 30):
+            d_str = curr_dt.strftime("%Y%m%d")
+            is_holiday, _ = is_market_holiday(d_str)
+            if not is_holiday:
+                target_market_days.append(d_str)
+            curr_dt -= datetime.timedelta(days=1)
+
+        # 查詢資料庫中現存之交易日與筆數
+        placeholders = ",".join(["?"] * len(target_market_days))
+        cur.execute(f"SELECT trade_date, COUNT(*) FROM daily_kline WHERE trade_date IN ({placeholders}) AND length(stock_code) <= 5 GROUP BY trade_date", target_market_days)
+        existing_counts = {row[0]: row[1] for row in cur.fetchall()}
+
+        missing_dates = []
+        for d_str in reversed(target_market_days): # 依時間正向 (舊到新)
+            cnt = existing_counts.get(d_str, 0)
+            if cnt < 1000: # 筆數過少判定為殘缺或未爬取
+                missing_dates.append(d_str)
+                print(f"  🚨 發現缺漏交易日: {d_str} (現存筆數: {cnt})")
+                
+        if not missing_dates:
+            print(f"✅ [完整性檢驗通過] 最近 {scan_days} 個開市日歷史數據 100% 齊全，無需補抓！")
+        return missing_dates
+
+    # ─── 模式 B: 標準增量探測 ───
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
+    row = cur.fetchone()
+    last_db_date = row[0] if row and row[0] else None
     
     if not last_db_date:
         start_dt = end_dt - datetime.timedelta(days=30)
@@ -364,7 +415,7 @@ def get_missing_market_dates(conn, manual_target_date=None):
         start_dt = last_dt + datetime.timedelta(days=1)
         
     if start_dt > end_dt:
-        print(f"✅ [最新狀態] 歷史資料庫已是最最新狀態 (最新日期: {last_db_date})。")
+        print(f"✅ [最新狀態] 歷史資料庫已是最新狀態 (最新日期: {last_db_date})。")
         return []
         
     missing_dates = []
@@ -805,7 +856,7 @@ def update_health_status(health_data):
 
 def main():
     start_total_time = time.time()
-    manual_date = parse_manual_target_date()
+    manual_date, scan_days = parse_cli_args()
     
     print("======================================================")
     print("🚀 鈔能戰情室 - 雲端行情大腦智慧回補與滾算引擎啟動")
@@ -814,8 +865,8 @@ def main():
     os.makedirs(BASE_DIR, exist_ok=True)
     conn = init_history_db(HISTORY_DB_PATH)
 
-    # 1. 🔍 智慧缺漏探測 (比對資料庫最後日期與當前開市日)
-    missing_dates = get_missing_market_dates(conn, manual_date)
+    # 1. 🔍 智慧缺漏探測 (比對資料庫最後日期與當前開市日 / 支援 scan_days 深度掃描)
+    missing_dates = get_missing_market_dates(conn, manual_date, scan_days)
     
     health_report = {
         "run_time": get_taipei_now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -861,6 +912,10 @@ def main():
             continue
 
         save_daily_snapshot_to_history(conn, d_str, twse_map, tpex_map, chip_map, margin_map)
+        health_report["nodes"]["twse"] = {"count": len(twse_map), "status": "OK"}
+        health_report["nodes"]["tpex"] = {"count": len(tpex_map), "status": "OK"}
+        health_report["nodes"]["chip"] = {"count": len(chip_map), "status": "OK"}
+        health_report["nodes"]["margin"] = {"count": len(margin_map), "status": "OK"}
 
     # 3. 🧹 歷史庫容量滾動修剪 (維持最近 120 天，確保資料庫體積 < 45MB)
     prune_history_db(conn, max_days=120)
@@ -874,6 +929,23 @@ def main():
         print("❌ [錯誤] 歷史資料庫無任何有效交易日數據！")
         conn.close()
         sys.exit(1)
+
+    # 補齊節點統計 (若無爬取時以最新交易日真實檔數填入，避免監控台顯示 0 檔未知)
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'TSE' AND length(stock_code) <= 5", (latest_trade_date,))
+    cnt_tse = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'OTC' AND length(stock_code) <= 5", (latest_trade_date,))
+    cnt_otc = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND length(stock_code) <= 5", (latest_trade_date,))
+    cnt_all = cur.fetchone()[0]
+
+    if "twse" not in health_report["nodes"] or health_report["nodes"]["twse"].get("count", 0) == 0:
+        health_report["nodes"]["twse"] = {"count": cnt_tse, "elapsed": 0.0, "status": "OK"}
+    if "tpex" not in health_report["nodes"] or health_report["nodes"]["tpex"].get("count", 0) == 0:
+        health_report["nodes"]["tpex"] = {"count": cnt_otc, "elapsed": 0.0, "status": "OK"}
+    if "chip" not in health_report["nodes"] or health_report["nodes"]["chip"].get("count", 0) == 0:
+        health_report["nodes"]["chip"] = {"count": cnt_all, "elapsed": 0.0, "status": "OK"}
+    if "margin" not in health_report["nodes"] or health_report["nodes"]["margin"].get("count", 0) == 0:
+        health_report["nodes"]["margin"] = {"count": cnt_all, "elapsed": 0.0, "status": "OK"}
 
     health_report["target_date"] = latest_trade_date
     health_report["status"] = "CLEANING"

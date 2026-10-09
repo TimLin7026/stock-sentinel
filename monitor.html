@@ -193,8 +193,26 @@
                     <h2 class="font-bold text-sm sm:text-base text-slate-100">遠端維運與手動重抓控制台</h2>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <!-- 強制重抓最近 1 個開市日 -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- 1. 深度掃描並補齊近 120 日缺漏 (核心一鍵自癒) -->
+                    <div class="bg-gradient-to-br from-indigo-950/40 to-slate-950 border border-indigo-800/50 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                        <div>
+                            <h3 class="font-bold text-xs text-indigo-300 mb-1 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i>
+                                <span>自動掃描補齊近 120 日缺漏</span>
+                            </h3>
+                            <p class="text-[11px] text-slate-400 leading-relaxed">
+                                自動比對歷史庫過去 120 個交易日，智慧找出中斷或遺漏的日期並連續回補入庫。
+                            </p>
+                        </div>
+                        <button @click="triggerAutoHeal(120)" :disabled="isTriggering"
+                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-indigo-600/30">
+                            <i class="fa-solid fa-magnifying-glass-chart"></i>
+                            <span>{{ isTriggering ? '發送掃描信號中...' : '🔍 掃描並補齊近 120 日' }}</span>
+                        </button>
+                    </div>
+
+                    <!-- 2. 強制重抓最近 1 個開市日 -->
                     <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
                         <div>
                             <h3 class="font-bold text-xs text-slate-200 mb-1">🚨 強制重抓開市日數據</h3>
@@ -209,7 +227,7 @@
                         </button>
                     </div>
 
-                    <!-- 指定歷史日期補抓 -->
+                    <!-- 3. 指定歷史日期補抓 -->
                     <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
                         <div>
                             <h3 class="font-bold text-xs text-slate-200 mb-1">📅 指定歷史日期補抓</h3>
@@ -220,7 +238,7 @@
                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500">
                         </div>
                         <button @click="triggerGitHubDispatch(customTargetDate)" :disabled="isTriggering || !customTargetDate"
-                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-indigo-600/30">
+                                class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-white transition active:scale-95 flex items-center justify-center space-x-2 border border-slate-700">
                             <i class="fa-solid fa-calendar-check"></i>
                             <span>執行指定日期補抓</span>
                         </button>

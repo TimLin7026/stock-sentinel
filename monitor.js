@@ -261,16 +261,21 @@ createApp({
         });
 
         // ─── 5. 遠端觸發 GitHub Actions (workflow_dispatch) ───
-        const triggerGitHubDispatch = async (targetDate = '') => {
+        const triggerGitHubDispatch = async (targetDate = '', scanDays = '0') => {
             if (!githubPat.value) {
                 showPatSetting.value = true;
                 alert('⚠️ 尚未設定 GitHub 遠端授權 Token！\n請在下方輸入具備 workflow 權限的 GitHub PAT 密鑰後儲存。');
                 return;
             }
 
-            const promptMsg = targetDate 
-                ? `確定要手動遠端觸發 GitHub 雲端大腦，補抓 [${targetDate}] 的盤後大數據嗎？`
-                : `確定要立即遠端喚醒 GitHub 雲端大腦，強制重抓今日盤後數據嗎？`;
+            let promptMsg = '';
+            if (scanDays && Number(scanDays) > 0) {
+                promptMsg = `確定要遠端啟動【近 ${scanDays} 日數據深度檢測與自動回補】嗎？\n雲端大腦將自動比對缺失日期並依序補齊入庫。`;
+            } else if (targetDate) {
+                promptMsg = `確定要手動遠端觸發 GitHub 雲端大腦，補抓 [${targetDate}] 的盤後大數據嗎？`;
+            } else {
+                promptMsg = `確定要立即遠端喚醒 GitHub 雲端大腦，強制重抓今日盤後數據嗎？`;
+            }
 
             if (!confirm(promptMsg)) return;
 
@@ -280,7 +285,8 @@ createApp({
                 const payload = {
                     ref: 'main',
                     inputs: {
-                        target_date: targetDate ? String(targetDate).trim() : ''
+                        target_date: targetDate ? String(targetDate).trim() : '',
+                        scan_days: scanDays ? String(scanDays).trim() : '0'
                     }
                 };
 
@@ -295,7 +301,7 @@ createApp({
                 });
 
                 if (res.status === 204 || res.ok) {
-                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n預計約 30~60 秒內完成爬取、指標計算與快照發布。稍後點擊「刷新狀態」即可檢視最新報表。`);
+                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n預計約 30~90 秒內完成檢測、指標計算與快照發布。稍後點擊「刷新狀態」即可檢視最新報表。`);
                     customTargetDate.value = '';
                 } else {
                     const errJson = await res.json().catch(() => ({}));
@@ -306,6 +312,10 @@ createApp({
             } finally {
                 isTriggering.value = false;
             }
+        };
+
+        const triggerAutoHeal = (days = 120) => {
+            triggerGitHubDispatch('', String(days));
         };
 
         // ─── 初始化生命週期 ───
@@ -342,7 +352,8 @@ createApp({
             showPatSetting,
             githubPat,
             saveGithubPat,
-            triggerGitHubDispatch
+            triggerGitHubDispatch,
+            triggerAutoHeal
         };
     }
 }).mount('#app');
