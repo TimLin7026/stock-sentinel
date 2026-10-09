@@ -92,10 +92,25 @@ def get_taipei_now():
     return datetime.datetime.now(tz_tw)
 
 def get_target_date():
-    """取得目標執行日期 (支援手動傳參 YYYYMMDD，預設為今日)"""
+    """取得目標執行日期 (若手動指定則依手動，否則智慧自動回溯最近 1 個開市日)"""
     if len(sys.argv) > 1 and len(sys.argv[1].strip()) == 8 and sys.argv[1].strip().isdigit():
         return sys.argv[1].strip()
-    return get_taipei_now().strftime("%Y%m%d")
+    
+    # 智慧開市日推算
+    now = get_taipei_now()
+    cur = now
+    # 若當前台灣時間尚未過 21:00 (盤後法人與資券尚未完全結算)，則今日未出爐，從昨日開始回推
+    if cur.hour < 21:
+        cur = cur - datetime.timedelta(days=1)
+        
+    for _ in range(15):
+        d_str = cur.strftime("%Y%m%d")
+        holiday, _ = is_market_holiday(d_str)
+        if not holiday:
+            return d_str
+        cur = cur - datetime.timedelta(days=1)
+        
+    return now.strftime("%Y%m%d")
 
 def is_market_holiday(date_str):
     """

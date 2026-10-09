@@ -227,6 +227,34 @@ createApp({
             });
         });
 
+        // ─── 4.5. 智慧計算最近 1 個開市日 ───
+        const latestTradingDate = computed(() => {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const twNow = new Date(utc + (3600000 * 8));
+            
+            let cur = new Date(twNow);
+            if (cur.getHours() < 21) {
+                cur.setDate(cur.getDate() - 1);
+            }
+            
+            // 排除週末
+            while (cur.getDay() === 0 || cur.getDay() === 6) {
+                cur.setDate(cur.getDate() - 1);
+            }
+            
+            const y = cur.getFullYear();
+            const m = String(cur.getMonth() + 1).padStart(2, '0');
+            const d = String(cur.getDate()).padStart(2, '0');
+            return `${y}${m}${d}`;
+        });
+
+        const latestTradingDateLabel = computed(() => {
+            const dt = latestTradingDate.value;
+            if (!dt || dt.length !== 8) return '最近1個開市日';
+            return `${dt.slice(0, 4)}/${dt.slice(4, 6)}/${dt.slice(6, 8)}`;
+        });
+
         // ─── 5. 遠端觸發 GitHub Actions (workflow_dispatch) ───
         const triggerGitHubDispatch = async (targetDate = '') => {
             if (!githubPat.value) {
@@ -303,6 +331,8 @@ createApp({
             filteredZeroList,
             searchQuery,
             customTargetDate,
+            latestTradingDate,
+            latestTradingDateLabel,
             isTriggering,
             showPatSetting,
             githubPat,

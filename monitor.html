@@ -194,18 +194,18 @@
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <!-- 強制重抓今日 -->
+                    <!-- 強制重抓最近 1 個開市日 -->
                     <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
                         <div>
-                            <h3 class="font-bold text-xs text-slate-200 mb-1">🚨 強制重抓今日數據</h3>
+                            <h3 class="font-bold text-xs text-slate-200 mb-1">🚨 強制重抓開市日數據</h3>
                             <p class="text-[11px] text-slate-400 leading-relaxed">
-                                當證交所延遲公布或發現籌碼不全時，點擊立即遠端喚醒 GitHub 雲端大腦重新爬取當日盤後並覆蓋快照。
+                                自動鎖定並爬取 <span class="text-amber-300 font-mono font-bold">{{ latestTradingDateLabel }}</span> 全市場盤後數據，重新滾算 2,400+ 檔指標並替換快照。
                             </p>
                         </div>
-                        <button @click="triggerGitHubDispatch('')" :disabled="isTriggering"
+                        <button @click="triggerGitHubDispatch(latestTradingDate)" :disabled="isTriggering"
                                 class="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white transition active:scale-95 flex items-center justify-center space-x-2 shadow shadow-rose-600/30">
                             <i class="fa-solid fa-bolt"></i>
-                            <span>{{ isTriggering ? '發送喚醒信號中...' : '立即遠端強制重抓今日' }}</span>
+                            <span>{{ isTriggering ? '發送喚醒信號中...' : `⚡ 立即遠端強制重抓 (${latestTradingDateLabel})` }}</span>
                         </button>
                     </div>
 
@@ -307,6 +307,6 @@
     </div>
 
     <!-- 載入監控邏輯腳本 -->
-    <script src="monitor.js?v=20261009.03"></script>
+    <script src="monitor.js?v=20261009.04"></script>
 </body>
 </html>
