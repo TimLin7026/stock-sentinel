@@ -42,7 +42,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore(data): auto-update market snapshot and health audit [skip ci]"
-          file_pattern: "market_snapshot.json.gz market_health.json mobile_web/market_snapshot.json.gz mobile_web/market_health.json"
+          file_pattern: "market_snapshot.json.gz market_health.json"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
