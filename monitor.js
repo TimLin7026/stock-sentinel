@@ -127,8 +127,12 @@ createApp({
         const fetchHealthReport = async () => {
             isLoadingReport.value = true;
             try {
-                const url = `market_health.json?t=${Date.now()}`;
-                const res = await fetch(url);
+                // 優先透過 GitHub Raw 直連最新檔案，徹底避免 GitHub Pages CDN 靜態快取死鎖
+                const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/market_health.json?_nocache=${Date.now()}`;
+                let res = await fetch(rawUrl, { cache: 'no-store' });
+                if (!res.ok) {
+                    res = await fetch(`market_health.json?_nocache=${Date.now()}`, { cache: 'no-store' });
+                }
                 if (res.ok) {
                     const data = await res.json();
                     healthData.value = data;
@@ -138,6 +142,12 @@ createApp({
                 }
             } catch (err) {
                 console.error("讀取健康報表失敗:", err);
+                try {
+                    const fallbackRes = await fetch(`market_health.json?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (fallbackRes.ok) {
+                        healthData.value = await fallbackRes.json();
+                    }
+                } catch (e) {}
             } finally {
                 isLoadingReport.value = false;
             }
