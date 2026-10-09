@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261009.01');
+        const appVersion = ref('v2.20261009.02');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -3271,16 +3271,31 @@ createApp({
                             const stockUk = makeStockUniqueKey(code, broker);
                             const tombSc = tombStockCreatedMap[stockUk] || '1970-01-01 00:00:00';
                             let curCreatedAt = '';
+                            let existingFocus = '否';
                             try {
-                                const cr = cloudDb.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
-                                if (cr.length > 0 && cr[0].values && cr[0].values[0]) curCreatedAt = String(cr[0].values[0][0] || '').trim();
+                                const cr = cloudDb.exec("SELECT created_at, 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                if (cr.length > 0 && cr[0].values && cr[0].values[0]) {
+                                    curCreatedAt = String(cr[0].values[0][0] || '').trim();
+                                    existingFocus = String(cr[0].values[0][1] || '否').trim();
+                                }
                             } catch (e) {}
-                            if (!curCreatedAt) curCreatedAt = getNowDateTimeStr() + ':00';
+                            if (!curCreatedAt) curCreatedAt = '1970-01-01 00:00:00';
 
                             const isNewborn = curCreatedAt > tombSc;
-                            if (curShares === 0 && deletedStockKeys.has(stockUk) && !isNewborn) {
-                                cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
-                            } else if (curShares > 0 || isNewborn) {
+                            const isFocusWatch = (broker === '關注' || existingFocus === '是');
+
+                            if (curShares === 0) {
+                                // 0 股且非自選關注，或已被墓碑刪除者：徹底刪除
+                                if (!isFocusWatch || (deletedStockKeys.has(stockUk) && !isNewborn)) {
+                                    cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                } else {
+                                    cloudDb.run(
+                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, 0, 0, ?, ?, ?)",
+                                        [code, name, broker, existingFocus, curCreatedAt]
+                                    );
+                                }
+                            } else {
+                                // 現役持股 (curShares > 0)
                                 if (isNewborn && deletedStockKeys.has(stockUk)) {
                                     deletedStockKeys.delete(stockUk);
                                     delete tombStockCreatedMap[stockUk];
@@ -3290,12 +3305,17 @@ createApp({
                                     } catch (e) {}
                                 }
                                 cloudDb.run(
-                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?), '否'), ?)",
-                                    [code, name, curShares, curCost, broker, code, broker, curCreatedAt]
+                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                    [code, name, curShares, curCost, broker, existingFocus, curCreatedAt]
                                 );
                             }
                         });
                     }
+
+                    // 6. 全量掃蕩清除歷史遺留的清倉幽靈 0 股 (非關注且未特別關注的 0 股)
+                    try {
+                        cloudDb.run("DELETE FROM my_stock WHERE (個股股數 <= 0 OR 個股股數 IS NULL) AND 證券商 != '關注' AND (特別關注 IS NULL OR 特別關注 = '否' OR 特別關注 = '')");
+                    } catch (e) {}
                 } catch (e) {
                     console.warn("滾算庫存警告:", e);
                 }
