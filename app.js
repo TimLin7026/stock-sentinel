@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.23');
+        const appVersion = ref('v2.20261010.24');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -1201,6 +1201,47 @@ createApp({
         const closeStockChartModal = () => {
             showStockChartModal.value = false;
             destroyAllChartInstances();
+        };
+
+        // ─── 走勢圖個股循環切換模組 (以當前 Tab/篩選後的 currentFilteredStocks 為基準) ───
+        const currentChartStockIndex = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0 || !activeChartStock.value) return -1;
+            const curCode = String(activeChartStock.value.code || '').trim();
+            const curBroker = String(activeChartStock.value.broker || '').trim();
+            const curUid = activeChartStock.value.uid;
+            let idx = list.findIndex(s => (curUid && s.uid === curUid) || (s.code === curCode && s.broker === curBroker));
+            if (idx === -1) {
+                idx = list.findIndex(s => s.code === curCode);
+            }
+            return idx;
+        });
+
+        const prevChartStock = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return null;
+            const idx = currentChartStockIndex.value;
+            if (idx === -1) return list[list.length - 1];
+            const prevIdx = (idx - 1 + list.length) % list.length;
+            return list[prevIdx];
+        });
+
+        const nextChartStock = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return null;
+            const idx = currentChartStockIndex.value;
+            if (idx === -1) return list[0];
+            const nextIdx = (idx + 1) % list.length;
+            return list[nextIdx];
+        });
+
+        const switchToAdjacentChartStock = (dir) => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return;
+            const targetStock = dir < 0 ? prevChartStock.value : nextChartStock.value;
+            if (targetStock) {
+                openStockChartModal(targetStock);
+            }
         };
 
         // 切換期間天數 (20 / 40 / 60)
@@ -5278,6 +5319,10 @@ createApp({
             crosshairData,
             openStockChartModal,
             closeStockChartModal,
+            currentChartStockIndex,
+            prevChartStock,
+            nextChartStock,
+            switchToAdjacentChartStock,
             changeChartDays,
             changeSubOscTab,
             isAppUnlocked,
