@@ -496,14 +496,24 @@
                                             <span class="mr-1 text-xs">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
                                             <span class="mr-1.5">📖</span>戰情報告短評 ({{ stock.reportDate || '最新' }})
                                         </div>
-                                        <!-- 🧠 單一入口：匯入戰報小按鈕 -->
-                                        <button @click.stop="openImportReportModal(stock)" 
-                                                :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
-                                                class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
-                                                title="匯入戰情報告">
-                                            <i class="fa-solid fa-brain text-[10px]"></i>
-                                            <span>匯入戰報</span>
-                                        </button>
+                                        <div class="flex items-center space-x-1.5">
+                                            <!-- 📄 查看最新戰報完整內容按鈕 -->
+                                            <button @click.stop="openFullReportModal(stock)" 
+                                                    :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
+                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
+                                                    title="查看最新完整戰情報告">
+                                                <i class="fa-solid fa-file-lines text-[10px]"></i>
+                                                <span>完整戰報</span>
+                                            </button>
+                                            <!-- 🧠 單一入口：匯入戰報小按鈕 -->
+                                            <button @click.stop="openImportReportModal(stock)" 
+                                                    :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
+                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
+                                                    title="匯入戰情報告">
+                                                <i class="fa-solid fa-brain text-[10px]"></i>
+                                                <span>匯入戰報</span>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
                                         {{ stock.summaryText || '暫無策略總結，請於 PC 端進行全量掃描分析。' }}
@@ -843,6 +853,41 @@
                 </div>
             </section>
         </main>
+
+
+        <!-- ========================================== -->
+        <!-- 📄 最新完整戰情報告 Modal 彈窗 -->
+        <!-- ========================================== -->
+        <div v-if="showFullReportModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'" class="border w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] flex flex-col">
+                <div :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'" class="flex justify-between items-center border-b pb-3 shrink-0">
+                    <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-base font-bold flex items-center">
+                        <i class="fa-solid fa-file-lines text-sky-500 mr-2"></i>
+                        最新戰情報告全文
+                        <span v-if="currentReportStock" class="text-xs text-slate-400 font-normal ml-2">({{ currentReportStock.code }} {{ currentReportStock.name }})</span>
+                    </h3>
+                    <button @click="showFullReportModal = false" class="text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto no-scrollbar space-y-3 text-xs">
+                    <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-800'" class="p-3.5 rounded-2xl border font-mono whitespace-pre-wrap leading-relaxed text-xs select-text">
+                        {{ currentReportStock?.fullStrategyContent || currentReportStock?.summaryText || '暫無完整戰情報告內容。' }}
+                    </div>
+                </div>
+
+                <div class="pt-2 flex space-x-2 shrink-0">
+                    <button @click="copyFullReportText" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg flex items-center justify-center space-x-1.5 active:scale-95">
+                        <i class="fa-regular fa-copy"></i>
+                        <span>複製戰報全文</span>
+                    </button>
+                    <button @click="showFullReportModal = false" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'" class="flex-1 font-bold py-2.5 rounded-xl text-xs transition">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
 
 
         <!-- ========================================== -->
@@ -1299,6 +1344,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.18"></script>
+    <script src="app.js?v=2.20261010.19"></script>
 </body>
 </html>

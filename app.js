@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.18');
+        const appVersion = ref('v2.20261010.19');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -1800,8 +1800,16 @@ createApp({
                             const hmDigits = String(hmInfo.dataDate || '').replace(/\D/g, '').slice(0, 8);
                             const stratDigits = String(sInfo.recordTime || '').replace(/\D/g, '').slice(0, 8);
 
+                            // 🎯 核心校驗：必須有實質戰報內容 (非空白底稿)，且日期為最新開市日才亮綠勾
+                            const hasActualReport = Boolean(
+                                (sInfo.summary && sInfo.summary.trim()) || 
+                                (sInfo.content && sInfo.content.trim()) || 
+                                (sInfo.buyHigh && sInfo.buyHigh !== '---') || 
+                                (sInfo.targetLow && sInfo.targetLow !== '---')
+                            );
+
                             const isPriceFresh = Boolean(pDigits && pDigits === latestMarketTradingDay);
-                            const isReportFresh = Boolean(stratDigits && stratDigits >= latestMarketTradingDay);
+                            const isReportFresh = Boolean(hasActualReport && stratDigits && stratDigits >= latestMarketTradingDay);
                             const isIndicatorFresh = Boolean(hmDigits && pDigits && hmDigits === pDigits);
                             const isStrategyFresh = Boolean(hmDigits && hmDigits === latestMarketTradingDay);
 
@@ -1838,6 +1846,7 @@ createApp({
                                 indicatorTags,
                                 strategyFeatures: stratFeatures,
                                 summaryText: sInfo.summary || sInfo.content || '暫無策略總結，請於 PC 端進行全量掃描分析。',
+                                fullStrategyContent: sInfo.content || sInfo.summary || '',
                                 latestDate,
                                 isPriceFresh,
                                 isReportFresh,
@@ -2646,6 +2655,43 @@ createApp({
                     console.error("移除個股失敗:", e);
                     alert("❌ 移除個股失敗：" + e.message);
                 }
+            }
+        };
+
+        // ─── 📄 最新戰情報告全文彈窗模組 ───
+        const showFullReportModal = ref(false);
+        const currentReportStock = ref(null);
+
+        const openFullReportModal = (stock) => {
+            if (!stock) return;
+            currentReportStock.value = stock;
+            showFullReportModal.value = true;
+        };
+
+        const copyFullReportText = async () => {
+            if (!currentReportStock.value) return;
+            const text = currentReportStock.value.fullStrategyContent || currentReportStock.value.summaryText || '';
+            if (!text) {
+                alert("⚠️ 暫無完整戰情報告內容可複製。");
+                return;
+            }
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                showToast(`📋 已成功複製【${currentReportStock.value.code} ${currentReportStock.value.name}】戰報全文！`);
+            } catch (err) {
+                console.error("複製戰報全文失敗:", err);
+                alert(`❌ 複製失敗：${err.message}`);
             }
         };
 
@@ -5164,6 +5210,10 @@ createApp({
             importReportText,
             parsedImportPreview,
             openImportReportModal,
+            showFullReportModal,
+            currentReportStock,
+            openFullReportModal,
+            copyFullReportText,
             parseReportText,
             submitImportReport,
             updateMarketHolidays,
