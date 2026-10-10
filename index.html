@@ -332,28 +332,29 @@
                                     <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm">{{ stock.name }}</span>
                                 </div>
 
-                                <!-- 證券商標籤 (對齊地端樣式) 與 10日戰報、📊 走勢指標圖按鈕 -->
-                                <div class="flex items-center space-x-1">
-                                    <button @click.stop="openStockChartModal(stock)" 
-                                            class="text-[10px] px-1.5 py-0.5 rounded-md font-bold transition active:scale-90 flex items-center space-x-1 border"
-                                            :class="theme === 'dark' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60 hover:bg-indigo-900' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'"
-                                            title="開啟 6 大技術指標走勢圖">
-                                        <i class="fa-solid fa-chart-line text-[10px]"></i>
-                                        <span>走勢</span>
-                                    </button>
-                                    <button @click.stop="copyStock10DayReport(stock)" 
-                                            class="text-[10px] px-1.5 py-0.5 rounded-md font-bold transition active:scale-90 flex items-center space-x-1 border"
-                                            :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60 hover:bg-sky-900' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'"
-                                            title="一鍵複製近 10 日戰情報告">
-                                        <i class="fa-regular fa-copy text-[10px]"></i>
-                                        <span>10日</span>
-                                    </button>
+                                <!-- 證券商標籤 (對齊地端樣式) 與 📈 走勢指標圖、📋 10日戰報按鈕 (純圖示) -->
+                                <div class="flex items-center space-x-1 shrink-0">
+                                    <!-- 1. 證券商標籤 -->
                                     <span :class="stock.broker === '關注'
                                         ? (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-200 text-slate-700 border-slate-300')
                                         : (theme === 'dark' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/50' : 'bg-emerald-100 text-emerald-800 border-emerald-200')" 
-                                          class="border text-[10px] px-1.5 py-0.5 rounded-md font-semibold">
+                                          class="border text-[10px] px-1.5 py-0.5 rounded-md font-semibold whitespace-nowrap">
                                         {{ stock.broker || '玉山證券' }}
                                     </span>
+                                    <!-- 2. 📈 走勢指標圖按鈕 (純圖示) -->
+                                    <button @click.stop="openStockChartModal(stock)" 
+                                            class="w-6 h-6 rounded-md font-bold transition active:scale-90 flex items-center justify-center border shrink-0"
+                                            :class="theme === 'dark' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60 hover:bg-indigo-900' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'"
+                                            title="開啟 6 大技術指標走勢圖">
+                                        <i class="fa-solid fa-chart-line text-[11px]"></i>
+                                    </button>
+                                    <!-- 3. 📋 複製 10 日戰報按鈕 (純圖示) -->
+                                    <button @click.stop="copyStock10DayReport(stock)" 
+                                            class="w-6 h-6 rounded-md font-bold transition active:scale-90 flex items-center justify-center border shrink-0"
+                                            :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60 hover:bg-sky-900' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'"
+                                            title="一鍵複製近 10 日戰情報告">
+                                        <i class="fa-regular fa-copy text-[11px]"></i>
+                                    </button>
                                 </div>
                             </div>
 
@@ -1257,6 +1258,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.12"></script>
+    <script src="app.js?v=2.20261010.13"></script>
 </body>
 </html>
