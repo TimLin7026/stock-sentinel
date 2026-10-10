@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.16');
+        const appVersion = ref('v2.20261010.17');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -641,7 +641,7 @@ createApp({
         // ==========================================
         const showStockChartModal = ref(false);
         const activeChartStock = ref({});
-        const chartDaysCount = ref(60);
+        const chartDaysCount = ref(Number(localStorage.getItem('sentinel_chart_days')) || 40);
         const subOscTab = ref('MTM'); // 'MTM' | 'RSI' | 'WR'
         const isChartLoading = ref(false);
         
@@ -1205,6 +1205,7 @@ createApp({
         // 切換期間天數 (20 / 40 / 60)
         const changeChartDays = (days) => {
             chartDaysCount.value = days;
+            localStorage.setItem('sentinel_chart_days', days);
             if (activeChartStock.value && activeChartStock.value.code) {
                 renderAllStockCharts(activeChartStock.value.code, days);
             }
