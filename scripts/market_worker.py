@@ -540,9 +540,10 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
     """
     df_all = pd.read_sql_query(query, conn)
     if df_all.empty:
-        return {}, 0.0
+        return {}, {}, 0.0
 
     snapshot_map = {}
+    history_map = {}
     grouped = df_all.groupby('stock_code')
     total_count = len(grouped)
     
@@ -861,10 +862,45 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
                 "rsi_info": rsi_info
             }
         }
+
+        # 🎯 3. 提取該股近 60 日完整技術指標時序 (100% 電腦版參數純數值陣列)
+        df_60 = df_raw.tail(60).reset_index(drop=True)
+        hist_rows = []
+        for _, r in df_60.iterrows():
+            hist_rows.append([
+                str(r["trade_date"]),                               # 0: 日期
+                round(float(r["open"]), 2),                        # 1: 開
+                round(float(r["high"]), 2),                        # 2: 高
+                round(float(r["low"]), 2),                         # 3: 低
+                round(float(r["close"]), 2),                       # 4: 收
+                int(float(r["volume"])),                           # 5: 量
+                round(float(r["MA5"]), 2),                         # 6: MA5
+                round(float(r["MA10"]), 2),                        # 7: MA10
+                round(float(r["BB_Mid"]), 2),                      # 8: BB_Mid (MA20)
+                round(float(r["BB_U"]), 2),                        # 9: BB_U
+                round(float(r["BB_L"]), 2),                        # 10: BB_L
+                round(float(r["DIF"]), 2),                         # 11: DIF6-9 (快線)
+                round(float(r["MACD_S"]), 2),                      # 12: MACD6 (慢線)
+                round(float(r["OSC"]), 2),                         # 13: OSC (柱狀圖)
+                round(float(r["K"]), 1),                           # 14: 7K
+                round(float(r["D"]), 1),                           # 15: 7D
+                int(float(r["foreign_buy"])),                      # 16: 外資買賣超
+                int(float(r["sitc_buy"])),                         # 17: 投信買賣超
+                int(float(r["dealers_buy"])),                      # 18: 自營商買賣超
+                int(float(r["margin_balance"])),                   # 19: 融資餘額
+                int(float(r["融資增減"])),                         # 20: 融資增減
+                round(float(r["MTM"]), 2),                         # 21: MTM3
+                round(float(r["MTM_MA"]), 2),                      # 22: MTM_MA2
+                round(float(r["RSI4"]), 1),                        # 23: RSI4
+                round(float(r["RSI12"]), 1),                       # 24: RSI12
+                round(float(r["WR3"]), 1),                         # 25: WR3
+                round(float(r["WR50"]), 1)                         # 26: WR50
+            ])
+        history_map[code] = hist_rows
         
     calc_elapsed = round(time.time() - start_time, 2)
     print(f"✨ [完成] 全市場 {total_count} 檔個股指標與特徵滾算完成！總耗時: {calc_elapsed} 秒。")
-    return snapshot_map, calc_elapsed
+    return snapshot_map, history_map, calc_elapsed
 
 # ==========================================
 # 4. 主執行流程：智慧回補、修剪與藍綠雙分區發布
@@ -979,7 +1015,7 @@ def main():
     health_report["progress"] = f"以最新交易日 [{latest_trade_date}] 進行全市場 6 燈與策略特徵滾算..."
     update_health_status(health_report)
 
-    snapshot_map, calc_elapsed = calculate_all_stock_indicators(conn)
+    snapshot_map, history_map, calc_elapsed = calculate_all_stock_indicators(conn)
     conn.close()
     
     health_report["nodes"]["indicators"] = {"count": len(snapshot_map), "elapsed": calc_elapsed, "status": "OK"}
@@ -1002,7 +1038,7 @@ def main():
     health_report["audit"]["zero_chip_samples"] = zero_chip_samples
     health_report["total_elapsed"] = round(time.time() - start_total_time, 2)
 
-    # 6. 藍綠雙分區熱切換：暫存至 staging_snapshot.json.gz
+    # 6. 藍綠雙分區熱切換：暫存至 staging_snapshot.json.gz 與 staging_history_60d.json.gz
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     json_bytes = json.dumps(snapshot_map, ensure_ascii=False, cls=NumpyEncoder).encode('utf-8')
     staging_gz_path = os.path.join(OUTPUT_DIR, "staging_snapshot.json.gz")
@@ -1011,15 +1047,27 @@ def main():
     
     gz_size_kb = round(os.path.getsize(staging_gz_path) / 1024, 1)
     health_report["snapshot_size_kb"] = gz_size_kb
-    print(f"📦 [Staging 清洗區] 暫存快照生成完畢 -> {staging_gz_path} ({gz_size_kb} KB)")
+    print(f"📦 [Staging 清洗區] 暫存單日快照生成完畢 -> {staging_gz_path} ({gz_size_kb} KB)")
+
+    # 6.2 輸出 60 日全量技術指標時序數據包 (供手機端 ECharts Dialog 秒繪)
+    hist_bytes = json.dumps(history_map, ensure_ascii=False, cls=NumpyEncoder).encode('utf-8')
+    staging_hist_path = os.path.join(OUTPUT_DIR, "staging_history_60d.json.gz")
+    with gzip.open(staging_hist_path, 'wb', compresslevel=9) as f:
+        f.write(hist_bytes)
+    
+    hist_size_kb = round(os.path.getsize(staging_hist_path) / 1024, 1)
+    print(f"📈 [Staging 清洗區] 暫存 60 日技術指標時序包生成完畢 -> {staging_hist_path} ({hist_size_kb} KB)")
 
     # 7. 審計合格：原子熱替換 (Promotion to Production)
     final_gz_path = os.path.join(OUTPUT_DIR, "market_snapshot.json.gz")
+    final_hist_path = os.path.join(OUTPUT_DIR, "market_history_60d.json.gz")
     os.replace(staging_gz_path, final_gz_path)
+    os.replace(staging_hist_path, final_hist_path)
     if OUTPUT_DIR != PROJECT_ROOT:
         import shutil
         shutil.copy2(final_gz_path, os.path.join(PROJECT_ROOT, "market_snapshot.json.gz"))
-    print(f"⚡ [Production 正式發布] 原子熱替換完成 -> {final_gz_path}")
+        shutil.copy2(final_hist_path, os.path.join(PROJECT_ROOT, "market_history_60d.json.gz"))
+    print(f"⚡ [Production 正式發布] 原子熱替換完成 -> {final_gz_path} & {final_hist_path}")
 
     # 8. 更新健康狀態為 READY
     next_run_info = compute_next_scheduled_run()

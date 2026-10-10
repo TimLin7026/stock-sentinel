@@ -615,8 +615,464 @@ createApp({
 
         const handleHeaderSyncClick = handleOneClickSync;
 
+        // ==========================================
+        // 📊 全螢幕個股 6 大技術指標走勢圖模組 (100% 電腦版參數 + ECharts 觸控連動)
+        // ==========================================
+        const showStockChartModal = ref(false);
+        const activeChartStock = ref({});
+        const chartDaysCount = ref(60);
+        const subOscTab = ref('MTM'); // 'MTM' | 'RSI' | 'WR'
+        const isChartLoading = ref(false);
+        const crosshairData = ref({
+            date: '',
+            open: '--',
+            high: '--',
+            low: '--',
+            close: '--',
+            vol: '--'
+        });
 
-        // ─── 預設通用策略特徵結構 ───
+        let stockHistoryCache = null; // 記憶體歷史快取字典
+        const chartInstances = {}; // ECharts 實例字典
+
+        // 下載並解壓 60 日技術指標時序數據包
+        const loadAllStockHistory = async () => {
+            if (stockHistoryCache) return stockHistoryCache;
+            
+            // 優先讀取 IndexedDB 快取
+            if (window.localforage) {
+                try {
+                    const cached = await localforage.getItem('sentinel_market_history_60d');
+                    if (cached && typeof cached === 'object' && Object.keys(cached).length > 0) {
+                        stockHistoryCache = cached;
+                        return stockHistoryCache;
+                    }
+                } catch(e) {}
+            }
+
+            // 網路拉取 gzip
+            const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
+            const fallbackBaseUrl = '.';
+            let histBuffer = null;
+            try {
+                const res = await fetch(`${rawBaseUrl}/market_history_60d.json.gz?_t=${Date.now()}`, { cache: 'no-store' });
+                if (res.ok) histBuffer = await res.arrayBuffer();
+            } catch(e) {}
+
+            if (!histBuffer) {
+                try {
+                    const res = await fetch(`${fallbackBaseUrl}/market_history_60d.json.gz?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (res.ok) histBuffer = await res.arrayBuffer();
+                } catch(e) {}
+            }
+
+            if (!histBuffer) {
+                throw new Error("無法下載個股歷史技術指標時序數據，請確認網路連線。");
+            }
+
+            stockHistoryCache = await decompressGzip(histBuffer);
+            if (window.localforage) {
+                try {
+                    await localforage.setItem('sentinel_market_history_60d', stockHistoryCache);
+                } catch(e) {}
+            }
+            return stockHistoryCache;
+        };
+
+        // 銷毀所有現有 ECharts 實例避免記憶體洩漏
+        const destroyAllChartInstances = () => {
+            Object.keys(chartInstances).forEach(k => {
+                if (chartInstances[k]) {
+                    try {
+                        chartInstances[k].dispose();
+                    } catch(e) {}
+                    delete chartInstances[k];
+                }
+            });
+        };
+
+        // 渲染 6 大技術指標子圖 (1 K線布林 ➔ 2 MACD ➔ 3 KD ➔ 4 成交量融資 ➔ 5 三大法人 ➔ 6 MTM/RSI/WR)
+        const renderAllStockCharts = async (stockCode, days = 60) => {
+            isChartLoading.value = true;
+            await Vue.nextTick();
+
+            let histMap = null;
+            try {
+                histMap = await loadAllStockHistory();
+            } catch(err) {
+                console.error("載入歷史數據失敗:", err);
+                showToast("⚠️ 載入歷史走勢失敗：" + err.message, 3500);
+                isChartLoading.value = false;
+                return;
+            }
+
+            const rawCode = String(stockCode || '').trim();
+            const rawRows = (histMap && (histMap[rawCode] || histMap[rawCode.padStart(4, '0')] || histMap[rawCode.replace(/^0+/, '')])) || [];
+            
+            if (!rawRows || rawRows.length === 0) {
+                showToast(`⚠️ 查無代號 ${stockCode} 之歷史技術指標時序數據`, 3000);
+                isChartLoading.value = false;
+                return;
+            }
+
+            const rows = rawRows.slice(-days);
+            isChartLoading.value = false;
+            await Vue.nextTick();
+
+            destroyAllChartInstances();
+
+            const isDark = theme.value === 'dark';
+            const bgText = isDark ? '#94a3b8' : '#475569';
+            const gridBorder = isDark ? '#334155' : '#cbd5e1';
+            const splitColor = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(203, 213, 225, 0.6)';
+
+            // 解析各維度數值
+            const dates = rows.map(r => String(r[0]).length === 8 ? `${String(r[0]).slice(4,6)}/${String(r[0]).slice(6,8)}` : String(r[0]));
+            const fullDates = rows.map(r => String(r[0]));
+            const ohlc = rows.map(r => [r[1], r[4], r[3], r[2]]); // [Open, Close, Low, High]
+            const volumes = rows.map((r, i) => ({
+                value: r[5],
+                itemStyle: { color: r[4] >= r[1] ? '#ef4444' : '#10b981' }
+            }));
+            const ma5 = rows.map(r => r[6]);
+            const ma10 = rows.map(r => r[7]);
+            const bbMid = rows.map(r => r[8]);
+            const bbU = rows.map(r => r[9]);
+            const bbL = rows.map(r => r[10]);
+            const dif = rows.map(r => r[11]);
+            const macdS = rows.map(r => r[12]);
+            const osc = rows.map(r => ({
+                value: r[13],
+                itemStyle: { color: r[13] >= 0 ? '#ef4444' : '#10b981' }
+            }));
+            const kdK = rows.map(r => r[14]);
+            const kdD = rows.map(r => r[15]);
+            const fb = rows.map(r => r[16]);
+            const sb = rows.map(r => r[17]);
+            const db = rows.map(r => r[18]);
+            const marginBal = rows.map(r => r[19]);
+            const mtm = rows.map(r => r[21]);
+            const mtmMa = rows.map(r => r[22]);
+            const rsi4 = rows.map(r => r[23]);
+            const rsi12 = rows.map(r => r[24]);
+            const wr3 = rows.map(r => r[25]);
+            const wr50 = rows.map(r => r[26]);
+
+            // 初始化看板最後一筆數值
+            if (rows.length > 0) {
+                const lr = rows[rows.length - 1];
+                crosshairData.value = {
+                    date: String(lr[0]),
+                    open: lr[1],
+                    high: lr[2],
+                    low: lr[3],
+                    close: lr[4],
+                    vol: lr[5]
+                };
+            }
+
+            const commonGrid = {
+                left: 10,
+                right: 48,
+                top: 25,
+                bottom: 20,
+                containLabel: false
+            };
+
+            const commonXAxis = {
+                type: 'category',
+                data: dates,
+                axisLine: { lineStyle: { color: gridBorder } },
+                axisLabel: { color: bgText, fontSize: 10 },
+                axisTick: { show: false }
+            };
+
+            const commonYAxis = {
+                position: 'right',
+                scale: true,
+                axisLine: { show: true, lineStyle: { color: gridBorder } },
+                axisLabel: { color: bgText, fontSize: 9 },
+                splitLine: { lineStyle: { color: splitColor, type: 'dashed' } }
+            };
+
+            const commonTooltip = {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'cross',
+                    lineStyle: { color: '#38bdf8', type: 'dashed', width: 1 },
+                    label: { backgroundColor: '#0f172a', fontSize: 10 }
+                },
+                showContent: false // 使用頂部看板即時反映，不遮蔽手機圖表
+            };
+
+            // 1. 主圖：K線 + 均線 + 布林通道
+            const elKline = document.getElementById('chart-kline');
+            if (elKline) {
+                const chart = echarts.init(elKline);
+                chart.setOption({
+                    animation: false,
+                    grid: commonGrid,
+                    tooltip: commonTooltip,
+                    xAxis: commonXAxis,
+                    yAxis: commonYAxis,
+                    series: [
+                        {
+                            name: 'K線',
+                            type: 'candlestick',
+                            data: ohlc,
+                            itemStyle: {
+                                color: '#ef4444',
+                                color0: '#10b981',
+                                borderColor: '#ef4444',
+                                borderColor0: '#10b981'
+                            }
+                        },
+                        { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { color: '#eab308', width: 1.5 } },
+                        { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { color: '#a855f7', width: 1.5 } },
+                        { name: 'BB_Mid', type: 'line', data: bbMid, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1, type: 'dashed' } },
+                        { name: 'BB_U', type: 'line', data: bbU, smooth: true, showSymbol: false, lineStyle: { color: '#60a5fa', width: 1 } },
+                        { name: 'BB_L', type: 'line', data: bbL, smooth: true, showSymbol: false, lineStyle: { color: '#60a5fa', width: 1 }, areaStyle: { color: 'rgba(59, 130, 246, 0.08)' } }
+                    ]
+                });
+                chartInstances.kline = chart;
+            }
+
+            // 2. MACD / OSC
+            const elMacd = document.getElementById('chart-macd');
+            if (elMacd) {
+                const chart = echarts.init(elMacd);
+                chart.setOption({
+                    animation: false,
+                    grid: commonGrid,
+                    tooltip: commonTooltip,
+                    xAxis: { ...commonXAxis, axisLabel: { show: false } },
+                    yAxis: commonYAxis,
+                    series: [
+                        { name: 'OSC', type: 'bar', data: osc, barWidth: '60%' },
+                        { name: 'DIF', type: 'line', data: dif, smooth: true, showSymbol: false, lineStyle: { color: '#eab308', width: 1.5 } },
+                        { name: 'MACD_S', type: 'line', data: macdS, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1.5 } }
+                    ]
+                });
+                chartInstances.macd = chart;
+            }
+
+            // 3. KD 指標 (7, 3, 3)
+            const elKd = document.getElementById('chart-kd');
+            if (elKd) {
+                const chart = echarts.init(elKd);
+                chart.setOption({
+                    animation: false,
+                    grid: commonGrid,
+                    tooltip: commonTooltip,
+                    xAxis: { ...commonXAxis, axisLabel: { show: false } },
+                    yAxis: { ...commonYAxis, min: 0, max: 100 },
+                    series: [
+                        { name: '7K', type: 'line', data: kdK, smooth: true, showSymbol: false, lineStyle: { color: '#ef4444', width: 1.5 } },
+                        { name: '7D', type: 'line', data: kdD, smooth: true, showSymbol: false, lineStyle: { color: '#10b981', width: 1.5 },
+                          markLine: {
+                              symbol: 'none',
+                              silent: true,
+                              data: [
+                                  { yAxis: 80, lineStyle: { color: '#ef4444', type: 'dashed' } },
+                                  { yAxis: 20, lineStyle: { color: '#10b981', type: 'dashed' } }
+                              ]
+                          }
+                        }
+                    ]
+                });
+                chartInstances.kd = chart;
+            }
+
+            // 4. 成交量與融資餘額
+            const elVol = document.getElementById('chart-vol');
+            if (elVol) {
+                const chart = echarts.init(elVol);
+                chart.setOption({
+                    animation: false,
+                    grid: { ...commonGrid, right: 48, left: 10 },
+                    tooltip: commonTooltip,
+                    xAxis: { ...commonXAxis, axisLabel: { show: false } },
+                    yAxis: [
+                        { ...commonYAxis, position: 'right' },
+                        { ...commonYAxis, position: 'left', show: false }
+                    ],
+                    series: [
+                        { name: '成交量', type: 'bar', data: volumes, barWidth: '60%' },
+                        { name: '融資餘額', type: 'line', data: marginBal, yAxisIndex: 1, smooth: true, showSymbol: false, lineStyle: { color: '#f97316', width: 1.5 } }
+                    ]
+                });
+                chartInstances.vol = chart;
+            }
+
+            // 5. 三大法人買賣超
+            const elChip = document.getElementById('chart-chip');
+            if (elChip) {
+                const chart = echarts.init(elChip);
+                chart.setOption({
+                    animation: false,
+                    grid: commonGrid,
+                    tooltip: commonTooltip,
+                    xAxis: { ...commonXAxis, axisLabel: { show: false } },
+                    yAxis: commonYAxis,
+                    series: [
+                        { name: '外資', type: 'bar', stack: 'chip', data: fb, itemStyle: { color: '#3b82f6' } },
+                        { name: '投信', type: 'bar', stack: 'chip', data: sb, itemStyle: { color: '#f97316' } },
+                        { name: '自營商', type: 'bar', stack: 'chip', data: db, itemStyle: { color: '#a855f7' } }
+                    ]
+                });
+                chartInstances.chip = chart;
+            }
+
+            // 6. MTM / RSI / 威廉指標
+            renderSubOscChart(rows);
+
+            // ⚡ 建立多子圖十字準心連動與跑馬燈同步
+            const activeCharts = Object.values(chartInstances).filter(Boolean);
+            echarts.connect(activeCharts);
+
+            // 綁定十字準心查價更新
+            if (chartInstances.kline) {
+                chartInstances.kline.on('updateAxisPointer', (event) => {
+                    const dataIndex = event.dataIndex;
+                    if (dataIndex !== undefined && rows[dataIndex]) {
+                        const r = rows[dataIndex];
+                        crosshairData.value = {
+                            date: String(r[0]),
+                            open: r[1],
+                            high: r[2],
+                            low: r[3],
+                            close: r[4],
+                            vol: r[5]
+                        };
+                    }
+                });
+            }
+        };
+
+        // 渲染圖 6 動能與擺盪指標
+        const renderSubOscChart = (rows) => {
+            const elMtm = document.getElementById('chart-mtm');
+            if (!elMtm || !rows || rows.length === 0) return;
+
+            if (chartInstances.mtm) {
+                try { chartInstances.mtm.dispose(); } catch(e) {}
+            }
+
+            const chart = echarts.init(elMtm);
+            const isDark = theme.value === 'dark';
+            const bgText = isDark ? '#94a3b8' : '#475569';
+            const gridBorder = isDark ? '#334155' : '#cbd5e1';
+            const splitColor = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(203, 213, 225, 0.6)';
+
+            const dates = rows.map(r => String(r[0]).length === 8 ? `${String(r[0]).slice(4,6)}/${String(r[0]).slice(6,8)}` : String(r[0]));
+            const commonGrid = { left: 10, right: 48, top: 25, bottom: 20, containLabel: false };
+            const commonXAxis = {
+                type: 'category',
+                data: dates,
+                axisLine: { lineStyle: { color: gridBorder } },
+                axisLabel: { color: bgText, fontSize: 10 },
+                axisTick: { show: false }
+            };
+            const commonYAxis = {
+                position: 'right',
+                scale: true,
+                axisLine: { show: true, lineStyle: { color: gridBorder } },
+                axisLabel: { color: bgText, fontSize: 9 },
+                splitLine: { lineStyle: { color: splitColor, type: 'dashed' } }
+            };
+
+            let seriesData = [];
+            let yAxisConfig = { ...commonYAxis };
+
+            if (subOscTab.value === 'MTM') {
+                const mtm = rows.map(r => r[21]);
+                const mtmMa = rows.map(r => r[22]);
+                seriesData = [
+                    { name: 'MTM3', type: 'line', data: mtm, smooth: true, showSymbol: false, lineStyle: { color: '#ef4444', width: 1.5 } },
+                    { name: 'MTM_MA2', type: 'line', data: mtmMa, smooth: true, showSymbol: false, lineStyle: { color: '#eab308', width: 1.5 } }
+                ];
+            } else if (subOscTab.value === 'RSI') {
+                const rsi4 = rows.map(r => r[23]);
+                const rsi12 = rows.map(r => r[24]);
+                yAxisConfig.min = 0;
+                yAxisConfig.max = 100;
+                seriesData = [
+                    { name: 'RSI4', type: 'line', data: rsi4, smooth: true, showSymbol: false, lineStyle: { color: '#ef4444', width: 1.5 } },
+                    { name: 'RSI12', type: 'line', data: rsi12, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1.5 },
+                      markLine: {
+                          symbol: 'none',
+                          silent: true,
+                          data: [{ yAxis: 80, lineStyle: { color: '#ef4444', type: 'dashed' } }, { yAxis: 20, lineStyle: { color: '#10b981', type: 'dashed' } }]
+                      }
+                    }
+                ];
+            } else if (subOscTab.value === 'WR') {
+                const wr3 = rows.map(r => r[25]);
+                const wr50 = rows.map(r => r[26]);
+                yAxisConfig.min = -100;
+                yAxisConfig.max = 0;
+                seriesData = [
+                    { name: 'WR3', type: 'line', data: wr3, smooth: true, showSymbol: false, lineStyle: { color: '#ef4444', width: 1.5 } },
+                    { name: 'WR50', type: 'line', data: wr50, smooth: true, showSymbol: false, lineStyle: { color: '#10b981', width: 1.5 },
+                      markLine: {
+                          symbol: 'none',
+                          silent: true,
+                          data: [{ yAxis: -20, lineStyle: { color: '#ef4444', type: 'dashed' } }, { yAxis: -80, lineStyle: { color: '#10b981', type: 'dashed' } }]
+                      }
+                    }
+                ];
+            }
+
+            chart.setOption({
+                animation: false,
+                grid: commonGrid,
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross', lineStyle: { color: '#38bdf8', type: 'dashed', width: 1 } },
+                    showContent: false
+                },
+                xAxis: commonXAxis,
+                yAxis: yAxisConfig,
+                series: seriesData
+            });
+            chartInstances.mtm = chart;
+
+            const activeCharts = Object.values(chartInstances).filter(Boolean);
+            echarts.connect(activeCharts);
+        };
+
+        // 打開技術指標彈窗
+        const openStockChartModal = (stock) => {
+            if (!stock) return;
+            activeChartStock.value = { ...stock };
+            showStockChartModal.value = true;
+            renderAllStockCharts(stock.code, chartDaysCount.value);
+        };
+
+        // 關閉技術指標彈窗
+        const closeStockChartModal = () => {
+            showStockChartModal.value = false;
+            destroyAllChartInstances();
+        };
+
+        // 切換期間天數 (20 / 40 / 60)
+        const changeChartDays = (days) => {
+            chartDaysCount.value = days;
+            if (activeChartStock.value && activeChartStock.value.code) {
+                renderAllStockCharts(activeChartStock.value.code, days);
+            }
+        };
+
+        // 切換動能副圖 Tab (MTM / RSI / WR)
+        const changeSubOscTab = (tab) => {
+            subOscTab.value = tab;
+            if (stockHistoryCache && activeChartStock.value && activeChartStock.value.code) {
+                const rawCode = String(activeChartStock.value.code).trim();
+                const rawRows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
+                const rows = rawRows.slice(-chartDaysCount.value);
+                renderSubOscChart(rows);
+            }
+        };
         const defaultFeatures = ref([
             { name: '均線趨勢', desc: '多頭排列 (MA5 > MA10 > MA20)', emoji: '🔴' },
             { name: '布林通道', desc: '布林突破 (壓縮蓄勢)', emoji: '🔴' },
@@ -4553,6 +5009,16 @@ createApp({
             activeSyncNotice,
             dismissSyncNotice,
             handleNoticeSyncClick,
+            showStockChartModal,
+            activeChartStock,
+            chartDaysCount,
+            subOscTab,
+            isChartLoading,
+            crosshairData,
+            openStockChartModal,
+            closeStockChartModal,
+            changeChartDays,
+            changeSubOscTab,
             isAppUnlocked,
             triggerSync,
             triggerFileInput,

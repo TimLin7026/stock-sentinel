@@ -329,8 +329,15 @@
                                     <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm">{{ stock.name }}</span>
                                 </div>
 
-                                <!-- 證券商標籤 (對齊地端樣式) 與一鍵複製 10日按鈕 -->
-                                <div class="flex items-center space-x-1.5">
+                                <!-- 證券商標籤 (對齊地端樣式) 與 10日戰報、📊 走勢指標圖按鈕 -->
+                                <div class="flex items-center space-x-1">
+                                    <button @click.stop="openStockChartModal(stock)" 
+                                            class="text-[10px] px-1.5 py-0.5 rounded-md font-bold transition active:scale-90 flex items-center space-x-1 border"
+                                            :class="theme === 'dark' ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60 hover:bg-indigo-900' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'"
+                                            title="開啟 6 大技術指標走勢圖">
+                                        <i class="fa-solid fa-chart-line text-[10px]"></i>
+                                        <span>走勢</span>
+                                    </button>
                                     <button @click.stop="copyStock10DayReport(stock)" 
                                             class="text-[10px] px-1.5 py-0.5 rounded-md font-bold transition active:scale-90 flex items-center space-x-1 border"
                                             :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60 hover:bg-sky-900' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'"
@@ -341,7 +348,7 @@
                                     <span :class="stock.broker === '關注'
                                         ? (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-200 text-slate-700 border-slate-300')
                                         : (theme === 'dark' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/50' : 'bg-emerald-100 text-emerald-800 border-emerald-200')" 
-                                          class="border text-[10px] px-2 py-0.5 rounded-md font-semibold">
+                                          class="border text-[10px] px-1.5 py-0.5 rounded-md font-semibold">
                                         {{ stock.broker || '玉山證券' }}
                                     </span>
                                 </div>
@@ -970,6 +977,132 @@
                         {{ isEditingTrade ? '確認修改並同步' : '確認儲存並同步' }}
                     </button>
                 </div>
+            </div>
+        </div>
+
+
+        <!-- ========================================== -->
+        <!-- 📊 全螢幕個股 6 大技術指標走勢圖 Dialog (100% 對齊電腦版參數) -->
+        <!-- ========================================== -->
+        <div v-if="showStockChartModal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between overflow-hidden">
+            
+            <!-- 1. 頂部導航與即時行情看板 -->
+            <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'" class="p-3 border-b flex-shrink-0 space-y-2">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-base font-black font-mono" :class="theme === 'dark' ? 'text-white' : 'text-slate-900'">{{ activeChartStock.code }}</span>
+                        <span class="text-sm font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ activeChartStock.name }}</span>
+                        <span :class="activeChartStock.change >= 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'" class="text-sm font-mono">
+                            ${{ activeChartStock.price }} ({{ activeChartStock.change >= 0 ? '+' : '' }}{{ activeChartStock.changePercent }}%)
+                        </span>
+                    </div>
+
+                    <div class="flex items-center space-x-1.5">
+                        <!-- 期間選擇 (近20日 / 近40日 / 近60日) -->
+                        <div class="flex bg-slate-800/80 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
+                            <button v-for="d in [20, 40, 60]" :key="d" @click="changeChartDays(d)"
+                                    :class="chartDaysCount === d ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                    class="px-2 py-0.5 rounded transition">
+                                {{ d }}日
+                            </button>
+                        </div>
+
+                        <!-- 關閉按鈕 -->
+                        <button @click="closeStockChartModal" class="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition border border-slate-700 active:scale-90">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 十字準心即時數值跑馬燈看板 (查價列) -->
+                <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-100 border-slate-200'" class="px-2 py-1 rounded-lg border text-[10px] font-mono flex items-center justify-between text-slate-300 overflow-x-auto no-scrollbar">
+                    <span class="text-sky-400 font-bold">{{ crosshairData.date || '滑動圖表查價' }}</span>
+                    <span>開: <b :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'">{{ crosshairData.open || '--' }}</b></span>
+                    <span>高: <b class="text-rose-400">{{ crosshairData.high || '--' }}</b></span>
+                    <span>低: <b class="text-emerald-400">{{ crosshairData.low || '--' }}</b></span>
+                    <span>收: <b class="text-amber-300">{{ crosshairData.close || '--' }}</b></span>
+                    <span>量: <b class="text-slate-300">{{ formatNumber(crosshairData.vol) || '--' }}</b></span>
+                </div>
+            </div>
+
+            <!-- 2. 圖表滾動主體 (順序：1 K線布林 ➔ 2 MACD ➔ 3 KD ➔ 4 成交量融資 ➔ 5 三大法人 ➔ 6 MTM/RSI/WR) -->
+            <div class="flex-1 overflow-y-auto no-scrollbar p-2.5 space-y-2.5">
+                
+                <!-- 載入中骨架屏 -->
+                <div v-if="isChartLoading" class="h-96 flex flex-col items-center justify-center space-y-3 text-slate-400 text-xs">
+                    <i class="fa-solid fa-spinner fa-spin text-3xl text-indigo-400"></i>
+                    <span>正在繪製全市場 6 大技術指標高解析走勢圖...</span>
+                </div>
+
+                <template v-else>
+                    <!-- 圖 1 (主圖)：K線蠟燭圖 + 5MA/10MA + 布林通道 -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖 (5MA, 10MA, 布林通道)</span>
+                            <span class="text-[10px] font-mono text-slate-400">MA5(黃) · MA10(紫) · BB(藍)</span>
+                        </div>
+                        <div id="chart-kline" class="w-full h-56"></div>
+                    </div>
+
+                    <!-- 圖 2 (原 3)：MACD / OSC -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標 (DIF6-9, MACD6, OSC)</span>
+                            <span class="text-[10px] font-mono text-slate-400">DIF(黃) · MACD_S(藍) · OSC柱</span>
+                        </div>
+                        <div id="chart-macd" class="w-full h-36"></div>
+                    </div>
+
+                    <!-- 圖 3 (原 4)：KD 指標 (7, 3, 3) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標 (7K, 7D, 80/20線)</span>
+                            <span class="text-[10px] font-mono text-slate-400">7K(紅) · 7D(綠)</span>
+                        </div>
+                        <div id="chart-kd" class="w-full h-36"></div>
+                    </div>
+
+                    <!-- 圖 4 (原 2)：成交量與融資餘額 -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資餘額</span>
+                            <span class="text-[10px] font-mono text-slate-400">成交量(紅/綠柱) · 融資(橘線)</span>
+                        </div>
+                        <div id="chart-vol" class="w-full h-36"></div>
+                    </div>
+
+                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼 (外資, 投信, 自營)</span>
+                            <span class="text-[10px] font-mono text-slate-400">外資(藍) · 投信(橘) · 自營(紫)</span>
+                        </div>
+                        <div id="chart-chip" class="w-full h-36"></div>
+                    </div>
+
+                    <!-- 圖 6 (原 6)：MTM / RSI / 威廉指標 (支援 Tab 切換) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪指標</span>
+                            <!-- 子切換 Tab (MTM / RSI / WR) -->
+                            <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
+                                <button v-for="t in ['MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
+                                        :class="subOscTab === t ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'"
+                                        class="px-2 py-0.5 rounded transition">
+                                    {{ t }}
+                                </button>
+                            </div>
+                        </div>
+                        <div id="chart-mtm" class="w-full h-36"></div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- 3. 底部關閉按鈕 -->
+            <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'" class="p-2.5 border-t flex-shrink-0">
+                <button @click="closeStockChartModal" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-xl text-xs transition border border-slate-700 shadow-lg active:scale-95">
+                    關閉技術指標走勢圖
+                </button>
             </div>
         </div>
 

@@ -15,6 +15,7 @@
 !monitor.js
 !market_health.json
 !market_snapshot.json.gz
+!market_history_60d.json.gz
 !.github/
 !.github/**
 !scripts/
