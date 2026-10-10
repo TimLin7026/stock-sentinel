@@ -1052,24 +1052,63 @@
                 </div>
 
                 <template v-else>
-                    <!-- 圖 1 (主圖)：K線蠟燭圖 + 5MA/10MA + 布林通道 + 籌碼成本線 -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
-                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
-                                <span class="text-amber-400 font-bold">5M:{{ crosshairData.ma5 }}</span>
-                                <span>·</span>
-                                <span class="text-sky-400 font-bold">10M:{{ crosshairData.ma10 }}</span>
-                                <span>·</span>
-                                <span class="text-purple-400 font-bold">上:{{ crosshairData.bbU }}</span>
-                                <span>·</span>
-                                <span class="text-purple-400 font-bold">下:{{ crosshairData.bbL }}</span>
-                                <span>·</span>
-                                <span class="text-emerald-400 font-bold">資本:{{ crosshairData.marginCost }}</span>
-                                <span>·</span>
-                                <span class="text-rose-500 font-bold">外本:{{ crosshairData.foreignCost }}</span>
-                            </span>
+                    <!-- 圖 1 (主圖)：K線蠟燭圖 + MA/布林/成本 篩選開關與兩行式動態看板 -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative space-y-1.5">
+                        <!-- 看板第 1 行：左側標題與切換鈕 + 右側均線/布林數值 -->
+                        <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
+                            <!-- 左側：標題與藥丸切換開關 -->
+                            <div class="flex items-center space-x-1.5 shrink-0">
+                                <span class="flex items-center whitespace-nowrap"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1"></i>1. K線</span>
+                                
+                                <!-- 藥丸切換鈕 (MA | 布林 | 成本) -->
+                                <div class="flex bg-slate-800/90 p-0.5 rounded-lg text-[9px] font-mono border border-slate-700/80 space-x-0.5">
+                                    <button @click="toggleKlineLayer('ma')" 
+                                            :class="klineLayers.ma ? 'bg-amber-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                            class="px-1.5 py-0.2 rounded transition whitespace-nowrap" title="開關 5MA / 10MA / 20MA">
+                                        MA
+                                    </button>
+                                    <button @click="toggleKlineLayer('bollinger')" 
+                                            :class="klineLayers.bollinger ? 'bg-purple-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                            class="px-1.5 py-0.2 rounded transition whitespace-nowrap" title="開關 布林上/中/下軌">
+                                        布林
+                                    </button>
+                                    <button @click="toggleKlineLayer('cost')" 
+                                            :class="klineLayers.cost ? 'bg-emerald-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                            class="px-1.5 py-0.2 rounded transition whitespace-nowrap" title="開關 融資/外資成本線">
+                                        成本
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 右側：均線與布林數值看板 (智慧條件呈現與防折字) -->
+                            <div class="text-[10px] font-mono flex items-center space-x-1 text-slate-400 whitespace-nowrap overflow-x-auto no-scrollbar">
+                                <template v-if="klineLayers.ma">
+                                    <span class="text-amber-400 font-bold">5M:{{ crosshairData.ma5 }}</span>
+                                    <span>·</span>
+                                    <span class="text-sky-400 font-bold">10M:{{ crosshairData.ma10 }}</span>
+                                </template>
+                                <template v-if="klineLayers.ma && !klineLayers.bollinger">
+                                    <span>·</span>
+                                    <span class="text-purple-400 font-bold">20M:{{ crosshairData.bbMid }}</span>
+                                </template>
+                                <template v-if="klineLayers.bollinger">
+                                    <span v-if="klineLayers.ma">·</span>
+                                    <span class="text-purple-400 font-bold">中:{{ crosshairData.bbMid }}</span>
+                                    <span>·</span>
+                                    <span class="text-purple-400 font-bold">上:{{ crosshairData.bbU }}</span>
+                                    <span>·</span>
+                                    <span class="text-purple-400 font-bold">下:{{ crosshairData.bbL }}</span>
+                                </template>
+                            </div>
                         </div>
+
+                        <!-- 看板第 2 行：專屬籌碼成本線數值 (僅在勾選成本時顯示，靠右對齊) -->
+                        <div v-if="klineLayers.cost" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40">
+                            <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}</span>
+                            <span>·</span>
+                            <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
+                        </div>
+
                         <div id="chart-kline" class="w-full h-56"></div>
                     </div>
 
@@ -1218,6 +1257,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.08"></script>
+    <script src="app.js?v=2.20261010.10"></script>
 </body>
 </html>
