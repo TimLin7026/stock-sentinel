@@ -609,6 +609,17 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
         df_raw["法人合計"] = df_raw["foreign_buy"] + df_raw["sitc_buy"] + df_raw["dealers_buy"]
         df_raw["融資增減"] = df_raw["margin_balance"].diff().fillna(0)
 
+        # 籌碼成本線計算 (近 20 日加權均價，無買進/增資時以 MA20/BB_Mid 銜接)
+        f_buy_pos = df_raw["foreign_buy"].clip(lower=0)
+        f_val_20 = (df_raw["close"] * f_buy_pos).rolling(20, min_periods=1).sum()
+        f_qty_20 = f_buy_pos.rolling(20, min_periods=1).sum()
+        df_raw["Foreign_Cost"] = np.where(f_qty_20 > 0, f_val_20 / f_qty_20, df_raw["BB_Mid"])
+        
+        m_inc_pos = df_raw["融資增減"].clip(lower=0)
+        m_val_20 = (df_raw["close"] * m_inc_pos).rolling(20, min_periods=1).sum()
+        m_qty_20 = m_inc_pos.rolling(20, min_periods=1).sum()
+        df_raw["Margin_Cost"] = np.where(m_qty_20 > 0, m_val_20 / m_qty_20, df_raw["BB_Mid"])
+
         # 2. 滾算 6 大熱力青紅燈 (1: 多/紅, -1: 空/綠) (完全對齊 Stock_Sentinel.py:2566)
         df_raw["P10_MTM_Cross"] = (df_raw["MTM"] > df_raw["MTM_MA"]).astype(int).replace(0, -1)
         df_raw["P1_MACD_OSC"] = (df_raw["OSC"] > df_raw["OSC"].shift(1)).astype(int).replace(0, -1)
@@ -907,7 +918,9 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
                 clean_num(r.get("RSI4"), 1),                       # 23: RSI4
                 clean_num(r.get("RSI12"), 1),                      # 24: RSI12
                 clean_num(r.get("WR3"), 1),                        # 25: WR3
-                clean_num(r.get("WR50"), 1)                        # 26: WR50
+                clean_num(r.get("WR50"), 1),                       # 26: WR50
+                clean_num(r.get("Margin_Cost"), 2),                # 27: 融資成本 (綠色虛線)
+                clean_num(r.get("Foreign_Cost"), 2)                # 28: 外資成本 (酒紅色虛線)
             ])
         history_map[code] = hist_rows
         

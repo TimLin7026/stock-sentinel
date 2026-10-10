@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.06');
+        const appVersion = ref('v2.20261010.07');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -635,6 +635,8 @@ createApp({
             bbMid: '--',
             bbU: '--',
             bbL: '--',
+            marginCost: '--',
+            foreignCost: '--',
             dif: '--',
             macdS: '--',
             osc: 0,
@@ -686,7 +688,9 @@ createApp({
                 rsi4: r[23],
                 rsi12: r[24],
                 wr3: r[25],
-                wr50: r[26]
+                wr50: r[26],
+                marginCost: r[27] !== undefined ? r[27] : '--',
+                foreignCost: r[28] !== undefined ? r[28] : '--'
             };
         };
 
@@ -814,6 +818,8 @@ createApp({
             const rsi12 = rows.map(r => r[24]);
             const wr3 = rows.map(r => r[25]);
             const wr50 = rows.map(r => r[26]);
+            const marginCost = rows.map(r => r[27]);
+            const foreignCost = rows.map(r => r[28]);
 
             // 初始化看板最後一筆（最新一日）數值
             if (rows.length > 0) {
@@ -854,7 +860,7 @@ createApp({
                 showContent: false // 使用頂部看板與各子圖標題即時反映，不遮蔽手機圖表
             };
 
-            // 1. 主圖：K線 + 均線 + 布林通道
+            // 1. 主圖：K線 + 均線 + 布林通道 + 籌碼成本線
             const elKline = document.getElementById('chart-kline');
             if (elKline) {
                 const chart = echarts.init(elKline);
@@ -880,7 +886,9 @@ createApp({
                         { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1.5 } },
                         { name: 'BB_Mid', type: 'line', data: bbMid, smooth: true, showSymbol: false, lineStyle: { color: '#a855f7', width: 1.2 } },
                         { name: 'BB_U', type: 'line', data: bbU, smooth: true, showSymbol: false, lineStyle: { color: '#c084fc', width: 1, type: 'dashed' } },
-                        { name: 'BB_L', type: 'line', data: bbL, smooth: true, showSymbol: false, lineStyle: { color: '#c084fc', width: 1, type: 'dashed' }, areaStyle: { color: 'rgba(168, 85, 247, 0.08)' } }
+                        { name: 'BB_L', type: 'line', data: bbL, smooth: true, showSymbol: false, lineStyle: { color: '#c084fc', width: 1, type: 'dashed' }, areaStyle: { color: 'rgba(168, 85, 247, 0.08)' } },
+                        { name: '融資成本', type: 'line', data: marginCost, smooth: true, showSymbol: false, lineStyle: { color: '#10b981', width: 1.2, type: 'dashed' } },
+                        { name: '外資成本', type: 'line', data: foreignCost, smooth: true, showSymbol: false, lineStyle: { color: '#be123c', width: 1.2, type: 'dashed' } }
                     ]
                 });
                 chartInstances.kline = chart;
