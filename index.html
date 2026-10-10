@@ -44,8 +44,13 @@
     </style>
 </head>
 <body class="bg-[#0b0f19] text-slate-100 flex justify-center min-h-screen transition-colors duration-200">
-    <!-- 📱 手機 xs 窄版容器 (max-w-md，電腦端置中外框，手機端滿版) -->
-    <div id="app" :class="theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'" class="w-full max-w-md flex flex-col min-h-screen shadow-2xl border-x relative pb-20 transition-colors duration-200">
+    <!-- 📱/🖥️ 自適配容器 (手機 xs 窄版 max-w-md / 電腦平板寬橫版 max-w-5xl) -->
+    <div id="app" 
+         :class="[
+             theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300',
+             appLayout === 'mobile' ? 'max-w-md' : 'max-w-5xl'
+         ]" 
+         class="w-full flex flex-col min-h-screen shadow-2xl border-x relative pb-20 transition-all duration-300">
         
         <!-- 頂部狀態列 Header -->
         <header :class="theme === 'dark' ? 'bg-[#0f172a]/95 border-slate-800' : 'bg-white/95 border-slate-200'" class="backdrop-blur-md px-4 py-3 sticky top-0 z-30 border-b flex justify-between items-center transition-colors">
@@ -61,6 +66,15 @@
                 <!-- 🌓 深色 / 淺色切換開關 -->
                 <button @click="toggleTheme" :class="theme === 'dark' ? 'bg-slate-800 text-amber-400 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'" class="w-7 h-7 rounded-full flex items-center justify-center text-xs transition shadow-sm border" title="切換深/淺色模式">
                     <i :class="theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
+                </button>
+
+                <!-- 📱/🖥️ 主畫面窄版/寬橫版切換按鈕 -->
+                <button @click="toggleAppLayout" 
+                        :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'" 
+                        class="w-7 h-7 rounded-full flex items-center justify-center text-xs transition shadow-sm border" 
+                        :title="appLayout === 'mobile' ? '切換為 🖥️ 電腦/平板寬橫版' : '切換為 📱 手機窄版'">
+                    <i v-if="appLayout === 'mobile'" class="fa-solid fa-desktop text-sky-400"></i>
+                    <i v-else class="fa-solid fa-mobile-screen text-amber-400"></i>
                 </button>
 
                 <!-- 🔄 頂部一鍵同步按鈕 (包含全市場行情秒級更新與 Google 雲端個人帳本同步) -->
@@ -182,56 +196,61 @@
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
-                <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
-                <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
-                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
-                    <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
-                            :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
-                            class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
-                        {{ b }}
-                    </button>
-                </div>
-
-                <!-- 總資產核心卡片 -->
-                <div :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700/80 text-white' : 'bg-gradient-to-br from-sky-600 to-indigo-700 border-sky-500 text-white'" class="border rounded-2xl p-4 shadow-lg relative overflow-hidden">
-                    <div class="absolute -right-6 -bottom-6 opacity-20 text-8xl pointer-events-none">
-                        <i class="fa-solid fa-chart-line"></i>
-                    </div>
-                    <div class="flex justify-between items-center mb-1">
-                        <div class="text-xs opacity-80">投資組合總資產市值</div>
-                        <span v-if="selectedBrokerFilter !== '全部'" class="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-                            {{ selectedBrokerFilter }}
-                        </span>
-                    </div>
-                    <div class="text-2xl font-black tracking-tight mb-2">
-                        ${{ formatNumber(summary.totalMarketValue) }}
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/20 text-xs">
-                        <div>
-                            <span class="opacity-80">未實現損益：</span>
-                            <span :class="summary.unrealizedProfit >= 0 ? (theme==='dark'?'text-rose-400':'text-amber-300') : 'text-emerald-300'" class="font-bold">
-                                {{ summary.unrealizedProfit >= 0 ? '+' : '' }}${{ formatNumber(summary.unrealizedProfit) }}
-                                ({{ summary.unrealizedProfitRate }}%)
-                            </span>
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
+                    <!-- 左欄：券商篩選 + 總資產核心卡片 -->
+                    <div class="space-y-3.5">
+                        <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
+                        <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
+                            <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
+                            <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
+                                    :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                                    class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
+                                {{ b }}
+                            </button>
                         </div>
-                        <div>
-                            <span class="opacity-80">總投入成本：</span>
-                            <span class="font-semibold">${{ formatNumber(summary.totalCost) }}</span>
+
+                        <!-- 總資產核心卡片 -->
+                        <div :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700/80 text-white' : 'bg-gradient-to-br from-sky-600 to-indigo-700 border-sky-500 text-white'" class="border rounded-2xl p-4 shadow-lg relative overflow-hidden">
+                            <div class="absolute -right-6 -bottom-6 opacity-20 text-8xl pointer-events-none">
+                                <i class="fa-solid fa-chart-line"></i>
+                            </div>
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="text-xs opacity-80">投資組合總資產市值</div>
+                                <span v-if="selectedBrokerFilter !== '全部'" class="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                    {{ selectedBrokerFilter }}
+                                </span>
+                            </div>
+                            <div class="text-2xl font-black tracking-tight mb-2">
+                                ${{ formatNumber(summary.totalMarketValue) }}
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/20 text-xs">
+                                <div>
+                                    <span class="opacity-80">未實現損益：</span>
+                                    <span :class="summary.unrealizedProfit >= 0 ? (theme==='dark'?'text-rose-400':'text-amber-300') : 'text-emerald-300'" class="font-bold">
+                                        {{ summary.unrealizedProfit >= 0 ? '+' : '' }}${{ formatNumber(summary.unrealizedProfit) }}
+                                        ({{ summary.unrealizedProfitRate }}%)
+                                    </span>
+                                </div>
+                                <div>
+                                    <span class="opacity-80">總投入成本：</span>
+                                    <span class="font-semibold">${{ formatNumber(summary.totalCost) }}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- 資產配置圓餅圖 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4">
-                    <div class="flex justify-between items-center mb-2">
-                        <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
-                            <i class="fa-solid fa-chart-pie text-sky-500 mr-2"></i>持股配置佔比
-                        </h2>
-                        <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ filteredHoldingStocks.length }} 檔持股</span>
+                    <!-- 右欄：資產配置圓餅圖 -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
+                                <i class="fa-solid fa-chart-pie text-sky-500 mr-2"></i>持股配置佔比
+                            </h2>
+                            <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ filteredHoldingStocks.length }} 檔持股</span>
+                        </div>
+                        <!-- 圖表掛載容器 (加大高度避免圖例重疊) -->
+                        <div id="assetChart" class="w-full h-64"></div>
                     </div>
-                    <!-- 圖表掛載容器 (加大高度避免圖例重疊) -->
-                    <div id="assetChart" class="w-full h-64"></div>
                 </div>
             </section>
 
@@ -300,7 +319,7 @@
                 </div>
 
                 <!-- 個股卡片列表 -->
-                 <div class="space-y-2.5">
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3 items-start' : 'space-y-2.5'">
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :id="'stock-card-' + stock.uid"
                          :class="[
@@ -556,7 +575,7 @@
                     </div>
 
                     <!-- 交易明細列表 -->
-                    <div class="space-y-1.5">
+                    <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-2 items-start' : 'space-y-1.5'">
                         <div v-if="filteredTradeLogs.length === 0" class="text-center py-6 text-slate-400 text-xs">
                             此時間區間內暫無交易記錄
                         </div>
@@ -591,218 +610,226 @@
             <!-- 4️⃣ ⚙️ 模組四：Google 雲端設定與同步 -->
             <!-- ========================================== -->
             <section v-if="currentTab === 'settings'" class="space-y-3.5">
-                <!-- Google 帳號狀態卡 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                            <div :class="theme === 'dark' ? 'bg-slate-800 text-sky-400' : 'bg-sky-50 text-sky-600'" class="w-10 h-10 rounded-full flex items-center justify-center text-xl">
-                                <i class="fa-brands fa-google"></i>
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
+                    <!-- 左欄：Google 帳號狀態卡 + 全市場行情快照 -->
+                    <div class="space-y-3.5">
+                        <!-- Google 帳號狀態卡 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <div :class="theme === 'dark' ? 'bg-slate-800 text-sky-400' : 'bg-sky-50 text-sky-600'" class="w-10 h-10 rounded-full flex items-center justify-center text-xl">
+                                        <i class="fa-brands fa-google"></i>
+                                    </div>
+                                    <div>
+                                        <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-sm font-bold">Google 雲端同步中樞</h3>
+                                        <p class="text-xs text-slate-400">{{ googleUser.email || (googleUser.isLoggedIn ? '已連結 Google 帳號' : '尚未連結 Google 帳號') }}</p>
+                                    </div>
+                                </div>
+                                <!-- 系統版本徽章 -->
+                                <span :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60' : 'bg-sky-50 text-sky-700 border-sky-200'" class="border text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                                    {{ appVersion }}
+                                </span>
                             </div>
-                            <div>
-                                <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-sm font-bold">Google 雲端同步中樞</h3>
-                                <p class="text-xs text-slate-400">{{ googleUser.email || (googleUser.isLoggedIn ? '已連結 Google 帳號' : '尚未連結 Google 帳號') }}</p>
+
+                            <!-- 同步中/載入中狀態條 -->
+                            <div v-if="syncStatus.loading" class="bg-sky-500/10 border border-sky-500/30 rounded-xl p-2.5 flex items-center space-x-2 text-xs text-sky-400 animate-pulse">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <span>{{ syncStatus.message || '正在處理雲端同步...' }}</span>
                             </div>
+
+                            <!-- 登入 / 登出按鈕 -->
+                            <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin" :disabled="syncStatus.loading" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition disabled:opacity-50">
+                                <i class="fa-solid fa-link"></i>
+                                <span>立即連結 Google 帳號進行 Drive 授權</span>
+                            </button>
+                            <button v-else @click="handleGoogleLogout" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-rose-300 border-rose-900/30' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'" class="w-full font-bold py-2 rounded-xl text-xs flex items-center justify-center space-x-2 transition border">
+                                <i class="fa-solid fa-right-from-bracket"></i>
+                                <span>解除 Google 帳號連結</span>
+                            </button>
                         </div>
-                        <!-- 系統版本徽章 -->
-                        <span :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60' : 'bg-sky-50 text-sky-700 border-sky-200'" class="border text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
-                            {{ appVersion }}
-                        </span>
-                    </div>
 
-                    <!-- 同步中/載入中狀態條 -->
-                    <div v-if="syncStatus.loading" class="bg-sky-500/10 border border-sky-500/30 rounded-xl p-2.5 flex items-center space-x-2 text-xs text-sky-400 animate-pulse">
-                        <i class="fa-solid fa-spinner fa-spin"></i>
-                        <span>{{ syncStatus.message || '正在處理雲端同步...' }}</span>
-                    </div>
-
-                    <!-- 登入 / 登出按鈕 -->
-                    <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin" :disabled="syncStatus.loading" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition disabled:opacity-50">
-                        <i class="fa-solid fa-link"></i>
-                        <span>立即連結 Google 帳號進行 Drive 授權</span>
-                    </button>
-                    <button v-else @click="handleGoogleLogout" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-rose-300 border-rose-900/30' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'" class="w-full font-bold py-2 rounded-xl text-xs flex items-center justify-center space-x-2 transition border">
-                        <i class="fa-solid fa-right-from-bracket"></i>
-                        <span>解除 Google 帳號連結</span>
-                    </button>
-                </div>
-
-                <!-- 📊 全市場盤後行情快照狀態 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-2.5">
-                    <div class="flex items-center justify-between">
-                        <h3 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs font-bold flex items-center space-x-2">
-                            <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
-                            <i class="fa-solid fa-chart-line text-sky-500"></i>
-                            <span>全市場盤後行情快照</span>
-                        </h3>
-                        <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
-                                class="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 border border-sky-500/30 px-2 py-0.5 rounded-lg transition active:scale-95 disabled:opacity-50">
-                            <i class="fa-solid fa-rotate text-[9px]" :class="syncStatus.loading ? 'fa-spin' : ''"></i>
-                            <span>立即同步</span>
-                        </button>
-                    </div>
-
-                    <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border text-[11px] font-mono space-y-1.5">
-                        <div class="flex justify-between items-center">
-                            <span class="text-slate-400">📅 最新開市日：</span>
-                            <span class="font-bold text-sky-400">{{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }} <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }} 檔)</span></span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-slate-400">📥 本機下載時間：</span>
-                            <span :class="marketSyncMeta.fetchTime ? 'text-emerald-400 font-medium' : 'text-amber-400'">{{ marketSyncMeta.fetchTime || '尚未下載' }}</span>
-                        </div>
-                        <div v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="flex justify-between items-center">
-                            <span class="text-slate-400">🧠 大腦產出時間：</span>
-                            <span class="text-slate-300">{{ marketSyncMeta.cloudGeneratedAt }}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-slate-400">⏰ 下次排程抓取：</span>
-                            <span class="text-sky-300 font-medium">{{ nextCrawlTimeInfo.label }} <span v-if="nextCrawlTimeInfo.countdown" class="text-slate-400 text-[10px]">({{ nextCrawlTimeInfo.countdown }})</span></span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 雲端同步操作區 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
-                    <h3 :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-xs font-bold flex items-center justify-between">
-                        <span><i class="fa-solid fa-arrows-rotate text-sky-500 mr-2"></i>資料庫同步操作</span>
-                        <span v-if="isDbLoaded" class="text-[10px] text-emerald-400 font-normal"><i class="fa-solid fa-circle-check mr-1"></i>真實 SQLite 已載入</span>
-                        <span v-else class="text-[10px] text-amber-400 font-normal"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>示範資料庫模式</span>
-                    </h3>
-
-                    <!-- 雲地 SQL 資料庫狀態雙欄對比看板 (100% 對齊電腦端) -->
-                    <div class="grid grid-cols-2 gap-2.5">
-                        <!-- 💻 本機 (手機) 資料庫狀態 -->
-                        <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
-                            <h4 class="font-bold text-sky-500 flex items-center justify-between text-xs">
-                                <span class="flex items-center"><i class="fa-solid fa-laptop mr-1.5"></i>本機資料庫狀態</span>
-                                <button @click="updateLocalDbStats" title="重新整理本機狀態" class="text-sky-500 hover:text-sky-400 p-0.5 rounded transition">
-                                    <i class="fa-solid fa-arrows-rotate text-[11px]"></i>
+                        <!-- 📊 全市場盤後行情快照狀態 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-2.5">
+                            <div class="flex items-center justify-between">
+                                <h3 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs font-bold flex items-center space-x-2">
+                                    <span class="inline-block w-2 h-2 rounded-full" :class="marketSyncMeta.marketDate ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400'"></span>
+                                    <i class="fa-solid fa-chart-line text-sky-500"></i>
+                                    <span>全市場盤後行情快照</span>
+                                </h3>
+                                <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
+                                        class="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 border border-sky-500/30 px-2 py-0.5 rounded-lg transition active:scale-95 disabled:opacity-50">
+                                    <i class="fa-solid fa-rotate text-[9px]" :class="syncStatus.loading ? 'fa-spin' : ''"></i>
+                                    <span>立即同步</span>
                                 </button>
-                            </h4>
-                            <div class="text-[11px] space-y-1 text-slate-400 font-mono">
-                                <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ localDbStats.lastModified }}</span></div>
-                                <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ localDbStats.tradeLogCount }} 筆</span></div>
-                                <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ localDbStats.myStockCount }} 檔</span></div>
-                                <div>• 策略庫：<span class="text-amber-500 font-bold">{{ localDbStats.gemStrategyCount }} 筆</span></div>
+                            </div>
+
+                            <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border text-[11px] font-mono space-y-1.5">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-slate-400">📅 最新開市日：</span>
+                                    <span class="font-bold text-sky-400">{{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }} <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }} 檔)</span></span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-slate-400">📥 本機下載時間：</span>
+                                    <span :class="marketSyncMeta.fetchTime ? 'text-emerald-400 font-medium' : 'text-amber-400'">{{ marketSyncMeta.fetchTime || '尚未下載' }}</span>
+                                </div>
+                                <div v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="flex justify-between items-center">
+                                    <span class="text-slate-400">🧠 大腦產出時間：</span>
+                                    <span class="text-slate-300">{{ marketSyncMeta.cloudGeneratedAt }}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-slate-400">⏰ 下次排程抓取：</span>
+                                    <span class="text-sky-300 font-medium">{{ nextCrawlTimeInfo.label }} <span v-if="nextCrawlTimeInfo.countdown" class="text-slate-400 text-[10px]">({{ nextCrawlTimeInfo.countdown }})</span></span>
+                                </div>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- ☁️ 雲端資料庫狀態 -->
-                        <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
-                            <h4 class="font-bold text-teal-500 flex items-center justify-between text-xs">
-                                <span class="flex items-center"><i class="fa-solid fa-cloud mr-1.5"></i>雲端資料庫狀態</span>
-                                <button @click="fetchCloudDbStats" :disabled="isFetchingCloudStats || !googleUser.isLoggedIn" title="重新查詢雲端狀態" class="text-teal-500 hover:text-teal-400 p-0.5 rounded transition disabled:opacity-40">
-                                    <i class="fa-solid fa-arrows-rotate text-[11px]" :class="isFetchingCloudStats ? 'fa-spin' : ''"></i>
+                    <!-- 右欄：雲端同步操作區 + 系統資訊 -->
+                    <div class="space-y-3.5">
+                        <!-- 雲端同步操作區 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
+                            <h3 :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-xs font-bold flex items-center justify-between">
+                                <span><i class="fa-solid fa-arrows-rotate text-sky-500 mr-2"></i>資料庫同步操作</span>
+                                <span v-if="isDbLoaded" class="text-[10px] text-emerald-400 font-normal"><i class="fa-solid fa-circle-check mr-1"></i>真實 SQLite 已載入</span>
+                                <span v-else class="text-[10px] text-amber-400 font-normal"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>示範資料庫模式</span>
+                            </h3>
+
+                            <!-- 雲地 SQL 資料庫狀態雙欄對比看板 (100% 對齊電腦端) -->
+                            <div class="grid grid-cols-2 gap-2.5">
+                                <!-- 💻 本機 (手機) 資料庫狀態 -->
+                                <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
+                                    <h4 class="font-bold text-sky-500 flex items-center justify-between text-xs">
+                                        <span class="flex items-center"><i class="fa-solid fa-laptop mr-1.5"></i>本機資料庫狀態</span>
+                                        <button @click="updateLocalDbStats" title="重新整理本機狀態" class="text-sky-500 hover:text-sky-400 p-0.5 rounded transition">
+                                            <i class="fa-solid fa-arrows-rotate text-[11px]"></i>
+                                        </button>
+                                    </h4>
+                                    <div class="text-[11px] space-y-1 text-slate-400 font-mono">
+                                        <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ localDbStats.lastModified }}</span></div>
+                                        <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ localDbStats.tradeLogCount }} 筆</span></div>
+                                        <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ localDbStats.myStockCount }} 檔</span></div>
+                                        <div>• 策略庫：<span class="text-amber-500 font-bold">{{ localDbStats.gemStrategyCount }} 筆</span></div>
+                                    </div>
+                                </div>
+
+                                <!-- ☁️ 雲端資料庫狀態 -->
+                                <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-3 rounded-2xl border text-xs space-y-1.5 shadow-sm">
+                                    <h4 class="font-bold text-teal-500 flex items-center justify-between text-xs">
+                                        <span class="flex items-center"><i class="fa-solid fa-cloud mr-1.5"></i>雲端資料庫狀態</span>
+                                        <button @click="fetchCloudDbStats" :disabled="isFetchingCloudStats || !googleUser.isLoggedIn" title="重新查詢雲端狀態" class="text-teal-500 hover:text-teal-400 p-0.5 rounded transition disabled:opacity-40">
+                                            <i class="fa-solid fa-arrows-rotate text-[11px]" :class="isFetchingCloudStats ? 'fa-spin' : ''"></i>
+                                        </button>
+                                    </h4>
+                                    <div class="text-[11px] space-y-1 text-slate-400 font-mono">
+                                        <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ cloudDbStats.lastModified }}</span></div>
+                                        <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ cloudDbStats.tradeLogCount }} 筆</span></div>
+                                        <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ cloudDbStats.myStockCount }} 檔</span></div>
+                                        <div>• 策略庫：<span class="text-amber-500 font-bold">{{ cloudDbStats.gemStrategyCount }} 筆</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 🚀 數據同步與備份操作 -->
+                            <div class="space-y-2 pt-1">
+                                <!-- 🤝 智慧雙向同步大紅按鈕 -->
+                                <button @click="executeTwoWaySync" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
+                                        class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center space-x-1.5 shadow-lg transition disabled:opacity-50">
+                                    <i class="fa-solid fa-handshake"></i>
+                                    <span>執行【智慧雙向同步】</span>
                                 </button>
-                            </h4>
-                            <div class="text-[11px] space-y-1 text-slate-400 font-mono">
-                                <div>• 最後修改：<span :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">{{ cloudDbStats.lastModified }}</span></div>
-                                <div>• 交易紀錄：<span class="text-emerald-500 font-bold">{{ cloudDbStats.tradeLogCount }} 筆</span></div>
-                                <div>• 自選名冊：<span class="text-sky-500 font-bold">{{ cloudDbStats.myStockCount }} 檔</span></div>
-                                <div>• 策略庫：<span class="text-amber-500 font-bold">{{ cloudDbStats.gemStrategyCount }} 筆</span></div>
+
+                                <!-- 雙欄：單向上傳 / 單向下載 -->
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button @click="executeSingleUpload" :disabled="syncStatus.loading || !googleUser.isLoggedIn || !isDbLoaded"
+                                            :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
+                                            class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
+                                        <i class="fa-solid fa-cloud-arrow-up text-sky-500"></i>
+                                        <span>單向上傳至雲端</span>
+                                    </button>
+                                    <button @click="executeSingleDownload" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
+                                            :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
+                                            class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
+                                        <i class="fa-solid fa-cloud-arrow-down text-emerald-500"></i>
+                                        <span>單向從雲端下載</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 📅 市場曆法與數據健康維護 (對齊電腦端) -->
+                            <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                                <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
+                                    📅 市場曆法與數據健康維護：
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button @click="updateMarketHolidays" :disabled="isUpdatingHolidays || !isDbLoaded"
+                                            :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
+                                            class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
+                                            title="同步證交所與雲端休市表">
+                                        <i class="fa-solid fa-calendar-days text-sky-500" :class="isUpdatingHolidays ? 'fa-spin' : ''"></i>
+                                        <span>{{ isUpdatingHolidays ? '更新中...' : '更新休市日' }}</span>
+                                    </button>
+
+                                    <button @click="batchPatchData" :disabled="isBatchPatching || !isDbLoaded"
+                                            :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
+                                            class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
+                                            title="清除休市日殘留並校準指標健康度">
+                                        <i class="fa-solid fa-bolt-lightning text-amber-500" :class="isBatchPatching ? 'fa-spin' : ''"></i>
+                                        <span>{{ isBatchPatching ? '補完中...' : '批量差異補完' }}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 本機手動備援操作 (匯入 / 匯出) -->
+                            <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                                <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
+                                    📁 本機手動備援管理 (無需連網)：
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button @click="triggerFileInput" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
+                                        <i class="fa-solid fa-file-import text-amber-500"></i>
+                                        <span>匯入 .db 檔案</span>
+                                    </button>
+                                    <input type="file" ref="dbFileInput" @change="handleDbFileSelected" accept=".db" class="hidden">
+
+                                    <button @click="exportDatabaseFile" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
+                                        <i class="fa-solid fa-download text-emerald-500"></i>
+                                        <span>匯出備份 .db</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div :class="theme === 'dark' ? 'border-slate-800/80 text-slate-400' : 'border-slate-200 text-slate-600'" class="pt-2 border-t text-[11px] space-y-1">
+                                <div>• <b>系統版號：</b> <span class="font-mono font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ appVersion }}</span> <span class="text-[10px] text-slate-400">(PWA 行動戰情版)</span></div>
+                                <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">台股戰情室_雲端同步</code></div>
+                                <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '尚未同步' }}</span></div>
+                                <div>• <b>資料庫狀態：</b> <span :class="isDbLoaded ? 'text-emerald-400 font-bold' : 'text-amber-400'">{{ dbInfoText }}</span></div>
+                            </div>
+
+                            <!-- ⚙️ Google Client ID 進階配置折疊區 -->
+                            <div class="pt-2 border-t text-[10px]" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                                <details class="cursor-pointer">
+                                    <summary :class="theme === 'dark' ? 'text-slate-400 hover:text-slate-300' : 'text-slate-600 hover:text-slate-800'">⚙️ Google 雲端憑證設定 (進階)</summary>
+                                    <div class="mt-2 space-y-1.5 p-2 rounded-xl" :class="theme === 'dark' ? 'bg-slate-950/60' : 'bg-slate-50'">
+                                        <label class="block font-bold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">OAuth 2.0 Client ID：</label>
+                                        <input v-model="googleClientId" type="text" placeholder="輸入 Google OAuth Client ID..." 
+                                               :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                               class="w-full border rounded-lg px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-sky-500">
+                                        <div class="text-[9px] text-slate-400">已預設對齊地端 gdrive_sync.py 專用憑證。</div>
+                                    </div>
+                                </details>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- 🚀 數據同步與備份操作 -->
-                    <div class="space-y-2 pt-1">
-                        <!-- 🤝 智慧雙向同步大紅按鈕 -->
-                        <button @click="executeTwoWaySync" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
-                                class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center space-x-1.5 shadow-lg transition disabled:opacity-50">
-                            <i class="fa-solid fa-handshake"></i>
-                            <span>執行【智慧雙向同步】</span>
-                        </button>
-
-                        <!-- 雙欄：單向上傳 / 單向下載 -->
-                        <div class="grid grid-cols-2 gap-2">
-                            <button @click="executeSingleUpload" :disabled="syncStatus.loading || !googleUser.isLoggedIn || !isDbLoaded"
-                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
-                                    class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
-                                <i class="fa-solid fa-cloud-arrow-up text-sky-500"></i>
-                                <span>單向上傳至雲端</span>
-                            </button>
-                            <button @click="executeSingleDownload" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
-                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200' : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'"
-                                    class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50">
-                                <i class="fa-solid fa-cloud-arrow-down text-emerald-500"></i>
-                                <span>單向從雲端下載</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 📅 市場曆法與數據健康維護 (對齊電腦端) -->
-                    <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
-                        <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
-                            📅 市場曆法與數據健康維護：
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button @click="updateMarketHolidays" :disabled="isUpdatingHolidays || !isDbLoaded"
-                                    :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
-                                    class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
-                                    title="同步證交所與雲端休市表">
-                                <i class="fa-solid fa-calendar-days text-sky-500" :class="isUpdatingHolidays ? 'fa-spin' : ''"></i>
-                                <span>{{ isUpdatingHolidays ? '更新中...' : '更新休市日' }}</span>
-                            </button>
-
-                            <button @click="batchPatchData" :disabled="isBatchPatching || !isDbLoaded"
-                                    :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
-                                    class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm disabled:opacity-50"
-                                    title="清除休市日殘留並校準指標健康度">
-                                <i class="fa-solid fa-bolt-lightning text-amber-500" :class="isBatchPatching ? 'fa-spin' : ''"></i>
-                                <span>{{ isBatchPatching ? '補完中...' : '批量差異補完' }}</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 本機手動備援操作 (匯入 / 匯出) -->
-                    <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
-                        <div class="text-[11px] font-semibold mb-2" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">
-                            📁 本機手動備援管理 (無需連網)：
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button @click="triggerFileInput" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
-                                <i class="fa-solid fa-file-import text-amber-500"></i>
-                                <span>匯入 .db 檔案</span>
-                            </button>
-                            <input type="file" ref="dbFileInput" @change="handleDbFileSelected" accept=".db" class="hidden">
-
-                            <button @click="exportDatabaseFile" :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'" class="border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition shadow-sm">
-                                <i class="fa-solid fa-download text-emerald-500"></i>
-                                <span>匯出備份 .db</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div :class="theme === 'dark' ? 'border-slate-800/80 text-slate-400' : 'border-slate-200 text-slate-600'" class="pt-2 border-t text-[11px] space-y-1">
-                        <div>• <b>系統版號：</b> <span class="font-mono font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ appVersion }}</span> <span class="text-[10px] text-slate-400">(PWA 行動戰情版)</span></div>
-                        <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">台股戰情室_雲端同步</code></div>
-                        <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '尚未同步' }}</span></div>
-                        <div>• <b>資料庫狀態：</b> <span :class="isDbLoaded ? 'text-emerald-400 font-bold' : 'text-amber-400'">{{ dbInfoText }}</span></div>
-                    </div>
-
-                    <!-- ⚙️ Google Client ID 進階配置折疊區 -->
-                    <div class="pt-2 border-t text-[10px]" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
-                        <details class="cursor-pointer">
-                            <summary :class="theme === 'dark' ? 'text-slate-400 hover:text-slate-300' : 'text-slate-600 hover:text-slate-800'">⚙️ Google 雲端憑證設定 (進階)</summary>
-                            <div class="mt-2 space-y-1.5 p-2 rounded-xl" :class="theme === 'dark' ? 'bg-slate-950/60' : 'bg-slate-50'">
-                                <label class="block font-bold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">OAuth 2.0 Client ID：</label>
-                                <input v-model="googleClientId" type="text" placeholder="輸入 Google OAuth Client ID..." 
-                                       :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
-                                       class="w-full border rounded-lg px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-sky-500">
-                                <div class="text-[9px] text-slate-400">已預設對齊地端 gdrive_sync.py 專用憑證。</div>
+                        <!-- 系統資訊卡片 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-900/60 border-slate-800/60 text-slate-400' : 'bg-slate-100/80 border-slate-200 text-slate-600'" class="border rounded-2xl p-3 text-[11px] space-y-1">
+                            <div class="flex justify-between items-center font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
+                                <span>🛡️ 鈔能戰情室・行動戰情中樞</span>
+                                <span class="font-mono text-[10px] px-1.5 py-0.2 rounded" :class="theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'">SQLite WASM</span>
                             </div>
-                        </details>
-                    </div>
-                </div>
-
-                <!-- 系統資訊卡片 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900/60 border-slate-800/60 text-slate-400' : 'bg-slate-100/80 border-slate-200 text-slate-600'" class="border rounded-2xl p-3 text-[11px] space-y-1">
-                    <div class="flex justify-between items-center font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
-                        <span>🛡️ 鈔能戰情室・行動戰情中樞</span>
-                        <span class="font-mono text-[10px] px-1.5 py-0.2 rounded" :class="theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'">SQLite WASM</span>
-                    </div>
-                    <div class="text-[10px] text-slate-500 leading-tight">
-                        核心引擎：WebAssembly SQLite (sql.js) · Google Drive REST API · IndexedDB
+                            <div class="text-[10px] text-slate-500 leading-tight">
+                                核心引擎：WebAssembly SQLite (sql.js) · Google Drive REST API · IndexedDB
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -1236,7 +1263,11 @@
         <!-- ========================================== -->
         <!-- 📱 底部拇指導航列 (Bottom Navigation) -->
         <!-- ========================================== -->
-        <nav :class="theme === 'dark' ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-md'" class="fixed bottom-0 w-full max-w-md backdrop-blur-md border-t flex justify-around py-2.5 z-40 transition-colors">
+        <nav :class="[
+                 theme === 'dark' ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-md',
+                 appLayout === 'mobile' ? 'max-w-md' : 'max-w-5xl'
+             ]" 
+             class="fixed bottom-0 w-full backdrop-blur-md border-t flex justify-around py-2.5 z-40 transition-all duration-300">
             <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'text-sky-500 font-bold' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')" class="flex flex-col items-center text-[10px] space-y-1">
                 <i class="fa-solid fa-chart-pie text-base"></i>
                 <span>資產總覽</span>
@@ -1258,6 +1289,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.14"></script>
+    <script src="app.js?v=2.20261010.15"></script>
 </body>
 </html>

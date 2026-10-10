@@ -41,7 +41,19 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.14');
+        const appVersion = ref('v2.20261010.15');
+
+        // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
+        const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
+        const toggleAppLayout = () => {
+            appLayout.value = appLayout.value === 'mobile' ? 'wide' : 'mobile';
+            localStorage.setItem('sentinel_app_layout', appLayout.value);
+            Vue.nextTick(() => {
+                if (chartInstance && typeof chartInstance.resize === 'function') {
+                    setTimeout(() => { chartInstance.resize(); }, 80);
+                }
+            });
+        };
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -5091,6 +5103,8 @@ createApp({
 
         return {
             appVersion,
+            appLayout,
+            toggleAppLayout,
             theme,
             toggleTheme,
             chartOrientation,
