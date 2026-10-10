@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.19');
+        const appVersion = ref('v2.20261010.20');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -65,6 +65,7 @@ createApp({
         const stockSubTab = ref('holding'); // 預設現役持股區
         const starredSubFilter = ref('全部'); // 特別關注子過濾 (全部 / 買 / 賣)
         const stockSearchQuery = ref('');
+        const onlyExpiredReports = ref(false); // 快速篩選戰報過期/待更新個股
         const expandedStockUids = ref(new Set()); // 展開卡片集合 (以 code_broker 為唯一 UID)
 
         // ─── 資產總覽：券商篩選狀態 (對齊地端) ───
@@ -1955,6 +1956,11 @@ createApp({
             if (stockSubTab.value === 'holding') baseList = holdingStocks.value;
             else if (stockSubTab.value === 'starred') baseList = starredStocks.value;
             else if (stockSubTab.value === 'watchlist') baseList = watchlistStocks.value;
+
+            // ⚠️ 快速篩選戰報過期/待更新個股 (isReportFresh === false)
+            if (onlyExpiredReports.value) {
+                baseList = baseList.filter(s => !s.isReportFresh);
+            }
 
             // 搜尋過濾
             if (stockSearchQuery.value.trim()) {
@@ -5166,6 +5172,7 @@ createApp({
             stockSubTab,
             starredSubFilter,
             stockSearchQuery,
+            onlyExpiredReports,
             selectedBrokerFilter,
             availableBrokers,
             activeBrokers,

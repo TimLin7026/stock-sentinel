@@ -280,7 +280,7 @@
                     </button>
                 </div>
 
-                <!-- 搜尋過濾器與 💎 富貴 Gem 按鈕 -->
+                <!-- 搜尋過濾器、⚠️ 戰報過期開關 與 💎 富貴 Gem 按鈕 -->
                 <div class="flex items-center space-x-2">
                     <div class="relative flex-1">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
@@ -288,6 +288,16 @@
                                 :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'"
                                 class="w-full border rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-sky-500">
                     </div>
+                    <!-- ⚠️ 快速篩選戰報過期/待更新按鈕 -->
+                    <button @click="onlyExpiredReports = !onlyExpiredReports"
+                            :class="onlyExpiredReports 
+                                ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold border-amber-500 shadow-md ring-2 ring-amber-400/30' 
+                                : (theme === 'dark' ? 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800' : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300 shadow-sm')"
+                            class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border transition active:scale-95"
+                            :title="onlyExpiredReports ? '已開啟戰報過期篩選 (點擊查看全部)' : '快速篩選戰報過期/待更新個股'">
+                        <span class="text-xs">⚠️</span>
+                        <span class="whitespace-nowrap">過期</span>
+                    </button>
                     <a href="https://gemini.google.com/gem/1e54BS1_dFM3cVc7r0hZYAxujmT18R5tQ?usp=sharing" 
                        target="_blank" 
                        class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1.5 border shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border-indigo-400/30"
@@ -1344,6 +1354,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.19"></script>
+    <script src="app.js?v=2.20261010.20"></script>
 </body>
 </html>
