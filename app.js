@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.05');
+        const appVersion = ref('v2.20261010.06');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -877,10 +877,10 @@ createApp({
                             }
                         },
                         { name: 'MA5', type: 'line', data: ma5, smooth: true, showSymbol: false, lineStyle: { color: '#eab308', width: 1.5 } },
-                        { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { color: '#a855f7', width: 1.5 } },
-                        { name: 'BB_Mid', type: 'line', data: bbMid, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1, type: 'dashed' } },
-                        { name: 'BB_U', type: 'line', data: bbU, smooth: true, showSymbol: false, lineStyle: { color: '#60a5fa', width: 1 } },
-                        { name: 'BB_L', type: 'line', data: bbL, smooth: true, showSymbol: false, lineStyle: { color: '#60a5fa', width: 1 }, areaStyle: { color: 'rgba(59, 130, 246, 0.08)' } }
+                        { name: 'MA10', type: 'line', data: ma10, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1.5 } },
+                        { name: 'BB_Mid', type: 'line', data: bbMid, smooth: true, showSymbol: false, lineStyle: { color: '#a855f7', width: 1.2 } },
+                        { name: 'BB_U', type: 'line', data: bbU, smooth: true, showSymbol: false, lineStyle: { color: '#c084fc', width: 1, type: 'dashed' } },
+                        { name: 'BB_L', type: 'line', data: bbL, smooth: true, showSymbol: false, lineStyle: { color: '#c084fc', width: 1, type: 'dashed' }, areaStyle: { color: 'rgba(168, 85, 247, 0.08)' } }
                     ]
                 });
                 chartInstances.kline = chart;
