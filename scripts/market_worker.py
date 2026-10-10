@@ -53,35 +53,48 @@ HISTORY_DB_PATH = os.path.join(BASE_DIR, "market_history.db")
 # 0. 電腦版對齊：數字清洗器與 Numpy 序列化器
 # ==========================================
 
+import math
+
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (np.integer, np.int64, np.int32)):
             return int(obj)
         elif isinstance(obj, (np.floating, np.float64, np.float32)):
-            return float(obj)
+            val = float(obj)
+            return 0.0 if (math.isnan(val) or math.isinf(val)) else val
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, (datetime.date, datetime.datetime)):
             return obj.isoformat()
         return super(NumpyEncoder, self).default(obj)
 
-def safe_float(v, default=0.0):
-    if v is None: return default
-    s = str(v).replace(',', '').strip()
-    clean_v = re.sub(r'[^\d.-]', '', s)
+def clean_num(v, digits=2, default=0.0):
+    if v is None:
+        return default
     try:
-        return round(float(clean_v), 2) if clean_v else default
+        val = float(v)
+        if math.isnan(val) or math.isinf(val):
+            return default
+        return round(val, digits) if digits is not None else val
     except:
         return default
 
-def safe_int(v, default=0):
-    if v is None: return default
-    s = str(v).replace(',', '').strip()
-    clean_v = re.sub(r'[^\d.-]', '', s)
+def clean_int(v, default=0):
+    if v is None:
+        return default
     try:
-        return int(float(clean_v)) if clean_v else default
+        val = float(v)
+        if math.isnan(val) or math.isinf(val):
+            return default
+        return int(val)
     except:
         return default
+
+def safe_float(v, default=0.0):
+    return clean_num(v, 2, default)
+
+def safe_int(v, default=0):
+    return clean_int(v, default)
 
 def get_taipei_now():
     tz_tw = datetime.timezone(datetime.timedelta(hours=8))
@@ -863,38 +876,38 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
             }
         }
 
-        # 🎯 3. 提取該股近 60 日完整技術指標時序 (100% 電腦版參數純數值陣列)
+        # 🎯 3. 提取該股近 60 日完整技術指標時序 (100% 電腦版參數純數值陣列，嚴格無 NaN)
         df_60 = df_raw.tail(60).reset_index(drop=True)
         hist_rows = []
         for _, r in df_60.iterrows():
             hist_rows.append([
                 str(r["trade_date"]),                               # 0: 日期
-                round(float(r["open"]), 2),                        # 1: 開
-                round(float(r["high"]), 2),                        # 2: 高
-                round(float(r["low"]), 2),                         # 3: 低
-                round(float(r["close"]), 2),                       # 4: 收
-                int(float(r["volume"])),                           # 5: 量
-                round(float(r["MA5"]), 2),                         # 6: MA5
-                round(float(r["MA10"]), 2),                        # 7: MA10
-                round(float(r["BB_Mid"]), 2),                      # 8: BB_Mid (MA20)
-                round(float(r["BB_U"]), 2),                        # 9: BB_U
-                round(float(r["BB_L"]), 2),                        # 10: BB_L
-                round(float(r["DIF"]), 2),                         # 11: DIF6-9 (快線)
-                round(float(r["MACD_S"]), 2),                      # 12: MACD6 (慢線)
-                round(float(r["OSC"]), 2),                         # 13: OSC (柱狀圖)
-                round(float(r["K"]), 1),                           # 14: 7K
-                round(float(r["D"]), 1),                           # 15: 7D
-                int(float(r["foreign_buy"])),                      # 16: 外資買賣超
-                int(float(r["sitc_buy"])),                         # 17: 投信買賣超
-                int(float(r["dealers_buy"])),                      # 18: 自營商買賣超
-                int(float(r["margin_balance"])),                   # 19: 融資餘額
-                int(float(r["融資增減"])),                         # 20: 融資增減
-                round(float(r["MTM"]), 2),                         # 21: MTM3
-                round(float(r["MTM_MA"]), 2),                      # 22: MTM_MA2
-                round(float(r["RSI4"]), 1),                        # 23: RSI4
-                round(float(r["RSI12"]), 1),                       # 24: RSI12
-                round(float(r["WR3"]), 1),                         # 25: WR3
-                round(float(r["WR50"]), 1)                         # 26: WR50
+                clean_num(r.get("open"), 2),                       # 1: 開
+                clean_num(r.get("high"), 2),                       # 2: 高
+                clean_num(r.get("low"), 2),                        # 3: 低
+                clean_num(r.get("close"), 2),                      # 4: 收
+                clean_int(r.get("volume")),                        # 5: 量
+                clean_num(r.get("MA5"), 2),                        # 6: MA5
+                clean_num(r.get("MA10"), 2),                       # 7: MA10
+                clean_num(r.get("BB_Mid"), 2),                     # 8: BB_Mid (MA20)
+                clean_num(r.get("BB_U"), 2),                       # 9: BB_U
+                clean_num(r.get("BB_L"), 2),                       # 10: BB_L
+                clean_num(r.get("DIF"), 2),                        # 11: DIF6-9 (快線)
+                clean_num(r.get("MACD_S"), 2),                     # 12: MACD6 (慢線)
+                clean_num(r.get("OSC"), 2),                        # 13: OSC (柱狀圖)
+                clean_num(r.get("K"), 1),                          # 14: 7K
+                clean_num(r.get("D"), 1),                          # 15: 7D
+                clean_int(r.get("foreign_buy")),                   # 16: 外資買賣超
+                clean_int(r.get("sitc_buy")),                      # 17: 投信買賣超
+                clean_int(r.get("dealers_buy")),                   # 18: 自營商買賣超
+                clean_int(r.get("margin_balance")),                # 19: 融資餘額
+                clean_int(r.get("融資增減")),                      # 20: 融資增減
+                clean_num(r.get("MTM"), 2),                        # 21: MTM3
+                clean_num(r.get("MTM_MA"), 2),                     # 22: MTM_MA2
+                clean_num(r.get("RSI4"), 1),                       # 23: RSI4
+                clean_num(r.get("RSI12"), 1),                      # 24: RSI12
+                clean_num(r.get("WR3"), 1),                        # 25: WR3
+                clean_num(r.get("WR50"), 1)                        # 26: WR50
             ])
         history_map[code] = hist_rows
         

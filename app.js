@@ -1073,6 +1073,29 @@ createApp({
                 renderSubOscChart(rows);
             }
         };
+
+        // 📱/🖥️ 圖表直式與橫式版面切換 (預設直式 portrait)
+        const chartOrientation = ref(localStorage.getItem('sentinel_chart_orientation') || 'portrait');
+
+        const resizeAllStockCharts = () => {
+            Object.values(chartInstances).forEach(chart => {
+                if (chart && typeof chart.resize === 'function') {
+                    try {
+                        chart.resize();
+                    } catch(e) {}
+                }
+            });
+        };
+
+        const toggleChartOrientation = () => {
+            chartOrientation.value = chartOrientation.value === 'portrait' ? 'landscape' : 'portrait';
+            localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
+            Vue.nextTick(() => {
+                setTimeout(() => {
+                    resizeAllStockCharts();
+                }, 150);
+            });
+        };
         const defaultFeatures = ref([
             { name: '均線趨勢', desc: '多頭排列 (MA5 > MA10 > MA20)', emoji: '🔴' },
             { name: '布林通道', desc: '布林突破 (壓縮蓄勢)', emoji: '🔴' },
@@ -4925,6 +4948,13 @@ createApp({
             await checkGoogleTokenFreshness();
             await fetchCloudDbStats();
 
+            // 監聽視窗旋轉或縮放以即時調整圖表
+            window.addEventListener('resize', () => {
+                if (showStockChartModal.value) {
+                    resizeAllStockCharts();
+                }
+            });
+
             // 啟動開市日 15:00 / 21:30 雲端大腦同步主動提醒
             checkScheduledSyncReminders();
             setInterval(checkScheduledSyncReminders, 30000);
@@ -4934,6 +4964,8 @@ createApp({
             appVersion,
             theme,
             toggleTheme,
+            chartOrientation,
+            toggleChartOrientation,
             currentTab,
             stockSubTab,
             starredSubFilter,

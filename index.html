@@ -982,48 +982,62 @@
 
 
         <!-- ========================================== -->
-        <!-- 📊 全螢幕個股 6 大技術指標走勢圖 Dialog (100% 對齊電腦版參數) -->
+        <!-- 📊 全螢幕個股 6 大技術指標走勢圖 Dialog (100% 對齊電腦版參數 + RWD 直/橫版切換) -->
         <!-- ========================================== -->
-        <div v-if="showStockChartModal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between overflow-hidden">
+        <div v-if="showStockChartModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex justify-center items-stretch overflow-hidden">
             
-            <!-- 1. 頂部導航與即時行情看板 -->
-            <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'" class="p-3 border-b flex-shrink-0 space-y-2">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-base font-black font-mono" :class="theme === 'dark' ? 'text-white' : 'text-slate-900'">{{ activeChartStock.code }}</span>
-                        <span class="text-sm font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ activeChartStock.name }}</span>
-                        <span :class="activeChartStock.change >= 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'" class="text-sm font-mono">
-                            ${{ activeChartStock.price }} ({{ activeChartStock.change >= 0 ? '+' : '' }}{{ activeChartStock.changePercent }}%)
-                        </span>
-                    </div>
-
-                    <div class="flex items-center space-x-1.5">
-                        <!-- 期間選擇 (近20日 / 近40日 / 近60日) -->
-                        <div class="flex bg-slate-800/80 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
-                            <button v-for="d in [20, 40, 60]" :key="d" @click="changeChartDays(d)"
-                                    :class="chartDaysCount === d ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
-                                    class="px-2 py-0.5 rounded transition">
-                                {{ d }}日
-                            </button>
+            <div :class="[
+                chartOrientation === 'portrait' ? 'max-w-md w-full' : 'max-w-5xl w-full',
+                theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'
+            ]" class="flex flex-col h-full shadow-2xl border-x transition-all duration-200 relative overflow-hidden">
+                
+                <!-- 1. 頂部導航與即時行情看板 -->
+                <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'" class="p-3 border-b flex-shrink-0 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-base font-black font-mono" :class="theme === 'dark' ? 'text-white' : 'text-slate-900'">{{ activeChartStock.code }}</span>
+                            <span class="text-sm font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ activeChartStock.name }}</span>
+                            <span :class="activeChartStock.change >= 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'" class="text-sm font-mono">
+                                ${{ activeChartStock.price }} ({{ activeChartStock.change >= 0 ? '+' : '' }}{{ activeChartStock.changePercent }}%)
+                            </span>
                         </div>
 
-                        <!-- 關閉按鈕 -->
-                        <button @click="closeStockChartModal" class="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition border border-slate-700 active:scale-90">
-                            <i class="fa-solid fa-xmark text-sm"></i>
-                        </button>
+                        <div class="flex items-center space-x-1.5">
+                            <!-- 📱 直式 / 🖥️ 橫式版面切換按鈕 (預設直式) -->
+                            <button @click="toggleChartOrientation" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
+                                    class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                    :title="chartOrientation === 'portrait' ? '切換為 🖥️ 橫式/寬版' : '切換為 📱 直式手機版面'">
+                                <i v-if="chartOrientation === 'portrait'" class="fa-solid fa-mobile-screen text-sky-400"></i>
+                                <i v-else class="fa-solid fa-desktop text-emerald-400"></i>
+                            </button>
+
+                            <!-- 期間選擇 (近20日 / 近40日 / 近60日) -->
+                            <div class="flex bg-slate-800/80 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
+                                <button v-for="d in [20, 40, 60]" :key="d" @click="changeChartDays(d)"
+                                        :class="chartDaysCount === d ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-2 py-0.5 rounded transition">
+                                    {{ d }}日
+                                </button>
+                            </div>
+
+                            <!-- 關閉按鈕 -->
+                            <button @click="closeStockChartModal" class="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition border border-slate-700 active:scale-90">
+                                <i class="fa-solid fa-xmark text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 十字準心即時數值跑馬燈看板 (查價列) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-100 border-slate-200'" class="px-2 py-1 rounded-lg border text-[10px] font-mono flex items-center justify-between text-slate-300 overflow-x-auto no-scrollbar">
+                        <span class="text-sky-400 font-bold">{{ crosshairData.date || '滑動圖表查價' }}</span>
+                        <span>開: <b :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'">{{ crosshairData.open || '--' }}</b></span>
+                        <span>高: <b class="text-rose-400">{{ crosshairData.high || '--' }}</b></span>
+                        <span>低: <b class="text-emerald-400">{{ crosshairData.low || '--' }}</b></span>
+                        <span>收: <b class="text-amber-300">{{ crosshairData.close || '--' }}</b></span>
+                        <span>量: <b class="text-slate-300">{{ formatNumber(crosshairData.vol) || '--' }}</b></span>
                     </div>
                 </div>
-
-                <!-- 十字準心即時數值跑馬燈看板 (查價列) -->
-                <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-100 border-slate-200'" class="px-2 py-1 rounded-lg border text-[10px] font-mono flex items-center justify-between text-slate-300 overflow-x-auto no-scrollbar">
-                    <span class="text-sky-400 font-bold">{{ crosshairData.date || '滑動圖表查價' }}</span>
-                    <span>開: <b :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'">{{ crosshairData.open || '--' }}</b></span>
-                    <span>高: <b class="text-rose-400">{{ crosshairData.high || '--' }}</b></span>
-                    <span>低: <b class="text-emerald-400">{{ crosshairData.low || '--' }}</b></span>
-                    <span>收: <b class="text-amber-300">{{ crosshairData.close || '--' }}</b></span>
-                    <span>量: <b class="text-slate-300">{{ formatNumber(crosshairData.vol) || '--' }}</b></span>
-                </div>
-            </div>
 
             <!-- 2. 圖表滾動主體 (順序：1 K線布林 ➔ 2 MACD ➔ 3 KD ➔ 4 成交量融資 ➔ 5 三大法人 ➔ 6 MTM/RSI/WR) -->
             <div class="flex-1 overflow-y-auto no-scrollbar p-2.5 space-y-2.5">
