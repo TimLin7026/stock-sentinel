@@ -198,7 +198,7 @@
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
-                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
                     <!-- 左欄：券商篩選 + 總資產核心卡片 -->
                     <div class="space-y-3.5">
                         <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
@@ -321,7 +321,7 @@
                 </div>
 
                 <!-- 個股卡片列表 -->
-                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3 items-start' : 'space-y-2.5'">
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-3 items-start' : 'space-y-2.5'">
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :id="'stock-card-' + stock.uid"
                          :class="[
@@ -577,7 +577,7 @@
                     </div>
 
                     <!-- 交易明細列表 -->
-                    <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-2 items-start' : 'space-y-1.5'">
+                    <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-2 items-start' : 'space-y-1.5'">
                         <div v-if="filteredTradeLogs.length === 0" class="text-center py-6 text-slate-400 text-xs">
                             此時間區間內暫無交易記錄
                         </div>
@@ -612,7 +612,7 @@
             <!-- 4️⃣ ⚙️ 模組四：Google 雲端設定與同步 -->
             <!-- ========================================== -->
             <section v-if="currentTab === 'settings'" class="space-y-3.5">
-                <div :class="appLayout === 'wide' ? 'grid grid-cols-1 md:grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
+                <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
                     <!-- 左欄：Google 帳號狀態卡 + 全市場行情快照 -->
                     <div class="space-y-3.5">
                         <!-- Google 帳號狀態卡 -->
@@ -1292,6 +1292,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.15"></script>
+    <script src="app.js?v=2.20261010.16"></script>
 </body>
 </html>

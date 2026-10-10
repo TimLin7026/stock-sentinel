@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.15');
+        const appVersion = ref('v2.20261010.16');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -49,9 +49,14 @@ createApp({
             appLayout.value = appLayout.value === 'mobile' ? 'wide' : 'mobile';
             localStorage.setItem('sentinel_app_layout', appLayout.value);
             Vue.nextTick(() => {
-                if (chartInstance && typeof chartInstance.resize === 'function') {
-                    setTimeout(() => { chartInstance.resize(); }, 80);
-                }
+                const triggerResize = () => {
+                    if (chartInstance && typeof chartInstance.resize === 'function') {
+                        chartInstance.resize();
+                    }
+                };
+                triggerResize();
+                setTimeout(triggerResize, 100);
+                setTimeout(triggerResize, 350); // 300ms 動畫結束後精準重繪
             });
         };
 
@@ -1182,6 +1187,7 @@ createApp({
         const openStockChartModal = (stock) => {
             if (!stock) return;
             activeChartStock.value = { ...stock };
+            chartOrientation.value = appLayout.value === 'wide' ? 'landscape' : 'portrait';
             showStockChartModal.value = true;
             renderAllStockCharts(stock.code, chartDaysCount.value);
             // 雙重校準保險
