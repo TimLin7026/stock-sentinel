@@ -987,7 +987,9 @@
         <!-- ========================================== -->
         <!-- 📊 全螢幕個股 6 大技術指標走勢圖 Dialog (100% 對齊電腦版參數 + RWD 直/橫版切換) -->
         <!-- ========================================== -->
-        <div v-if="showStockChartModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex justify-center items-stretch overflow-hidden">
+        <div v-if="showStockChartModal" 
+             :class="theme === 'dark' ? 'bg-slate-950/90' : 'bg-slate-500/25'"
+             class="fixed inset-0 z-50 backdrop-blur-md flex justify-center items-stretch overflow-hidden">
             
             <div :class="[
                 chartOrientation === 'portrait' ? 'max-w-md w-full' : 'max-w-5xl w-full',
@@ -1255,6 +1257,6 @@
     </div>
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.11"></script>
+    <script src="app.js?v=2.20261010.12"></script>
 </body>
 </html>
