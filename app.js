@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.07');
+        const appVersion = ref('v2.20261010.08');
 
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
@@ -533,13 +533,17 @@ createApp({
             // 5. 注入應用並刷新持股損益
             applyMarketSnapshot(snapshotData, healthData);
 
-            // 6. 離線快取寫入 IndexedDB
+            // 6. 離線快取寫入 IndexedDB 並清除舊時序快取以確保走勢線最新
             if (window.localforage) {
                 try {
                     await localforage.setItem('sentinel_market_snapshot', snapshotData);
+                    await localforage.removeItem('sentinel_market_history_60d');
+                    stockHistoryCache = null;
                 } catch (e) {
                     console.warn("快照離線儲存失敗:", e);
                 }
+            } else {
+                stockHistoryCache = null;
             }
 
             return {
@@ -694,22 +698,37 @@ createApp({
             };
         };
 
-        // 下載並解壓 60 日技術指標時序數據包
-        const loadAllStockHistory = async () => {
-            if (stockHistoryCache) return stockHistoryCache;
+        // 下載並解壓 60 日技術指標時序數據包 (具備自動長度檢驗與舊快取自癒機制)
+        const loadAllStockHistory = async (forceRefresh = false) => {
+            if (!forceRefresh && stockHistoryCache) {
+                const keys = Object.keys(stockHistoryCache);
+                const sample = keys.length > 0 ? stockHistoryCache[keys[0]] : null;
+                if (sample && sample.length > 0 && sample[sample.length - 1].length >= 29) {
+                    return stockHistoryCache;
+                }
+                stockHistoryCache = null;
+            }
             
-            // 優先讀取 IndexedDB 快取
-            if (window.localforage) {
+            // 優先讀取 IndexedDB 快取 (需驗證欄位長度 >= 29 確保具備成本線數據)
+            if (!forceRefresh && window.localforage) {
                 try {
                     const cached = await localforage.getItem('sentinel_market_history_60d');
-                    if (cached && typeof cached === 'object' && Object.keys(cached).length > 0) {
-                        stockHistoryCache = cached;
-                        return stockHistoryCache;
+                    if (cached && typeof cached === 'object') {
+                        const keys = Object.keys(cached);
+                        const sample = keys.length > 0 ? cached[keys[0]] : null;
+                        if (sample && sample.length > 0 && sample[sample.length - 1].length >= 29) {
+                            stockHistoryCache = cached;
+                            return stockHistoryCache;
+                        } else {
+                            console.log("⚠️ 檢測到舊版走勢時序數據快取 (欄位數不足 29)，自動清除並重新由雲端下載最新時序包...");
+                            await localforage.removeItem('sentinel_market_history_60d');
+                            stockHistoryCache = null;
+                        }
                     }
                 } catch(e) {}
             }
 
-            // 網路拉取 gzip
+            // 網路拉取 gzip (直連 Raw 破除快取)
             const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
             const fallbackBaseUrl = '.';
             let histBuffer = null;
