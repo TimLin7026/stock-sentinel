@@ -358,6 +358,32 @@ def parse_cli_args():
             
     return manual_date, scan_days
 
+def compute_next_scheduled_run():
+    """
+    計算下一次大腦自動排程執行時間 (開市日 14:30 與 21:00)
+    """
+    tw_now = get_taipei_now().replace(tzinfo=None)
+    for day_offset in range(8):
+        target_day = tw_now + datetime.timedelta(days=day_offset)
+        d_str = target_day.strftime("%Y%m%d")
+        is_holiday, _ = is_market_holiday(d_str)
+        if is_holiday:
+            continue
+        
+        for hour, minute in [(14, 30), (21, 0)]:
+            slot_time = datetime.datetime(target_day.year, target_day.month, target_day.day, hour, minute, 0)
+            if slot_time > tw_now:
+                weekday_names = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
+                w_name = weekday_names[slot_time.weekday()]
+                time_str = slot_time.strftime("%Y-%m-%d %H:%M:%S")
+                return {
+                    "time_str": time_str,
+                    "label": f"{slot_time.strftime('%Y/%m/%d')} ({w_name}) {slot_time.strftime('%H:%M')}",
+                    "iso": slot_time.isoformat()
+                }
+                
+    return {"time_str": "", "label": "開市日 14:30 / 21:00", "iso": ""}
+
 def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
     """
     🔍 智慧缺漏探測：
@@ -369,8 +395,9 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
         return [manual_target_date]
         
     now = get_taipei_now().replace(tzinfo=None)
-    # 決定回補終點：若當前未滿 21:00 (官方尚未完全結算法人與資券)，終點為昨日；否則為今日
-    end_dt = now if now.hour >= 21 else (now - datetime.timedelta(days=1))
+    # 決定回補終點：開市日滿 14:30 (官方收盤行情出爐)，終點即納入今日；否則為昨日
+    is_afternoon_ready = (now.hour == 14 and now.minute >= 30) or now.hour >= 15
+    end_dt = now if is_afternoon_ready else (now - datetime.timedelta(days=1))
     end_dt = datetime.datetime(end_dt.year, end_dt.month, end_dt.day)
 
     cur = conn.cursor()
@@ -995,8 +1022,12 @@ def main():
     print(f"⚡ [Production 正式發布] 原子熱替換完成 -> {final_gz_path}")
 
     # 8. 更新健康狀態為 READY
+    next_run_info = compute_next_scheduled_run()
     health_report["status"] = "READY"
     health_report["progress"] = f"全流程清洗審計合格，最新 [{latest_trade_date}] 快照已就緒提供更新！"
+    health_report["next_scheduled_run"] = next_run_info.get("label", "")
+    health_report["next_scheduled_iso"] = next_run_info.get("iso", "")
+    health_report["schedule_times"] = ["14:30", "21:00"]
     update_health_status(health_report)
 
     print(f"📊 [產出] 數據健康報表已發布 -> {os.path.join(OUTPUT_DIR, 'market_health.json')}")

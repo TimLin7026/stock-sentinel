@@ -87,15 +87,21 @@
             <!-- 1. 頂部狀態概覽與刷新列 -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow">
                 <div>
-                    <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-2 flex-wrap gap-y-1.5">
                         <span class="text-xs text-slate-400">大腦審計日期：</span>
                         <span class="font-mono font-bold text-sky-400 text-sm">{{ healthData.target_date || '讀取中...' }}</span>
                         <span :class="getStatusBadgeClass(healthData.status)" 
                               class="text-[10px] px-2 py-0.5 rounded-full border font-bold flex items-center space-x-1">
                             <span>{{ getStatusBadgeText(healthData.status) }}</span>
                         </span>
+                        <!-- ⏰ 下次預計抓取時間 -->
+                        <span class="text-[10px] px-2.5 py-0.5 rounded-full border font-mono font-bold bg-indigo-950/80 border-indigo-700/80 text-indigo-300 flex items-center space-x-1 shadow-sm">
+                            <i class="fa-solid fa-clock text-[9px] text-amber-400"></i>
+                            <span>下次排程: {{ nextCrawlTimeInfo.label }}</span>
+                            <span v-if="nextCrawlTimeInfo.countdown" class="text-amber-300">({{ nextCrawlTimeInfo.countdown }})</span>
+                        </span>
                     </div>
-                    <p class="text-[11px] text-slate-400 mt-1">
+                    <p class="text-[11px] text-slate-400 mt-1.5">
                         <span class="text-sky-300 font-semibold">{{ healthData.progress || '大腦就緒' }}</span>
                         <span class="text-slate-600 mx-1.5">|</span>
                         <span>執行: {{ healthData.run_time || '---' }}</span>

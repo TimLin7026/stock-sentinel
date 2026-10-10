@@ -268,6 +268,50 @@ createApp({
             return `${dt.slice(0, 4)}/${dt.slice(4, 6)}/${dt.slice(6, 8)}`;
         });
 
+        // ─── 4.8. 智慧計算下一次開市日抓取時間 (14:30 / 21:00) ───
+        const nextCrawlTimeInfo = computed(() => {
+            if (healthData.value && healthData.value.next_scheduled_run) {
+                return {
+                    label: healthData.value.next_scheduled_run,
+                    tag: '自動排程',
+                    countdown: ''
+                };
+            }
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const twNow = new Date(utc + (3600000 * 8));
+
+            for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
+                const target = new Date(twNow.getTime() + dayOffset * 86400000);
+                const dayOfWeek = target.getDay();
+                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+                const slots = [
+                    { h: 14, m: 30, tag: '盤後即時' },
+                    { h: 21, m: 0, tag: '全量籌碼' }
+                ];
+                for (const slot of slots) {
+                    const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
+                    if (slotDate.getTime() > twNow.getTime()) {
+                        const weekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+                        const diffMin = Math.round((slotDate.getTime() - twNow.getTime()) / 60000);
+                        const diffHours = (diffMin / 60).toFixed(1);
+                        const y = slotDate.getFullYear();
+                        const m = String(slotDate.getMonth() + 1).padStart(2, '0');
+                        const d = String(slotDate.getDate()).padStart(2, '0');
+                        const hh = String(slotDate.getHours()).padStart(2, '0');
+                        const mm = String(slotDate.getMinutes()).padStart(2, '0');
+                        return {
+                            label: `${y}/${m}/${d} (${weekdays[dayOfWeek]}) ${hh}:${mm}`,
+                            countdown: diffMin > 60 ? `約 ${diffHours} 小時後` : `約 ${diffMin} 分鐘後`,
+                            tag: slot.tag
+                        };
+                    }
+                }
+            }
+            return { label: '開市日 14:30 / 21:00', countdown: '', tag: '自動排程' };
+        });
+
         const resetCustomDateToLatest = () => {
             isUserModifiedDate.value = false;
             customTargetDate.value = (healthData.value && healthData.value.target_date) ? healthData.value.target_date : latestTradingDate.value;
@@ -363,6 +407,7 @@ createApp({
             isUserModifiedDate,
             latestTradingDate,
             latestTradingDateLabel,
+            nextCrawlTimeInfo,
             resetCustomDateToLatest,
             isTriggering,
             showPatSetting,

@@ -65,14 +65,14 @@
                         :disabled="syncStatus.loading"
                         :class="[
                             syncStatus.loading ? 'opacity-80 cursor-not-allowed' : '',
-                            hasUnsyncedChanges 
+                            (hasUnsyncedChanges || activeSyncNotice.show)
                                 ? 'bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-md shadow-rose-500/40 animate-pulse border-rose-400' 
                                 : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
                         ]"
                         class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
                         title="同步">
                     <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs text-sky-400"></i>
-                    <i v-else class="fa-solid fa-rotate text-xs" :class="hasUnsyncedChanges ? 'text-white' : 'text-sky-400'"></i>
+                    <i v-else class="fa-solid fa-rotate text-xs" :class="(hasUnsyncedChanges || activeSyncNotice.show) ? 'text-white' : 'text-sky-400'"></i>
                     <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '同步' }}</span>
                 </button>
 
@@ -83,6 +83,36 @@
                 </button>
             </div>
         </header>
+
+        <!-- 🔔 開市日 15:00 / 21:30 雲端大腦同步主動提醒橫條 -->
+        <transition name="fade">
+            <div v-if="activeSyncNotice.show" 
+                 :class="activeSyncNotice.type === 'post_market' ? 'from-amber-950/90 to-amber-900/90 border-amber-500/40 text-amber-200' : 'from-sky-950/90 to-indigo-950/90 border-sky-500/40 text-sky-200'"
+                 class="bg-gradient-to-r border-b px-3.5 py-2.5 flex items-center justify-between shadow-md text-xs backdrop-blur-sm z-30">
+                <div class="flex items-center space-x-2.5 min-w-0 pr-2">
+                    <span class="flex h-2.5 w-2.5 relative flex-shrink-0">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" :class="activeSyncNotice.type === 'post_market' ? 'bg-amber-400' : 'bg-sky-400'"></span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5" :class="activeSyncNotice.type === 'post_market' ? 'bg-amber-500' : 'bg-sky-500'"></span>
+                    </span>
+                    <div class="truncate">
+                        <div class="font-bold text-[11px] truncate">{{ activeSyncNotice.title }}</div>
+                        <div class="text-[10px] opacity-80 truncate">{{ activeSyncNotice.message }}</div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-1.5 flex-shrink-0">
+                    <button @click="handleNoticeSyncClick" 
+                            :class="activeSyncNotice.type === 'post_market' ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold' : 'bg-sky-500 hover:bg-sky-400 text-white font-bold'"
+                            class="px-2.5 py-1 rounded-lg text-[11px] shadow-sm flex items-center space-x-1 transition active:scale-95">
+                        <i class="fa-solid fa-rotate text-[10px]"></i>
+                        <span>同步</span>
+                    </button>
+                    <button @click="dismissSyncNotice" 
+                            class="p-1 rounded-lg opacity-60 hover:opacity-100 transition text-xs">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+        </transition>
 
         <!-- 內容主體區 -->
         <main :class="theme === 'dark' ? 'bg-[#0b0f19]' : 'bg-slate-50'" class="flex-1 p-3.5 space-y-3.5 overflow-y-auto no-scrollbar transition-colors">
@@ -612,6 +642,10 @@
                         <div v-if="marketSyncMeta.cloudGeneratedAt && marketSyncMeta.cloudGeneratedAt !== '---'" class="flex justify-between items-center">
                             <span class="text-slate-400">🧠 大腦產出時間：</span>
                             <span class="text-slate-300">{{ marketSyncMeta.cloudGeneratedAt }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-400">⏰ 下次排程抓取：</span>
+                            <span class="text-sky-300 font-medium">{{ nextCrawlTimeInfo.label }} <span v-if="nextCrawlTimeInfo.countdown" class="text-slate-400 text-[10px]">({{ nextCrawlTimeInfo.countdown }})</span></span>
                         </div>
                     </div>
                 </div>

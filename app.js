@@ -195,10 +195,137 @@ createApp({
             fetchTime: localStorage.getItem('sentinel_market_fetch_time') || '',
             marketDate: localStorage.getItem('sentinel_market_date') || '',
             cloudGeneratedAt: localStorage.getItem('sentinel_market_cloud_time') || '',
+            nextScheduledRun: localStorage.getItem('sentinel_market_next_run') || '',
             totalStocks: Number(localStorage.getItem('sentinel_market_total_stocks')) || 0,
             healthScore: Number(localStorage.getItem('sentinel_market_health_score')) || 100,
             status: localStorage.getItem('sentinel_market_status') || 'READY'
         });
+
+        // ⏰ 智慧計算下一次開市日抓取時間 (14:30 / 21:00)
+        const nextCrawlTimeInfo = computed(() => {
+            if (marketSyncMeta.value.nextScheduledRun) {
+                return {
+                    label: marketSyncMeta.value.nextScheduledRun,
+                    tag: '自動排程',
+                    countdown: ''
+                };
+            }
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const twNow = new Date(utc + (3600000 * 8));
+
+            for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
+                const target = new Date(twNow.getTime() + dayOffset * 86400000);
+                const dayOfWeek = target.getDay();
+                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+                const slots = [
+                    { h: 14, m: 30, tag: '盤後即時' },
+                    { h: 21, m: 0, tag: '全量籌碼' }
+                ];
+                for (const slot of slots) {
+                    const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
+                    if (slotDate.getTime() > twNow.getTime()) {
+                        const weekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+                        const diffMin = Math.round((slotDate.getTime() - twNow.getTime()) / 60000);
+                        const diffHours = (diffMin / 60).toFixed(1);
+                        const y = slotDate.getFullYear();
+                        const m = String(slotDate.getMonth() + 1).padStart(2, '0');
+                        const d = String(slotDate.getDate()).padStart(2, '0');
+                        const hh = String(slotDate.getHours()).padStart(2, '0');
+                        const mm = String(slotDate.getMinutes()).padStart(2, '0');
+                        return {
+                            label: `${y}/${m}/${d} (${weekdays[dayOfWeek]}) ${hh}:${mm}`,
+                            countdown: diffMin > 60 ? `約 ${diffHours} 小時後` : `約 ${diffMin} 分鐘後`,
+                            tag: slot.tag
+                        };
+                    }
+                }
+            }
+            return { label: '開市日 14:30 / 21:00', countdown: '', tag: '自動排程' };
+        });
+
+        // 🔔 主動提醒狀態 (開市日 15:00 / 21:30 推播)
+        const activeSyncNotice = ref({
+            show: false,
+            type: '', // 'post_market' | 'full_chip'
+            title: '',
+            message: '',
+            slot: ''
+        });
+
+        const checkScheduledSyncReminders = () => {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const twNow = new Date(utc + (3600000 * 8));
+            const dayOfWeek = twNow.getDay();
+
+            // 週末不提醒
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
+                return;
+            }
+
+            const y = twNow.getFullYear();
+            const m = String(twNow.getMonth() + 1).padStart(2, '0');
+            const d = String(twNow.getDate()).padStart(2, '0');
+            const todayDateStr = `${y}${m}${d}`;
+            const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
+
+            // 1. 下午場提醒：15:00 ~ 15:30 (900分 ~ 930分)
+            if (totalMinutes >= 900 && totalMinutes < 930) {
+                const alreadyNotified = localStorage.getItem(`sentinel_notified_1500_${todayDateStr}`);
+                if (!alreadyNotified) {
+                    activeSyncNotice.value = {
+                        show: true,
+                        type: 'post_market',
+                        title: '📈 盤後行情已出爐 (14:30場次)',
+                        message: '今日收盤價與 6 大青紅燈指標已就緒，請點擊同步更新！',
+                        slot: '1500'
+                    };
+                    return;
+                }
+            }
+
+            // 2. 晚間場提醒：21:30 ~ 22:00 (1290分 ~ 1320分)
+            if (totalMinutes >= 1290 && totalMinutes < 1320) {
+                const alreadyNotified = localStorage.getItem(`sentinel_notified_2130_${todayDateStr}`);
+                if (!alreadyNotified) {
+                    activeSyncNotice.value = {
+                        show: true,
+                        type: 'full_chip',
+                        title: '📊 全量籌碼已結算 (21:00場次)',
+                        message: '三大法人與融資券數據已全數清洗完畢，請點擊同步！',
+                        slot: '2130'
+                    };
+                    return;
+                }
+            }
+
+            // 非提醒時段自動關閉
+            if (activeSyncNotice.value.show) {
+                activeSyncNotice.value.show = false;
+            }
+        };
+
+        const dismissSyncNotice = () => {
+            if (activeSyncNotice.value.slot) {
+                const now = new Date();
+                const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                const twNow = new Date(utc + (3600000 * 8));
+                const y = twNow.getFullYear();
+                const m = String(twNow.getMonth() + 1).padStart(2, '0');
+                const d = String(twNow.getDate()).padStart(2, '0');
+                const todayDateStr = `${y}${m}${d}`;
+                localStorage.setItem(`sentinel_notified_${activeSyncNotice.value.slot}_${todayDateStr}`, 'true');
+            }
+            activeSyncNotice.value.show = false;
+        };
+
+        const handleNoticeSyncClick = async () => {
+            dismissSyncNotice();
+            await handleOneClickSync();
+        };
 
         // 現代瀏覽器標準原生極速 Gzip 解壓 (<10ms)
         const decompressGzip = async (arrayBuffer) => {
@@ -384,11 +511,13 @@ createApp({
             }
 
             const cloudTimeStr = healthData.run_time || healthData.timestamp || '---';
+            const nextRunStr = healthData.next_scheduled_run || '';
 
             marketSyncMeta.value = {
                 fetchTime: fetchTimeStr,
                 marketDate: marketDateStr,
                 cloudGeneratedAt: cloudTimeStr,
+                nextScheduledRun: nextRunStr,
                 totalStocks: totalCount,
                 healthScore: 100,
                 status: healthData.status
@@ -397,6 +526,7 @@ createApp({
             localStorage.setItem('sentinel_market_fetch_time', fetchTimeStr);
             localStorage.setItem('sentinel_market_date', marketDateStr);
             localStorage.setItem('sentinel_market_cloud_time', cloudTimeStr);
+            if (nextRunStr) localStorage.setItem('sentinel_market_next_run', nextRunStr);
             localStorage.setItem('sentinel_market_total_stocks', String(totalCount));
             localStorage.setItem('sentinel_market_status', healthData.status);
 
@@ -416,6 +546,7 @@ createApp({
                 fetchTime: fetchTimeStr,
                 marketDate: marketDateStr,
                 cloudGeneratedAt: cloudTimeStr,
+                nextScheduledRun: nextRunStr,
                 totalCount
             };
         };
@@ -455,6 +586,25 @@ createApp({
 
             syncStatus.value.loading = false;
             syncStatus.value.message = '';
+
+            // 3. 自動標記當天當前時段為已同步/已通知，並關閉橫條
+            try {
+                const now = new Date();
+                const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                const twNow = new Date(utc + (3600000 * 8));
+                const y = twNow.getFullYear();
+                const m = String(twNow.getMonth() + 1).padStart(2, '0');
+                const d = String(twNow.getDate()).padStart(2, '0');
+                const todayDateStr = `${y}${m}${d}`;
+                const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
+                if (totalMinutes >= 870 && totalMinutes < 1020) { // 14:30~17:00
+                    localStorage.setItem(`sentinel_notified_1500_${todayDateStr}`, 'true');
+                }
+                if (totalMinutes >= 1260 && totalMinutes < 1440) { // 21:00~24:00
+                    localStorage.setItem(`sentinel_notified_2130_${todayDateStr}`, 'true');
+                }
+                activeSyncNotice.value.show = false;
+            } catch(e) {}
 
             if (snapInfo) {
                 const timeOnly = snapInfo.fetchTime.split(' ')[1] || snapInfo.fetchTime;
@@ -4318,6 +4468,10 @@ createApp({
             initGoogleHeartbeat();
             await checkGoogleTokenFreshness();
             await fetchCloudDbStats();
+
+            // 啟動開市日 15:00 / 21:30 雲端大腦同步主動提醒
+            checkScheduledSyncReminders();
+            setInterval(checkScheduledSyncReminders, 30000);
         });
 
         return {
@@ -4395,6 +4549,10 @@ createApp({
             handleOneClickSync,
             syncMarketSnapshot,
             marketSyncMeta,
+            nextCrawlTimeInfo,
+            activeSyncNotice,
+            dismissSyncNotice,
+            handleNoticeSyncClick,
             isAppUnlocked,
             triggerSync,
             triggerFileInput,
