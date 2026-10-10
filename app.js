@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.22');
+        const appVersion = ref('v2.20261010.23');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -5232,6 +5232,7 @@ createApp({
             tradeSearchKeyword,
             goToTradeHistory,
             showImportReportModal,
+            importingStock,
             importReportText,
             parsedImportPreview,
             isReportCodeMismatch,
