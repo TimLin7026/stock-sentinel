@@ -930,7 +930,7 @@ createApp({
                 chartInstances.kd = chart;
             }
 
-            // 4. 成交量與融資餘額 (融資線 亮藍)
+            // 4. 成交量與融資餘額 (融資線 亮黃)
             const elVol = document.getElementById('chart-vol');
             if (elVol) {
                 const chart = echarts.init(elVol);
@@ -945,7 +945,7 @@ createApp({
                     ],
                     series: [
                         { name: '成交量', type: 'bar', data: volumes, barWidth: '60%' },
-                        { name: '融資餘額', type: 'line', data: marginBal, yAxisIndex: 1, smooth: true, showSymbol: false, lineStyle: { color: '#38bdf8', width: 1.5 } }
+                        { name: '融資餘額', type: 'line', data: marginBal, yAxisIndex: 1, smooth: true, showSymbol: false, lineStyle: { color: '#eab308', width: 1.5 } }
                     ]
                 });
                 chartInstances.vol = chart;

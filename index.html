@@ -1094,29 +1094,38 @@
                         <div id="chart-kd" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 4 (原 2)：成交量與融資餘額 (融資線 亮藍) -->
+                    <!-- 圖 4 (原 2)：成交量與融資餘額 (融資線 亮黃, 量 亮藍) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
-                                <span class="text-slate-200">量:{{ formatNumber(crosshairData.vol) }}</span>
+                                <span class="text-amber-400 font-bold">融資:{{ formatNumber(crosshairData.marginBal) }}</span>
                                 <span>·</span>
-                                <span class="text-sky-400 font-bold">融資:{{ formatNumber(crosshairData.marginBal) }}</span>
+                                <span class="text-sky-400 font-bold">量:{{ formatNumber(crosshairData.vol) }}</span>
                             </span>
                         </div>
                         <div id="chart-vol" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 -->
+                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (代表字專色 + 數值紅/綠/灰) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
-                                <span :class="Number(crosshairData.fb) >= 0 ? 'text-sky-400 font-bold' : 'text-emerald-400 font-bold'">外:{{ formatNumber(crosshairData.fb) }}</span>
+                                <span>
+                                    <span class="text-sky-400 font-bold">外:</span>
+                                    <span :class="Number(crosshairData.fb) > 0 ? 'text-rose-400 font-bold' : (Number(crosshairData.fb) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">{{ formatNumber(crosshairData.fb) }}</span>
+                                </span>
                                 <span>·</span>
-                                <span :class="Number(crosshairData.sb) >= 0 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'">投:{{ formatNumber(crosshairData.sb) }}</span>
+                                <span>
+                                    <span class="text-amber-400 font-bold">投:</span>
+                                    <span :class="Number(crosshairData.sb) > 0 ? 'text-rose-400 font-bold' : (Number(crosshairData.sb) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">{{ formatNumber(crosshairData.sb) }}</span>
+                                </span>
                                 <span>·</span>
-                                <span :class="Number(crosshairData.db) >= 0 ? 'text-purple-400 font-bold' : 'text-emerald-400 font-bold'">自:{{ formatNumber(crosshairData.db) }}</span>
+                                <span>
+                                    <span class="text-purple-400 font-bold">自:</span>
+                                    <span :class="Number(crosshairData.db) > 0 ? 'text-rose-400 font-bold' : (Number(crosshairData.db) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">{{ formatNumber(crosshairData.db) }}</span>
+                                </span>
                             </span>
                         </div>
                         <div id="chart-chip" class="w-full h-36"></div>
