@@ -297,15 +297,15 @@
                 </div>
 
                 <!-- 個股卡片列表 -->
-                <div class="space-y-2.5">
+                 <div class="space-y-2.5">
                     <div v-for="stock in currentFilteredStocks" :key="stock.uid" 
                          :id="'stock-card-' + stock.uid"
                          :class="[
                             (stock.broker === '關注' || Number(stock.shares || 0) === 0)
                                 ? (theme === 'dark' ? 'border-slate-800 bg-slate-900/90 shadow-sm' : 'border-slate-300 bg-slate-100/70 shadow-sm')
                                 : (theme === 'dark' 
-                                    ? (stock.profit >= 0 ? 'border-rose-900/60 bg-gradient-to-b from-rose-950/20 to-slate-900' : 'border-emerald-900/60 bg-gradient-to-b from-emerald-950/20 to-slate-900')
-                                    : (stock.profit >= 0 ? 'border-rose-300 bg-rose-50/50 shadow-sm' : 'border-emerald-300 bg-emerald-50/50 shadow-sm'))
+                                    ? (stock.profit >= 0 ? 'border-rose-700/60 bg-gradient-to-b from-rose-950/80 via-rose-950/40 to-slate-900/95 shadow-md shadow-rose-950/30' : 'border-emerald-700/60 bg-gradient-to-b from-emerald-950/80 via-emerald-950/40 to-slate-900/95 shadow-md shadow-emerald-950/30')
+                                    : (stock.profit >= 0 ? 'border-rose-300 bg-rose-50/60 shadow-sm' : 'border-emerald-300 bg-emerald-50/60 shadow-sm'))
                          ]"
                          class="border rounded-2xl overflow-hidden transition shadow relative scroll-mt-[68px]">
                         
@@ -348,7 +348,7 @@
                             </div>
 
                             <!-- 現價、成本、持股、收益 (對齊地端卡片格式) -->
-                            <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80 text-slate-300' : 'bg-slate-100/80 border-slate-200 text-slate-700'" class="p-2 rounded-xl border mb-2 text-xs space-y-1">
+                            <div :class="theme === 'dark' ? 'bg-slate-950/50 border-slate-800/60 text-slate-300 backdrop-blur-[2px]' : 'bg-white/70 border-slate-200/80 text-slate-700 backdrop-blur-[2px]'" class="p-2 rounded-xl border mb-2 text-xs space-y-1">
                                 <div class="flex justify-between">
                                     <span>{{ stock.isPriceFresh ? '✅' : '⚠️' }} <b>現價：</b><span :class="stock.change >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">${{ stock.price }}</span></span>
                                     <span><b>成本：</b><span class="font-mono">${{ Number(stock.costPrice).toFixed(2) }}</span></span>
@@ -360,16 +360,16 @@
                                              <span class="text-slate-400 font-mono">--- (觀察中)</span>
                                         </template>
                                         <template v-else>
-                                            <span :class="stock.profit >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">
-                                                {{ stock.profit >= 0 ? '+' : '' }}${{ formatNumber(stock.profit) }} ({{ stock.profitRate }}%)
-                                            </span>
+                                             <span :class="stock.profit >= 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-bold'">
+                                                 {{ stock.profit >= 0 ? '+' : '' }}${{ formatNumber(stock.profit) }} ({{ stock.profitRate }}%)
+                                             </span>
                                         </template>
                                     </span>
                                 </div>
                             </div>
 
                             <!-- 建議買入 / 賣出區間 (對齊地端卡片格式) -->
-                            <div :class="theme === 'dark' ? 'bg-slate-950/50 border-slate-800/60 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'" class="p-2 rounded-xl border text-[11px] flex justify-between items-center mb-1.5 font-mono">
+                            <div :class="theme === 'dark' ? 'bg-slate-950/40 border-slate-800/50 text-slate-300 backdrop-blur-[2px]' : 'bg-white/60 border-slate-200/80 text-slate-700 backdrop-blur-[2px]'" class="p-2 rounded-xl border text-[11px] flex justify-between items-center mb-1.5 font-mono">
                                 <div>
                                     <span class="text-sky-600 dark:text-sky-400 font-bold">{{ stock.isReportFresh ? '✅' : '⚠️' }} 建議：</span>
                                     <span class="text-rose-600 dark:text-rose-400 font-bold">🔼 買入 &lt; {{ stock.buyPriceTarget || stock.buyRange }}</span>
