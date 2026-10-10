@@ -1052,35 +1052,57 @@
                     <!-- 圖 1 (主圖)：K線蠟燭圖 + 5MA/10MA + 布林通道 -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖 (5MA, 10MA, 布林通道)</span>
-                            <span class="text-[10px] font-mono text-slate-400">MA5(黃) · MA10(紫) · BB(藍)</span>
+                            <span class="flex items-center"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">5M:{{ crosshairData.ma5 }}</span>
+                                <span>·</span>
+                                <span class="text-purple-400 font-bold">10M:{{ crosshairData.ma10 }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400">上:{{ crosshairData.bbU }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400">下:{{ crosshairData.bbL }}</span>
+                            </span>
                         </div>
                         <div id="chart-kline" class="w-full h-56"></div>
                     </div>
 
-                    <!-- 圖 2 (原 3)：MACD / OSC -->
+                    <!-- 圖 2 (原 3)：MACD / OSC (DIF 亮黃, MACD_S 亮藍) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標 (DIF6-9, MACD6, OSC)</span>
-                            <span class="text-[10px] font-mono text-slate-400">DIF(黃) · MACD_S(藍) · OSC柱</span>
+                            <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">DIF:{{ crosshairData.dif }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">MACD:{{ crosshairData.macdS }}</span>
+                                <span>·</span>
+                                <span :class="Number(crosshairData.osc) >= 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'">OSC:{{ crosshairData.osc }}</span>
+                            </span>
                         </div>
                         <div id="chart-macd" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 3 (原 4)：KD 指標 (7, 3, 3) -->
+                    <!-- 圖 3 (原 4)：KD 指標 (7, 3, 3) (7K 亮黃, 7D 亮藍) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標 (7K, 7D, 80/20線)</span>
-                            <span class="text-[10px] font-mono text-slate-400">7K(紅) · 7D(綠)</span>
+                            <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">7K:{{ crosshairData.kdK }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">7D:{{ crosshairData.kdD }}</span>
+                            </span>
                         </div>
                         <div id="chart-kd" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 4 (原 2)：成交量與融資餘額 -->
+                    <!-- 圖 4 (原 2)：成交量與融資餘額 (融資線 亮藍) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資餘額</span>
-                            <span class="text-[10px] font-mono text-slate-400">成交量(紅/綠柱) · 融資(橘線)</span>
+                            <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-slate-200">量:{{ formatNumber(crosshairData.vol) }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">融資:{{ formatNumber(crosshairData.marginBal) }}</span>
+                            </span>
                         </div>
                         <div id="chart-vol" class="w-full h-36"></div>
                     </div>
@@ -1088,24 +1110,48 @@
                     <!-- 圖 5 (原 5)：三大法人籌碼買賣超 -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼 (外資, 投信, 自營)</span>
-                            <span class="text-[10px] font-mono text-slate-400">外資(藍) · 投信(橘) · 自營(紫)</span>
+                            <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span :class="Number(crosshairData.fb) >= 0 ? 'text-sky-400 font-bold' : 'text-emerald-400 font-bold'">外:{{ formatNumber(crosshairData.fb) }}</span>
+                                <span>·</span>
+                                <span :class="Number(crosshairData.sb) >= 0 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'">投:{{ formatNumber(crosshairData.sb) }}</span>
+                                <span>·</span>
+                                <span :class="Number(crosshairData.db) >= 0 ? 'text-purple-400 font-bold' : 'text-emerald-400 font-bold'">自:{{ formatNumber(crosshairData.db) }}</span>
+                            </span>
                         </div>
                         <div id="chart-chip" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 6 (原 6)：MTM / RSI / 威廉指標 (支援 Tab 切換) -->
+                    <!-- 圖 6 (原 6)：MTM / RSI / 威廉指標 (支援 Tab 切換，快線亮黃，慢線亮藍) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪指標</span>
-                            <!-- 子切換 Tab (MTM / RSI / WR) -->
-                            <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
-                                <button v-for="t in ['MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
-                                        :class="subOscTab === t ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400'"
-                                        class="px-2 py-0.5 rounded transition">
-                                    {{ t }}
-                                </button>
+                            <div class="flex items-center space-x-1.5">
+                                <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪</span>
+                                <!-- 子切換 Tab (MTM / RSI / WR) -->
+                                <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
+                                    <button v-for="t in ['MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
+                                            :class="subOscTab === t ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                            class="px-1.5 py-0.2 rounded transition">
+                                        {{ t }}
+                                    </button>
+                                </div>
                             </div>
+                            <!-- 動態數值顯示 -->
+                            <span v-if="subOscTab === 'MTM'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">MTM3:{{ crosshairData.mtm }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">MA2:{{ crosshairData.mtmMa }}</span>
+                            </span>
+                            <span v-else-if="subOscTab === 'RSI'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">RSI4:{{ crosshairData.rsi4 }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">RSI12:{{ crosshairData.rsi12 }}</span>
+                            </span>
+                            <span v-else-if="subOscTab === 'WR'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span class="text-amber-400 font-bold">WR3:{{ crosshairData.wr3 }}</span>
+                                <span>·</span>
+                                <span class="text-sky-400 font-bold">WR50:{{ crosshairData.wr50 }}</span>
+                            </span>
                         </div>
                         <div id="chart-mtm" class="w-full h-36"></div>
                     </div>
