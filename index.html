@@ -376,6 +376,13 @@
                                             title="一鍵複製近 10 日戰情報告">
                                         <i class="fa-regular fa-copy text-[11px]"></i>
                                     </button>
+                                    <!-- 4. 🧠 匯入戰情報告按鈕 (純圖示) -->
+                                    <button @click.stop="openImportReportModal(stock)" 
+                                            class="w-6 h-6 rounded-md font-bold transition active:scale-90 flex items-center justify-center border shrink-0"
+                                            :class="theme === 'dark' ? 'bg-purple-950/80 text-purple-300 border-purple-800/60 hover:bg-purple-900' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'"
+                                            title="匯入戰情報告短評">
+                                        <i class="fa-solid fa-brain text-[11px]"></i>
+                                    </button>
                                 </div>
                             </div>
 
@@ -1292,6 +1299,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261010.17"></script>
+    <script src="app.js?v=2.20261010.18"></script>
 </body>
 </html>
