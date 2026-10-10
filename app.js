@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.20');
+        const appVersion = ref('v2.20261010.21');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2743,6 +2743,14 @@ createApp({
             return parseReportText(importReportText.value);
         });
 
+        // 🚨 匯入戰報股票代號一致性比對 (支援去前導0比對)
+        const isReportCodeMismatch = computed(() => {
+            if (!importingStock.value || !parsedImportPreview.value || !parsedImportPreview.value.code) return false;
+            const target = String(importingStock.value.code || '').trim().replace(/^0+/, '');
+            const parsed = String(parsedImportPreview.value.code || '').trim().replace(/^0+/, '');
+            return target !== '' && parsed !== '' && target !== parsed;
+        });
+
         const submitImportReport = async () => {
             if (!dbInstance) {
                 alert("⚠️ 資料庫未載入，無法匯入戰報。");
@@ -2758,6 +2766,16 @@ createApp({
             if (!targetCode) {
                 alert("🚨 無法辨識股票代碼！請確認戰報文字中包含「代碼：XXXX」或從指定個股卡片點擊匯入。");
                 return;
+            }
+
+            // 🛑【防呆攔截】當從指定個股卡片點入，但貼上的戰報代碼與當前卡片不一致時
+            if (isReportCodeMismatch.value && importingStock.value) {
+                const targetDisplay = `${importingStock.value.code} ${importingStock.value.name}`;
+                const parsedCode = parsed.code;
+                const confirmMsg = `🚨【股票代號不一致防呆攔截】\n\n您當前開啟的是【${targetDisplay}】的戰報匯入視窗，但貼上的戰報內文代碼辨識為【${parsedCode}】！\n\n⚠️ 兩者代號不一致。請問您確定仍要強制將這份戰報寫入至【${parsedCode}】嗎？`;
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
             }
 
             const normalizedCode = targetCode.padStart(4, '0');
@@ -5216,6 +5234,7 @@ createApp({
             showImportReportModal,
             importReportText,
             parsedImportPreview,
+            isReportCodeMismatch,
             openImportReportModal,
             showFullReportModal,
             currentReportStock,
