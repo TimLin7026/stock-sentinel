@@ -773,6 +773,8 @@ createApp({
             const rows = rawRows.slice(-days);
             isChartLoading.value = false;
             await Vue.nextTick();
+            // 等待瀏覽器完成第一幀 DOM 佈局與寬高計算
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             destroyAllChartInstances();
 
@@ -989,6 +991,14 @@ createApp({
             };
 
             Object.values(chartInstances).forEach(c => bindAxisPointerListener(c));
+
+            // 🚀 主動雙重自適應尺寸校準，徹底消除初次開啟空白
+            Vue.nextTick(() => {
+                resizeAllStockCharts();
+                setTimeout(() => {
+                    resizeAllStockCharts();
+                }, 80);
+            });
         };
 
         // 渲染圖 6 動能與擺盪指標 (快線 亮黃 #eab308, 慢線 亮藍 #38bdf8)
@@ -1097,6 +1107,10 @@ createApp({
             activeChartStock.value = { ...stock };
             showStockChartModal.value = true;
             renderAllStockCharts(stock.code, chartDaysCount.value);
+            // 雙重校準保險
+            setTimeout(() => {
+                resizeAllStockCharts();
+            }, 120);
         };
 
         // 關閉技術指標彈窗
