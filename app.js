@@ -41,22 +41,105 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.10');
+        const appVersion = ref('v2.20261011.11');
+
+        // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
+        let lastDetectedOrientation = null;
+
+        const checkDeviceLandscape = () => {
+            if (window.matchMedia && window.matchMedia('(orientation: landscape)').matches) {
+                return true;
+            }
+            return window.innerWidth > window.innerHeight;
+        };
+
+        const applyOrientationChange = (isLandscape) => {
+            const newOri = isLandscape ? 'landscape' : 'portrait';
+            if (lastDetectedOrientation === newOri) return;
+            lastDetectedOrientation = newOri;
+
+            // 1. 自動同步主畫面版面
+            appLayout.value = isLandscape ? 'wide' : 'mobile';
+            localStorage.setItem('sentinel_app_layout', appLayout.value);
+
+            // 2. 自動同步走勢圖版面
+            chartOrientation.value = isLandscape ? 'landscape' : 'portrait';
+            localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
+
+            // 3. 雙重延遲平滑重繪 (等待手機旋轉與 CSS transition 動畫完成)
+            Vue.nextTick(() => {
+                const doResize = () => {
+                    if (chartInstance && typeof chartInstance.resize === 'function') {
+                        chartInstance.resize();
+                    }
+                    if (showStockChartModal && showStockChartModal.value) {
+                        resizeAllStockCharts();
+                    }
+                };
+                doResize();
+                setTimeout(doResize, 120);
+                setTimeout(doResize, 350);
+            });
+        };
+
+        const initOrientationListener = () => {
+            // 初始化感應當前螢幕直橫向
+            const isLand = checkDeviceLandscape();
+            lastDetectedOrientation = isLand ? 'landscape' : 'portrait';
+            // 若為橫向螢幕 (手機橫放或寬螢幕)，自動進入寬版；直向則自動進入手機窄版
+            appLayout.value = isLand ? 'wide' : 'mobile';
+            chartOrientation.value = isLand ? 'landscape' : 'portrait';
+
+            // 監聽 1: 現代標準 matchMedia
+            try {
+                const mql = window.matchMedia('(orientation: landscape)');
+                if (mql && typeof mql.addEventListener === 'function') {
+                    mql.addEventListener('change', (e) => {
+                        applyOrientationChange(e.matches);
+                    });
+                } else if (mql && typeof mql.addListener === 'function') {
+                    mql.addListener((e) => {
+                        applyOrientationChange(e.matches);
+                    });
+                }
+            } catch (e) {}
+
+            // 監聽 2: orientationchange (行動裝置原生旋轉事件)
+            window.addEventListener('orientationchange', () => {
+                setTimeout(() => {
+                    applyOrientationChange(checkDeviceLandscape());
+                }, 120);
+            });
+
+            // 監聽 3: resize 防抖監聽 (涵蓋桌機縮放與 Android 動態導航列變化)
+            let resizeTimer = null;
+            window.addEventListener('resize', () => {
+                if (resizeTimer) clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    applyOrientationChange(checkDeviceLandscape());
+                }, 150);
+            });
+        };
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
-        const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
+        const appLayout = ref(checkDeviceLandscape() ? 'wide' : 'mobile');
         const toggleAppLayout = () => {
             appLayout.value = appLayout.value === 'mobile' ? 'wide' : 'mobile';
+            chartOrientation.value = appLayout.value === 'wide' ? 'landscape' : 'portrait';
             localStorage.setItem('sentinel_app_layout', appLayout.value);
+            localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             Vue.nextTick(() => {
                 const triggerResize = () => {
                     if (chartInstance && typeof chartInstance.resize === 'function') {
                         chartInstance.resize();
                     }
+                    if (showStockChartModal && showStockChartModal.value) {
+                        resizeAllStockCharts();
+                    }
                 };
                 triggerResize();
-                setTimeout(triggerResize, 100);
-                setTimeout(triggerResize, 350); // 300ms 動畫結束後精準重繪
+                setTimeout(triggerResize, 120);
+                setTimeout(triggerResize, 350);
             });
         };
 
@@ -5498,6 +5581,9 @@ createApp({
                     resizeAllStockCharts();
                 }
             });
+
+            // 📱/🖥️ 啟動設備直橫向自動感應監聽
+            initOrientationListener();
 
             // 啟動開市日 15:00 / 21:30 雲端大腦同步主動提醒
             checkScheduledSyncReminders();
