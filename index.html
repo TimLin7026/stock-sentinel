@@ -44,50 +44,75 @@
         .triangle-buy { color: #f43f5e; font-weight: 900; }
         .triangle-sell { color: #10b981; font-weight: 900; }
 
-        /* 戰報 Markdown 排版美化樣式 */
-        .report-markdown-body h1, .report-markdown-body h2, .report-markdown-body h3, .report-markdown-body h4 {
+        /* 戰報 Markdown 統一排版美化樣式 (消除參差感，全行色彩 100% 統一) */
+        .report-markdown-body h1, 
+        .report-markdown-body h2, 
+        .report-markdown-body h3, 
+        .report-markdown-body h4 {
             font-weight: 700;
             margin-top: 1rem;
             margin-bottom: 0.5rem;
             display: flex;
             align-items: center;
-        }
-        .report-markdown-body h1, .report-markdown-body h2 {
-            font-size: 0.875rem;
-            color: #38bdf8;
             border-left: 3px solid #0284c7;
             padding-left: 0.5rem;
-            background: rgba(2, 132, 199, 0.08);
+            background: rgba(2, 132, 199, 0.07);
             border-radius: 0 0.375rem 0.375rem 0;
             padding-top: 0.25rem;
             padding-bottom: 0.25rem;
-        }
-        .report-markdown-body h3, .report-markdown-body h4 {
-            font-size: 0.8125rem;
             color: #0284c7;
+            line-height: 1.4;
         }
-        .dark .report-markdown-body h3, .dark .report-markdown-body h4 {
+        .dark .report-markdown-body h1, 
+        .dark .report-markdown-body h2, 
+        .dark .report-markdown-body h3, 
+        .dark .report-markdown-body h4 {
             color: #38bdf8;
+            border-left-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.08);
         }
+        .report-markdown-body h1, .report-markdown-body h2 { font-size: 0.875rem; }
+        .report-markdown-body h3, .report-markdown-body h4 { font-size: 0.8125rem; }
+
+        /* 關鍵：強制標題內部所有子元素 (包含粗體、span) 100% 繼承標題色彩，杜絕半藍半黑 */
+        .report-markdown-body h1 *,
+        .report-markdown-body h2 *,
+        .report-markdown-body h3 *,
+        .report-markdown-body h4 * {
+            color: inherit !important;
+            font-weight: inherit !important;
+        }
+
         .report-markdown-body p {
             margin-top: 0.375rem;
             margin-bottom: 0.375rem;
-            line-height: 1.625;
+            line-height: 1.65;
             font-size: 0.75rem;
+            color: #334155;
         }
+        .dark .report-markdown-body p {
+            color: #cbd5e1;
+        }
+
         .report-markdown-body ul, .report-markdown-body ol {
             margin-top: 0.375rem;
             margin-bottom: 0.5rem;
-            padding-left: 1rem;
+            padding-left: 1.125rem;
             font-size: 0.75rem;
-            line-height: 1.625;
+            line-height: 1.65;
         }
         .report-markdown-body ul { list-style-type: disc; }
         .report-markdown-body ol { list-style-type: decimal; }
         .report-markdown-body li {
             margin-top: 0.25rem;
             margin-bottom: 0.25rem;
+            color: #334155;
         }
+        .dark .report-markdown-body li {
+            color: #cbd5e1;
+        }
+
+        /* 內文粗體重點高亮 (淺色墨黑、深色純白，與大標題藍色形成專業層次) */
         .report-markdown-body strong, .report-markdown-body b {
             font-weight: 700;
             color: #0f172a;
@@ -95,6 +120,7 @@
         .dark .report-markdown-body strong, .dark .report-markdown-body b {
             color: #f8fafc;
         }
+
         .report-markdown-body blockquote {
             border-left: 3px solid #64748b;
             padding-left: 0.75rem;
@@ -1616,6 +1642,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261011.03"></script>
+    <script src="app.js?v=2.20261011.04"></script>
 </body>
 </html>

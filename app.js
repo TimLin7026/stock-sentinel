@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.03');
+        const appVersion = ref('v2.20261011.04');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2800,10 +2800,7 @@ createApp({
             // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
             if (window.marked && typeof window.marked.parse === 'function') {
                 try {
-                    let html = window.marked.parse(text, { breaks: true, gfm: true });
-                    // 為章節標題【...】美化加上樣式
-                    html = html.replace(/(【[^】]+】|一、|二、|三、|四、|五、)/g, '<span class="text-sky-500 dark:text-sky-400 font-bold">$1</span>');
-                    return html;
+                    return window.marked.parse(text, { breaks: true, gfm: true });
                 } catch (e) {
                     console.warn("marked.parse 解析異常，降級使用內建正則解析:", e);
                 }
