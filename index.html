@@ -134,6 +134,71 @@
             margin-bottom: 0.75rem;
             border-color: rgba(148, 163, 184, 0.2);
         }
+
+        /* 戰報 Markdown 表格精緻化樣式 (包含格線、斑馬紋與自適應水平捲動) */
+        .report-markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.75rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.75rem;
+            line-height: 1.55;
+            display: block;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+        }
+        .dark .report-markdown-body table {
+            border-color: #334155;
+        }
+        .report-markdown-body thead {
+            background: rgba(2, 132, 199, 0.08);
+            border-bottom: 2px solid #0284c7;
+        }
+        .dark .report-markdown-body thead {
+            background: rgba(56, 189, 248, 0.12);
+            border-bottom: 2px solid #38bdf8;
+        }
+        .report-markdown-body th {
+            padding: 0.5rem 0.625rem;
+            font-weight: 700;
+            color: #0284c7;
+            text-align: left;
+            border: 1px solid #cbd5e1;
+            white-space: nowrap;
+        }
+        .dark .report-markdown-body th {
+            color: #38bdf8;
+            border: 1px solid #334155;
+        }
+        .report-markdown-body td {
+            padding: 0.5rem 0.625rem;
+            border: 1px solid #e2e8f0;
+            color: #334155;
+            vertical-align: top;
+            min-width: 120px;
+        }
+        .dark .report-markdown-body td {
+            border: 1px solid #334155;
+            color: #cbd5e1;
+        }
+        .report-markdown-body td:first-child {
+            min-width: 80px;
+            font-weight: 600;
+        }
+        .report-markdown-body tbody tr:nth-child(even) {
+            background: rgba(241, 245, 249, 0.6);
+        }
+        .dark .report-markdown-body tbody tr:nth-child(even) {
+            background: rgba(30, 41, 59, 0.35);
+        }
+        .report-markdown-body tbody tr:hover {
+            background: rgba(2, 132, 199, 0.04);
+        }
+        .dark .report-markdown-body tbody tr:hover {
+            background: rgba(56, 189, 248, 0.06);
+        }
     </style>
 </head>
 <body class="bg-[#0b0f19] text-slate-100 flex justify-center min-h-screen transition-colors duration-200">
@@ -1642,6 +1707,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261011.04"></script>
+    <script src="app.js?v=2.20261011.05"></script>
 </body>
 </html>
