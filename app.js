@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.07');
+        const appVersion = ref('v2.20261011.08');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2796,6 +2796,9 @@ createApp({
             if (!rawText || typeof rawText !== 'string') return '';
             let text = rawText.trim();
             if (!text) return '';
+
+            // 0. 自動校準規範「一、二、三、...」章節大標題：若原始文字未帶 ###，自動補齊 ### 統一跨個股標題風格
+            text = text.replace(/^[ \t]*(?!(?:#|>|[-*]\s|\d+\.))[ \t]*(\*{0,2}[一二三四五六七八九十]+[、.．][^\n]+)$/gm, (match, p1) => `### ${p1}`);
 
             // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
             if (window.marked && typeof window.marked.parse === 'function') {
