@@ -358,61 +358,225 @@
             <!-- ========================================== -->
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
+            <!-- 1️⃣ 📊 模組一：資產總覽 (5大核心KPI + 甜甜圈持股分布 + 歷史對沖結算總表) -->
+            <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
+                <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
+                <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
+                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
+                    <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
+                            :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
+                        {{ b }}
+                    </button>
+                </div>
+
+                <!-- 頂層配置區塊：寬版 (左圖右KPI) / 手機版 (上KPI下圖) -->
                 <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
-                    <!-- 左欄：券商篩選 + 總資產核心卡片 -->
-                    <div class="space-y-3.5">
-                        <!-- 證券商過濾標籤列 (對齊地端：全部 / 玉山證券 / 中信證券 ...) -->
-                        <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
-                            <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
-                            <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
-                                    :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
-                                    class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
-                                {{ b }}
-                            </button>
-                        </div>
-
-                        <!-- 總資產核心卡片 -->
-                        <div :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700/80 text-white' : 'bg-gradient-to-br from-sky-600 to-indigo-700 border-sky-500 text-white'" class="border rounded-2xl p-4 shadow-lg relative overflow-hidden">
-                            <div class="absolute -right-6 -bottom-6 opacity-20 text-8xl pointer-events-none">
-                                <i class="fa-solid fa-chart-line"></i>
-                            </div>
-                            <div class="flex justify-between items-center mb-1">
-                                <div class="text-xs opacity-80">投資組合總資產市值</div>
-                                <span v-if="selectedBrokerFilter !== '全部'" class="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
-                                    {{ selectedBrokerFilter }}
-                                </span>
-                            </div>
-                            <div class="text-2xl font-black tracking-tight mb-2">
-                                ${{ formatNumber(summary.totalMarketValue) }}
-                            </div>
-                            
-                            <div class="grid grid-cols-2 gap-2 pt-2 border-t border-white/20 text-xs">
-                                <div>
-                                    <span class="opacity-80">未實現損益：</span>
-                                    <span :class="summary.unrealizedProfit >= 0 ? (theme==='dark'?'text-rose-400':'text-amber-300') : 'text-emerald-300'" class="font-bold">
-                                        {{ summary.unrealizedProfit >= 0 ? '+' : '' }}${{ formatNumber(summary.unrealizedProfit) }}
-                                        ({{ summary.unrealizedProfitRate }}%)
-                                    </span>
-                                </div>
-                                <div>
-                                    <span class="opacity-80">總投入成本：</span>
-                                    <span class="font-semibold">${{ formatNumber(summary.totalCost) }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 右欄：資產配置圓餅圖 -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4">
+                    <!-- A. 持股配置圓餅圖 (維持現有樣式，Hover增加紅綠收益率) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        appLayout === 'wide' ? 'order-1' : 'order-2'
+                    ]" class="border rounded-2xl p-4">
                         <div class="flex justify-between items-center mb-2">
                             <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
                                 <i class="fa-solid fa-chart-pie text-sky-500 mr-2"></i>持股配置佔比
                             </h2>
                             <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px]">共 {{ filteredHoldingStocks.length }} 檔持股</span>
                         </div>
-                        <!-- 圖表掛載容器 (加大高度避免圖例重疊) -->
+                        <!-- 圖表掛載容器 -->
                         <div id="assetChart" class="w-full h-64"></div>
+                    </div>
+
+                    <!-- B. 5 大核心資產 KPI 矩陣卡片 (100% 對齊電腦端) -->
+                    <div :class="[
+                        appLayout === 'wide' ? 'order-2' : 'order-1'
+                    ]" class="space-y-2.5">
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <!-- 1. 總市值 -->
+                            <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'" 
+                                 class="border border-l-4 border-l-sky-500 rounded-xl p-3 flex flex-col justify-between">
+                                <div class="text-[11px] font-bold text-slate-400 flex items-center space-x-1 truncate">
+                                    <i class="fa-solid fa-globe text-sky-500 text-[10px]"></i>
+                                    <span class="truncate">{{ selectedBrokerFilter === '全部' ? '全域總資產' : selectedBrokerFilter }} · 總市值</span>
+                                </div>
+                                <div class="text-base font-black font-mono tracking-tight mt-1" :class="theme === 'dark' ? 'text-white' : 'text-slate-900'">
+                                    ${{ formatNumber(summary.totalMarketValue) }} <span class="text-[10px] font-normal text-slate-400">元</span>
+                                </div>
+                            </div>
+
+                            <!-- 2. 持有成本 -->
+                            <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'" 
+                                 class="border border-l-4 border-l-slate-400 rounded-xl p-3 flex flex-col justify-between">
+                                <div class="text-[11px] font-bold text-slate-400 flex items-center space-x-1 truncate">
+                                    <i class="fa-solid fa-wallet text-slate-400 text-[10px]"></i>
+                                    <span class="truncate">{{ selectedBrokerFilter === '全部' ? '全域總資產' : selectedBrokerFilter }} · 持有成本</span>
+                                </div>
+                                <div class="text-base font-black font-mono tracking-tight mt-1" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">
+                                    ${{ formatNumber(summary.totalCost) }} <span class="text-[10px] font-normal text-slate-400">元</span>
+                                </div>
+                            </div>
+
+                            <!-- 3. 未實現收益 (在編庫存) -->
+                            <div :class="[
+                                theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs',
+                                summary.unrealizedProfit >= 0 ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'
+                            ]" class="border rounded-xl p-3 flex flex-col justify-between">
+                                <div class="text-[11px] font-bold text-slate-400 truncate">
+                                    未實現收益 (在編庫存)
+                                </div>
+                                <div class="text-base font-black font-mono tracking-tight mt-1" :class="summary.unrealizedProfit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                    {{ summary.unrealizedProfit >= 0 ? '+' : '' }}${{ formatNumber(summary.unrealizedProfit) }}
+                                    <span class="text-[10px] font-bold ml-1">({{ summary.unrealizedProfit >= 0 ? '+' : '' }}{{ summary.unrealizedProfitRate }}%)</span>
+                                </div>
+                            </div>
+
+                            <!-- 4. 已實現收益 (歷史銷帳) - 支援點擊滾動展開下方總表 -->
+                            <div @click="scrollToHedgedSummary" 
+                                 :class="[
+                                    theme === 'dark' ? 'bg-slate-900/90 border-slate-800 hover:bg-slate-800/80' : 'bg-white border-slate-200 shadow-xs hover:bg-slate-50',
+                                    summary.realizedProfit >= 0 ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'
+                                 ]" class="border rounded-xl p-3 flex flex-col justify-between cursor-pointer transition active:scale-98 group" title="點擊查看歷史對沖核算明細">
+                                <div class="text-[11px] font-bold text-slate-400 flex items-center justify-between">
+                                    <span class="truncate">已實現收益 (歷史銷帳)</span>
+                                    <i class="fa-solid fa-arrow-down text-[9px] text-sky-500 opacity-60 group-hover:opacity-100 transition"></i>
+                                </div>
+                                <div class="text-base font-black font-mono tracking-tight mt-1 flex items-baseline justify-between" :class="summary.realizedProfit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                    <span>{{ summary.realizedProfit >= 0 ? '+' : '' }}${{ formatNumber(summary.realizedProfit) }}</span>
+                                    <span class="text-[10px] font-normal text-slate-400 font-sans">({{ summary.hedgedCount }}筆)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 5. 全域投資報酬率 (全寬橫向卡片) -->
+                        <div :class="[
+                            theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs',
+                            Number(summary.totalRoi) >= 0 ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'
+                        ]" class="border rounded-xl p-3 flex justify-between items-center">
+                            <div>
+                                <div class="text-[11px] font-bold text-slate-400 flex items-center space-x-1">
+                                    <i class="fa-solid fa-chart-line text-sky-500 text-[10px]"></i>
+                                    <span>{{ selectedBrokerFilter === '全部' ? '全域總資產' : selectedBrokerFilter }} · 投資報酬率</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">綜合計算：(未實現 + 已實現) / 總成本</div>
+                            </div>
+                            <div class="text-xl font-black font-mono tracking-tight" :class="Number(summary.totalRoi) >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                {{ Number(summary.totalRoi) >= 0 ? '+' : '' }}{{ summary.totalRoi }}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- C. ⚔️ 跨個股歷史對沖核算結算總表 (方案 C：資產總覽折疊面板) -->
+                <div id="hedgedSummarySection" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between cursor-pointer select-none" @click="isHedgedSummaryExpanded = !isHedgedSummaryExpanded">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-base">⚔️</span>
+                            <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs sm:text-sm font-bold flex items-center space-x-1.5">
+                                <span>{{ selectedBrokerFilter === '全部' ? '全域總資產' : selectedBrokerFilter }} ── 跨個股歷史對沖核算結算總表</span>
+                            </h2>
+                            <span :class="theme === 'dark' ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'" class="text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0">
+                                {{ filteredHedgedRecords.length }} 筆
+                            </span>
+                        </div>
+                        <button class="text-xs text-slate-400 hover:text-slate-200 transition">
+                            <i class="fa-solid transition-transform duration-200" :class="isHedgedSummaryExpanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                        </button>
+                    </div>
+
+                    <!-- 折疊展開區塊 -->
+                    <div v-show="isHedgedSummaryExpanded" class="space-y-3 pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-100'">
+                        <!-- 搜尋過濾框 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex items-center px-3 py-1.5 rounded-xl border space-x-2">
+                            <i class="fa-solid fa-magnifying-glass text-xs text-slate-400"></i>
+                            <input v-model="hedgedSearchKeyword" 
+                                   type="text" 
+                                   placeholder="搜尋代號 / 股票名稱 / 券商..." 
+                                   :class="theme === 'dark' ? 'text-slate-100 placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'"
+                                   class="bg-transparent border-none outline-none text-xs flex-1">
+                            <button v-if="hedgedSearchKeyword" @click="hedgedSearchKeyword = ''" class="text-xs text-slate-400 hover:text-slate-200">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <!-- 筆數為 0 時提示 -->
+                        <div v-if="filteredHedgedRecords.length === 0" class="text-center py-6 text-slate-400 text-xs">
+                            此範疇內暫無歷史對沖結算紀錄
+                        </div>
+
+                        <!-- 1. 電腦橫式/寬版視圖：高密度金融清算表格 (Table) -->
+                        <div v-else-if="appLayout === 'wide'" class="overflow-x-auto rounded-xl border" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                            <table class="w-full text-xs text-left border-collapse font-sans">
+                                <thead :class="theme === 'dark' ? 'bg-slate-950 text-slate-400' : 'bg-slate-100 text-slate-600'" class="text-[11px] font-bold border-b border-slate-200 dark:border-slate-800">
+                                    <tr>
+                                        <th class="p-2.5">標的代號</th>
+                                        <th class="p-2.5">標的名稱</th>
+                                        <th class="p-2.5">證券商</th>
+                                        <th class="p-2.5">買進時間</th>
+                                        <th class="p-2.5">賣出時間</th>
+                                        <th class="p-2.5 text-right">對沖股數</th>
+                                        <th class="p-2.5 text-right">買成本</th>
+                                        <th class="p-2.5 text-right">賣收入</th>
+                                        <th class="p-2.5 text-right">結算收益</th>
+                                        <th class="p-2.5 text-right">收益率</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(rec, idx) in filteredHedgedRecords" :key="idx" 
+                                        :class="[
+                                            theme === 'dark' ? 'border-slate-800/60 hover:bg-slate-800/40' : 'border-slate-100 hover:bg-slate-50',
+                                            idx % 2 === 1 ? (theme === 'dark' ? 'bg-slate-950/40' : 'bg-slate-50/50') : ''
+                                        ]" class="border-b transition font-mono">
+                                        <td class="p-2.5 font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ rec.code }}</td>
+                                        <td class="p-2.5 font-sans font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ rec.name }}</td>
+                                        <td class="p-2.5 font-sans text-slate-400">{{ rec.broker }}</td>
+                                        <td class="p-2.5 text-slate-400 text-[11px]">{{ rec.buyDate }}</td>
+                                        <td class="p-2.5 text-slate-400 text-[11px]">{{ rec.sellDate }}</td>
+                                        <td class="p-2.5 text-right font-semibold">{{ formatNumber(rec.shares) }}</td>
+                                        <td class="p-2.5 text-right text-slate-400">${{ formatNumber(rec.buyCost) }}</td>
+                                        <td class="p-2.5 text-right">${{ formatNumber(rec.sellRevenue) }}</td>
+                                        <td class="p-2.5 text-right font-black" :class="rec.profit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.profit >= 0 ? '+' : '' }}${{ formatNumber(rec.profit) }}
+                                        </td>
+                                        <td class="p-2.5 text-right font-black" :class="rec.roi >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.roi >= 0 ? '+' : '' }}{{ rec.roi }}%
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 2. 手機窄版視圖：質感清算卡片清單 (Card List) -->
+                        <div v-else class="space-y-2">
+                            <div v-for="(rec, idx) in filteredHedgedRecords" :key="idx"
+                                 :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-50 border-slate-200'"
+                                 class="p-2.5 rounded-xl border text-xs space-y-1.5 transition">
+                                <!-- 卡片頂部：代號名稱 + 券商 + 結算收益與ROI -->
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-1.5">
+                                        <span class="font-bold text-sky-500 font-mono text-[13px]">{{ rec.code }}</span>
+                                        <span class="font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ rec.name }}</span>
+                                        <span class="text-[10px] text-slate-400 font-normal px-1.5 py-0.2 rounded border border-slate-700/40">{{ rec.broker }}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="font-black font-mono text-sm" :class="rec.profit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.profit >= 0 ? '+' : '' }}${{ formatNumber(rec.profit) }}
+                                        </span>
+                                        <span class="text-[10px] font-bold font-mono ml-1 px-1 py-0.2 rounded" :class="rec.roi >= 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'">
+                                            {{ rec.roi >= 0 ? '+' : '' }}{{ rec.roi }}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <!-- 卡片中間：對沖股數與買賣時點 -->
+                                <div class="grid grid-cols-2 gap-1 text-[11px] font-mono text-slate-400 pt-1 border-t" :class="theme === 'dark' ? 'border-slate-800/50' : 'border-slate-200/60'">
+                                    <div>🟢 買：{{ rec.buyDate }} (${{ formatNumber(rec.buyCost) }})</div>
+                                    <div>🔴 賣：{{ rec.sellDate }} (${{ formatNumber(rec.sellRevenue) }})</div>
+                                </div>
+                                <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                                    <span>對沖股數：<strong class="font-mono text-slate-300">{{ formatNumber(rec.shares) }} 股</strong></span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -733,69 +897,203 @@
             <!-- 3️⃣ 🧮 模組三：交易 FIFO 與記帳錄入 -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'fifo'" class="space-y-3.5">
-                <!-- 記帳按鈕 -->
-                <button @click="openTradeModal()" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center space-x-2 transition">
-                    <i class="fa-solid fa-pen-to-square text-base"></i>
-                    <span class="text-sm">快速錄入交易記錄 (隨手記帳)</span>
-                </button>
+                <!-- 雙軌子分頁切換標籤：[📝 歷史交易流水帳] | [⚔️ 歷史對沖結算總表] -->
+                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex p-1 rounded-xl border text-xs font-semibold">
+                    <button @click="fifoSubTab = 'logs'" 
+                            :class="fifoSubTab === 'logs' ? 'bg-sky-600 text-white shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="flex-1 py-1.5 rounded-lg transition text-center flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span>歷史交易流水帳</span>
+                    </button>
+                    <button @click="fifoSubTab = 'hedged'" 
+                            :class="fifoSubTab === 'hedged' ? 'bg-sky-600 text-white shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="flex-1 py-1.5 rounded-lg transition text-center flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                        <span>歷史對沖結算總表</span>
+                    </button>
+                </div>
 
-                <!-- 最近交易紀錄清單 (歷史交易流水帳清算港) -->
-                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-3.5 space-y-2.5">
-                    <div class="flex items-center justify-between">
-                        <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
-                            <i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>歷史交易流水帳
-                        </h2>
-                        <span class="text-[10px] text-slate-400 font-mono">共 {{ filteredTradeLogs.length }} 筆</span>
-                    </div>
+                <!-- 分頁 A：原始交易流水帳與記帳 -->
+                <div v-if="fifoSubTab === 'logs'" class="space-y-3.5">
+                    <!-- 記帳按鈕 -->
+                    <button @click="openTradeModal()" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center space-x-2 transition">
+                        <i class="fa-solid fa-pen-to-square text-base"></i>
+                        <span class="text-sm">快速錄入交易記錄 (隨手記帳)</span>
+                    </button>
 
-                    <!-- 🔍 關鍵字搜尋框 (支援代號/名稱/券商快速過濾) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex items-center px-3 py-1.5 rounded-xl border space-x-2">
-                        <i class="fa-solid fa-magnifying-glass text-xs text-slate-400"></i>
-                        <input v-model="tradeSearchKeyword" 
-                               type="text" 
-                               placeholder="搜尋股票代號 / 名稱 / 券商..." 
-                               :class="theme === 'dark' ? 'text-slate-100 placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'"
-                               class="bg-transparent border-none outline-none text-xs flex-1">
-                        <button v-if="tradeSearchKeyword" @click="tradeSearchKeyword = ''" class="text-xs text-slate-400 hover:text-slate-200">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </div>
-
-                    <!-- 時間範圍篩選標籤列 (對齊地端：近1周 | 近2周 | 近1月 | 近3月 | 全部) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex p-1 rounded-xl border text-xs">
-                        <button v-for="range in ['近1周', '近2周', '近1月', '近3月', '全部']" :key="range" 
-                                @click="tradeDateRangeFilter = range"
-                                :class="tradeDateRangeFilter === range ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
-                                class="flex-1 py-1 rounded-lg transition text-center text-[11px]">
-                            {{ range }}
-                        </button>
-                    </div>
-
-                    <!-- 交易明細列表 -->
-                    <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-2 items-start' : 'space-y-1.5'">
-                        <div v-if="filteredTradeLogs.length === 0" class="text-center py-6 text-slate-400 text-xs">
-                            此時間區間內暫無交易記錄
+                    <!-- 最近交易紀錄清單 (歷史交易流水帳清算港) -->
+                    <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-3.5 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center">
+                                <i class="fa-solid fa-clock-rotate-left text-amber-500 mr-2"></i>歷史交易流水帳
+                            </h2>
+                            <span class="text-[10px] text-slate-400 font-mono">共 {{ filteredTradeLogs.length }} 筆</span>
                         </div>
-                        <div v-for="log in filteredTradeLogs" :key="log.id" :class="theme === 'dark' ? 'bg-slate-950/60 border-slate-800/50' : 'bg-slate-50 border-slate-200'" class="flex justify-between items-center p-2 rounded-xl border text-xs">
-                            <div class="flex items-center space-x-2 flex-1 min-w-0 mr-2">
-                                <span :class="log.action === '買進' ? 'bg-rose-600 text-white border-rose-500' : 'bg-emerald-600 text-white border-emerald-500'" 
-                                      class="px-2 py-0.5 rounded text-[10px] font-bold border shadow-sm shrink-0">
-                                    {{ log.action }}
-                                </span>
-                                <div class="truncate">
-                                    <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-bold truncate">{{ log.name }} <span class="font-mono text-[10px] text-slate-400">({{ log.code }})</span></div>
-                                    <div class="text-[10px] text-slate-400 font-mono">{{ log.broker || '玉山證券' }} · {{ formatTradeDate(log.date) }}</div>
+
+                        <!-- 🔍 關鍵字搜尋框 (支援代號/名稱/券商快速過濾) -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex items-center px-3 py-1.5 rounded-xl border space-x-2">
+                            <i class="fa-solid fa-magnifying-glass text-xs text-slate-400"></i>
+                            <input v-model="tradeSearchKeyword" 
+                                   type="text" 
+                                   placeholder="搜尋股票代號 / 名稱 / 券商..." 
+                                   :class="theme === 'dark' ? 'text-slate-100 placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'"
+                                   class="bg-transparent border-none outline-none text-xs flex-1">
+                            <button v-if="tradeSearchKeyword" @click="tradeSearchKeyword = ''" class="text-xs text-slate-400 hover:text-slate-200">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <!-- 時間範圍篩選標籤列 (對齊地端：近1周 | 近2周 | 近1月 | 近3月 | 全部) -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex p-1 rounded-xl border text-xs">
+                            <button v-for="range in ['近1周', '近2周', '近1月', '近3月', '全部']" :key="range" 
+                                    @click="tradeDateRangeFilter = range"
+                                    :class="tradeDateRangeFilter === range ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                                    class="flex-1 py-1 rounded-lg transition text-center text-[11px]">
+                                {{ range }}
+                            </button>
+                        </div>
+
+                        <!-- 交易明細列表 -->
+                        <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-2 items-start' : 'space-y-1.5'">
+                            <div v-if="filteredTradeLogs.length === 0" class="text-center py-6 text-slate-400 text-xs">
+                                此時間區間內暫無交易記錄
+                            </div>
+                            <div v-for="log in filteredTradeLogs" :key="log.id" :class="theme === 'dark' ? 'bg-slate-950/60 border-slate-800/50' : 'bg-slate-50 border-slate-200'" class="flex justify-between items-center p-2 rounded-xl border text-xs">
+                                <div class="flex items-center space-x-2 flex-1 min-w-0 mr-2">
+                                    <span :class="log.action === '買進' ? 'bg-rose-600 text-white border-rose-500' : 'bg-emerald-600 text-white border-emerald-500'" 
+                                          class="px-2 py-0.5 rounded text-[10px] font-bold border shadow-sm shrink-0">
+                                        {{ log.action }}
+                                    </span>
+                                    <div class="truncate">
+                                        <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-bold truncate">{{ log.name }} <span class="font-mono text-[10px] text-slate-400">({{ log.code }})</span></div>
+                                        <div class="text-[10px] text-slate-400 font-mono">{{ log.broker || '玉山證券' }} · {{ formatTradeDate(log.date) }}</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-2 shrink-0">
+                                    <div class="text-right font-mono">
+                                        <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-semibold">${{ log.price }} × {{ formatNumber(log.shares) }}股</div>
+                                        <div class="text-[10px]" :class="log.action === '買進' ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'">總計: ${{ formatNumber(log.totalAmount) }}</div>
+                                    </div>
+                                    <!-- ✏️ 編輯按鈕 -->
+                                    <button @click="openTradeModal(null, log)" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300 shadow-sm'" class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90" title="修改此筆交易記錄">
+                                        <i class="fa-solid fa-pen text-[11px]"></i>
+                                    </button>
                                 </div>
                             </div>
-                            <div class="flex items-center space-x-2 shrink-0">
-                                <div class="text-right font-mono">
-                                    <div :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="font-semibold">${{ log.price }} × {{ formatNumber(log.shares) }}股</div>
-                                    <div class="text-[10px]" :class="log.action === '買進' ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'">總計: ${{ formatNumber(log.totalAmount) }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分頁 B：跨個股歷史對沖核算結算總表 -->
+                <div v-else-if="fifoSubTab === 'hedged'" class="space-y-3.5">
+                    <!-- 券商過濾標籤列 -->
+                    <div v-if="availableBrokers.length > 2" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
+                        <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
+                        <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
+                                :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                                class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
+                            {{ b }}
+                        </button>
+                    </div>
+
+                    <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h2 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-sm font-bold flex items-center space-x-1.5">
+                                <span class="text-base">⚔️</span>
+                                <span>{{ selectedBrokerFilter === '全部' ? '全域總資產' : selectedBrokerFilter }} ── 跨個股歷史對沖核算結算總表</span>
+                            </h2>
+                            <span :class="theme === 'dark' ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'" class="text-[10px] font-mono px-2 py-0.5 rounded-full">
+                                共 {{ filteredHedgedRecords.length }} 筆
+                            </span>
+                        </div>
+
+                        <!-- 搜尋過濾框 -->
+                        <div :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'" class="flex items-center px-3 py-1.5 rounded-xl border space-x-2">
+                            <i class="fa-solid fa-magnifying-glass text-xs text-slate-400"></i>
+                            <input v-model="hedgedSearchKeyword" 
+                                   type="text" 
+                                   placeholder="搜尋代號 / 股票名稱 / 券商..." 
+                                   :class="theme === 'dark' ? 'text-slate-100 placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'"
+                                   class="bg-transparent border-none outline-none text-xs flex-1">
+                            <button v-if="hedgedSearchKeyword" @click="hedgedSearchKeyword = ''" class="text-xs text-slate-400 hover:text-slate-200">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <!-- 筆數為 0 時提示 -->
+                        <div v-if="filteredHedgedRecords.length === 0" class="text-center py-6 text-slate-400 text-xs">
+                            此範疇內暫無歷史對沖結算紀錄
+                        </div>
+
+                        <!-- 1. 電腦橫式/寬版視圖：表格 (Table) -->
+                        <div v-else-if="appLayout === 'wide'" class="overflow-x-auto rounded-xl border" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                            <table class="w-full text-xs text-left border-collapse font-sans">
+                                <thead :class="theme === 'dark' ? 'bg-slate-950 text-slate-400' : 'bg-slate-100 text-slate-600'" class="text-[11px] font-bold border-b border-slate-200 dark:border-slate-800">
+                                    <tr>
+                                        <th class="p-2.5">標的代號</th>
+                                        <th class="p-2.5">標的名稱</th>
+                                        <th class="p-2.5">證券商</th>
+                                        <th class="p-2.5">買進時間</th>
+                                        <th class="p-2.5">賣出時間</th>
+                                        <th class="p-2.5 text-right">對沖股數</th>
+                                        <th class="p-2.5 text-right">買成本</th>
+                                        <th class="p-2.5 text-right">賣收入</th>
+                                        <th class="p-2.5 text-right">結算收益</th>
+                                        <th class="p-2.5 text-right">收益率</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(rec, idx) in filteredHedgedRecords" :key="idx" 
+                                        :class="[
+                                            theme === 'dark' ? 'border-slate-800/60 hover:bg-slate-800/40' : 'border-slate-100 hover:bg-slate-50',
+                                            idx % 2 === 1 ? (theme === 'dark' ? 'bg-slate-950/40' : 'bg-slate-50/50') : ''
+                                        ]" class="border-b transition font-mono">
+                                        <td class="p-2.5 font-bold" :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600'">{{ rec.code }}</td>
+                                        <td class="p-2.5 font-sans font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ rec.name }}</td>
+                                        <td class="p-2.5 font-sans text-slate-400">{{ rec.broker }}</td>
+                                        <td class="p-2.5 text-slate-400 text-[11px]">{{ rec.buyDate }}</td>
+                                        <td class="p-2.5 text-slate-400 text-[11px]">{{ rec.sellDate }}</td>
+                                        <td class="p-2.5 text-right font-semibold">{{ formatNumber(rec.shares) }}</td>
+                                        <td class="p-2.5 text-right text-slate-400">${{ formatNumber(rec.buyCost) }}</td>
+                                        <td class="p-2.5 text-right">${{ formatNumber(rec.sellRevenue) }}</td>
+                                        <td class="p-2.5 text-right font-black" :class="rec.profit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.profit >= 0 ? '+' : '' }}${{ formatNumber(rec.profit) }}
+                                        </td>
+                                        <td class="p-2.5 text-right font-black" :class="rec.roi >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.roi >= 0 ? '+' : '' }}{{ rec.roi }}%
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 2. 手機窄版視圖：卡片清單 (Card List) -->
+                        <div v-else class="space-y-2">
+                            <div v-for="(rec, idx) in filteredHedgedRecords" :key="idx"
+                                 :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80' : 'bg-slate-50 border-slate-200'"
+                                 class="p-2.5 rounded-xl border text-xs space-y-1.5 transition">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-1.5">
+                                        <span class="font-bold text-sky-500 font-mono text-[13px]">{{ rec.code }}</span>
+                                        <span class="font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">{{ rec.name }}</span>
+                                        <span class="text-[10px] text-slate-400 font-normal px-1.5 py-0.2 rounded border border-slate-700/40">{{ rec.broker }}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="font-black font-mono text-sm" :class="rec.profit >= 0 ? 'text-rose-500' : 'text-emerald-500'">
+                                            {{ rec.profit >= 0 ? '+' : '' }}${{ formatNumber(rec.profit) }}
+                                        </span>
+                                        <span class="text-[10px] font-bold font-mono ml-1 px-1 py-0.2 rounded" :class="rec.roi >= 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'">
+                                            {{ rec.roi >= 0 ? '+' : '' }}{{ rec.roi }}%
+                                        </span>
+                                    </div>
                                 </div>
-                                <!-- ✏️ 編輯按鈕 -->
-                                <button @click="openTradeModal(null, log)" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300 shadow-sm'" class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90" title="修改此筆交易記錄">
-                                    <i class="fa-solid fa-pen text-[11px]"></i>
-                                </button>
+                                <div class="grid grid-cols-2 gap-1 text-[11px] font-mono text-slate-400 pt-1 border-t" :class="theme === 'dark' ? 'border-slate-800/50' : 'border-slate-200/60'">
+                                    <div>🟢 買：{{ rec.buyDate }} (${{ formatNumber(rec.buyCost) }})</div>
+                                    <div>🔴 賣：{{ rec.sellDate }} (${{ formatNumber(rec.sellRevenue) }})</div>
+                                </div>
+                                <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                                    <span>對沖股數：<strong class="font-mono text-slate-300">{{ formatNumber(rec.shares) }} 股</strong></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1710,6 +2008,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261011.08"></script>
+    <script src="app.js?v=2.20261011.09"></script>
 </body>
 </html>

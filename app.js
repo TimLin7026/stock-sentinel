@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.08');
+        const appVersion = ref('v2.20261011.09');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -74,6 +74,12 @@ createApp({
         // ─── 交易 FIFO：時間範圍與關鍵字篩選狀態 (支援代號/名稱/券商快速過濾) ───
         const tradeDateRangeFilter = ref('近1周'); // 近1周 | 近2周 | 近1月 | 近3月 | 全部
         const tradeSearchKeyword = ref(''); // 關鍵字過濾搜尋框
+
+        // ─── 歷史對沖核算結算總表狀態 (方案 C：資產總覽與交易FIFO雙軌) ───
+        const hedgedRecords = ref([]); // 全域對沖結算紀錄
+        const isHedgedSummaryExpanded = ref(true); // 資產總覽折疊面板 (預設展開)
+        const fifoSubTab = ref('logs'); // 交易FIFO 子分頁：'logs' (流水帳) | 'hedged' (對沖結算)
+        const hedgedSearchKeyword = ref(''); // 對沖結算搜尋關鍵字
 
         // ─── 匯入戰報 Modal 狀態 ───
         const showImportReportModal = ref(false);
@@ -1685,7 +1691,8 @@ createApp({
                     console.warn("trade_log 讀取略過:", e);
                 }
 
-                // 計算 FIFO 庫存批次 (依時間由舊到新計算先進先出)
+                // 計算 FIFO 庫存批次與歷史對沖紀錄 (依時間由舊到新計算先進先出)
+                const fallbackHedged = [];
                 const ascTrades = [...parsedTrades].reverse();
                 ascTrades.forEach(t => {
                     const uid = t.uid;
@@ -1704,6 +1711,25 @@ createApp({
                         let needDeduct = t.shares;
                         while (needDeduct > 0 && fifoMap[uid].length > 0) {
                             const batch = fifoMap[uid][0];
+                            const deductShares = Math.min(batch.remainingShares, needDeduct);
+                            const buyCost = Math.round(batch.buyPrice * deductShares);
+                            const sellRevenue = Math.round(t.price * deductShares);
+                            const profit = sellRevenue - buyCost;
+                            const roi = buyCost > 0 ? Number(((profit / buyCost) * 100).toFixed(2)) : 0;
+
+                            fallbackHedged.push({
+                                code: t.code,
+                                name: t.name,
+                                broker: t.broker,
+                                buyDate: batch.buyDate,
+                                sellDate: t.date,
+                                shares: deductShares,
+                                buyCost: buyCost,
+                                sellRevenue: sellRevenue,
+                                profit: profit,
+                                roi: roi
+                            });
+
                             if (batch.remainingShares <= needDeduct) {
                                 needDeduct -= batch.remainingShares;
                                 fifoMap[uid].shift();
@@ -1714,6 +1740,41 @@ createApp({
                         }
                     }
                 });
+
+                // 優先從 SQLite fifo_cache 打撈權威歷史對沖結算總表
+                const dbHedged = [];
+                try {
+                    const fcRes = dbInstance.exec("SELECT stock_code, cache_data FROM fifo_cache");
+                    if (fcRes && fcRes.length > 0 && fcRes[0].values) {
+                        fcRes[0].values.forEach(row => {
+                            const sc = String(row[0] || '').trim().padStart(4, '0');
+                            try {
+                                const parsed = JSON.parse(row[1] || '{}');
+                                const list = (parsed.data && parsed.data.hedged_history) || parsed.hedged_history || [];
+                                list.forEach(rec => {
+                                    const sName = stockDictMap.value[sc] || stockDictMap.value[String(row[0]).trim()] || '---';
+                                    dbHedged.push({
+                                        code: sc,
+                                        name: sName,
+                                        broker: rec.broker || '---',
+                                        buyDate: rec.buy_date || rec.buyDate || '---',
+                                        sellDate: rec.sell_date || rec.sellDate || '---',
+                                        shares: rec.shares || 0,
+                                        buyCost: rec.buy_cost !== undefined ? rec.buy_cost : (rec.buyCost || 0),
+                                        sellRevenue: rec.sell_revenue !== undefined ? rec.sell_revenue : (rec.sellRevenue || 0),
+                                        profit: rec.profit !== undefined ? rec.profit : 0,
+                                        roi: rec.roi !== undefined ? rec.roi : 0
+                                    });
+                                });
+                            } catch (e) {}
+                        });
+                    }
+                } catch (e) {
+                    console.warn("fifo_cache 讀取略過:", e);
+                }
+
+                // 結算紀錄以權威快取為主，若無快取則以動態運算 fallbackHedged 備援
+                hedgedRecords.value = dbHedged.length > 0 ? dbHedged : fallbackHedged;
 
                 recentTradeLogs.value = parsedTrades;
 
@@ -1971,14 +2032,61 @@ createApp({
                 totalCost += (s.costPrice || 0) * (s.shares || 0);
             });
             const profit = Math.round(totalMarket - totalCost);
-            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : 0;
+            const rate = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(2) : '0.00';
+
+            // 依選定券商計算歷史已實現收益 (歷史銷帳)
+            const currentBroker = selectedBrokerFilter.value;
+            const validHedged = hedgedRecords.value.filter(r => {
+                if (currentBroker === '全部') return true;
+                return r.broker === currentBroker;
+            });
+            const totalRealized = Math.round(validHedged.reduce((sum, r) => sum + (Number(r.profit) || 0), 0));
+            // 全域綜合投資報酬率 ROI = ((未實現 + 已實現) / 總成本) * 100
+            const totalRoi = totalCost > 0 ? (((profit + totalRealized) / totalCost) * 100).toFixed(2) : '0.00';
+
             return {
                 totalMarketValue: totalMarket,
                 totalCost: totalCost,
                 unrealizedProfit: profit,
-                unrealizedProfitRate: rate
+                unrealizedProfitRate: rate,
+                realizedProfit: totalRealized,
+                totalRoi: totalRoi,
+                hedgedCount: validHedged.length
             };
         });
+
+        // ─── 計算屬性：篩選後的歷史對沖結算總表 (與券商及關鍵字連動) ───
+        const filteredHedgedRecords = computed(() => {
+            const broker = selectedBrokerFilter.value;
+            const kw = hedgedSearchKeyword.value.trim().toLowerCase();
+            let list = hedgedRecords.value.filter(r => {
+                if (broker !== '全部' && r.broker !== broker) return false;
+                if (kw) {
+                    const matchCode = String(r.code || '').toLowerCase().includes(kw);
+                    const matchName = String(r.name || '').toLowerCase().includes(kw);
+                    const matchBroker = String(r.broker || '').toLowerCase().includes(kw);
+                    if (!matchCode && !matchName && !matchBroker) return false;
+                }
+                return true;
+            });
+            // 排序：依賣出時間由新到舊 (最新對沖在最上方)
+            return list.sort((a, b) => {
+                const dateA = String(a.sellDate || '').replace(/\D/g, '');
+                const dateB = String(b.sellDate || '').replace(/\D/g, '');
+                return dateB.localeCompare(dateA);
+            });
+        });
+
+        // 點擊「已實現收益」KPI 卡片可直達並展開對沖結算總表
+        const scrollToHedgedSummary = () => {
+            isHedgedSummaryExpanded.value = true;
+            nextTick(() => {
+                const el = document.getElementById('hedgedSummarySection');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        };
 
         // ─── 計算屬性：個股戰報分類與「依交易日新到舊」排序 ───
         const starredStocks = computed(() => {
@@ -2082,14 +2190,25 @@ createApp({
 
                 const chartData = filteredHoldingStocks.value.map(s => ({
                     name: `${s.name} (${s.code})`,
-                    value: Math.round((s.price || 0) * (s.shares || 0))
+                    value: Math.round((s.price || 0) * (s.shares || 0)),
+                    profitRate: parseFloat(s.profitRate || 0)
                 }));
 
                 const option = {
                     backgroundColor: 'transparent',
                     tooltip: {
                         trigger: 'item',
-                        formatter: '{b}: ${c} ({d}%)',
+                        formatter: (params) => {
+                            const d = params.data || {};
+                            const rate = typeof d.profitRate === 'number' ? d.profitRate : 0;
+                            const isUp = rate >= 0;
+                            const rateColor = isUp ? '#f43f5e' : '#10b981'; // 紅漲綠跌 (台股規範)
+                            const sign = isUp ? '+' : '';
+                            const rateText = `${sign}${rate.toFixed(2)}%`;
+                            return `<div style="font-weight:bold;margin-bottom:2px;font-size:12px;">${params.name}</div>` +
+                                   `<div style="font-size:11px;">市值: <strong>$${(params.value || 0).toLocaleString()}</strong> (${params.percent}%)</div>` +
+                                   `<div style="font-size:11px;">收益率: <span style="color:${rateColor};font-weight:bold;">${rateText}</span></div>`;
+                        },
                         textStyle: { fontSize: 11 }
                     },
                     legend: {
@@ -5472,7 +5591,13 @@ createApp({
             triggerSync,
             triggerFileInput,
             handleDbFileSelected,
-            exportDatabaseFile
+            exportDatabaseFile,
+            hedgedRecords,
+            isHedgedSummaryExpanded,
+            fifoSubTab,
+            hedgedSearchKeyword,
+            filteredHedgedRecords,
+            scrollToHedgedSummary
         };
     }
 }).mount('#app');
