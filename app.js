@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.02');
+        const appVersion = ref('v2.20261011.03');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2791,12 +2791,25 @@ createApp({
             }
         };
 
-        // ─── 戰報全文 HTML 結構化與重點高亮渲染 ───
+        // ─── 戰報全文 Markdown 轉 HTML 結構化與重點高亮渲染 ───
         const formatReportHtml = (rawText) => {
             if (!rawText || typeof rawText !== 'string') return '';
-            const text = rawText.trim();
+            let text = rawText.trim();
             if (!text) return '';
 
+            // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
+            if (window.marked && typeof window.marked.parse === 'function') {
+                try {
+                    let html = window.marked.parse(text, { breaks: true, gfm: true });
+                    // 為章節標題【...】美化加上樣式
+                    html = html.replace(/(【[^】]+】|一、|二、|三、|四、|五、)/g, '<span class="text-sky-500 dark:text-sky-400 font-bold">$1</span>');
+                    return html;
+                } catch (e) {
+                    console.warn("marked.parse 解析異常，降級使用內建正則解析:", e);
+                }
+            }
+
+            // 2. 雙重容錯：內建輕量 Markdown 解析器 (無外網/離線環境)
             const escapeHtml = (str) => {
                 return str
                     .replace(/&/g, '&amp;')
@@ -2808,31 +2821,60 @@ createApp({
 
             const lines = text.split('\n');
             const resultHtml = [];
+            let inList = false;
 
             lines.forEach((line) => {
                 const trimmed = line.trim();
                 if (!trimmed) {
+                    if (inList) {
+                        resultHtml.push('</ul>');
+                        inList = false;
+                    }
                     resultHtml.push('<div class="h-2"></div>');
                     return;
                 }
 
-                const safeLine = escapeHtml(trimmed);
+                // 安全轉義
+                let safeLine = escapeHtml(trimmed);
+
+                // 解析 Markdown 粗體 **text**
+                safeLine = safeLine.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
 
                 // 判斷章節大標題 (例如 【...】 或 一、 或 二、)
                 if (/^(【[^】]+】|一、|二、|三、|四、|五、|📌|🎯|📊|💡|⚡|🔍)/.test(trimmed)) {
+                    if (inList) {
+                        resultHtml.push('</ul>');
+                        inList = false;
+                    }
                     resultHtml.push(`<div class="mt-3.5 mb-1.5 font-bold text-sky-500 dark:text-sky-400 text-xs flex items-center space-x-1.5 border-l-2 border-sky-500 pl-2 bg-sky-500/5 py-1 rounded-r shadow-xs"><span>${safeLine}</span></div>`);
                     return;
                 }
 
                 // 判斷條列點 (•, -, *, 數字.)
-                if (/^([•\-\*]|\d+[\.、])\s*/.test(trimmed)) {
-                    resultHtml.push(`<div class="pl-2.5 my-1 leading-relaxed text-xs text-slate-700 dark:text-slate-300 flex items-start"><span class="mr-1.5 text-sky-500 dark:text-sky-400 font-bold shrink-0">▪</span><span>${safeLine}</span></div>`);
+                const listMatch = trimmed.match(/^([•\-\*]|\d+[\.、])\s+(.*)$/);
+                if (listMatch) {
+                    if (!inList) {
+                        resultHtml.push('<ul class="space-y-1 my-1">');
+                        inList = true;
+                    }
+                    let itemContent = escapeHtml(listMatch[2]);
+                    itemContent = itemContent.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+                    resultHtml.push(`<li class="pl-2 leading-relaxed text-xs text-slate-700 dark:text-slate-300 flex items-start"><span class="mr-1.5 text-sky-500 dark:text-sky-400 font-bold shrink-0">▪</span><span>${itemContent}</span></li>`);
                     return;
+                }
+
+                if (inList) {
+                    resultHtml.push('</ul>');
+                    inList = false;
                 }
 
                 // 一般段落行
                 resultHtml.push(`<p class="leading-relaxed my-1 text-xs text-slate-700 dark:text-slate-300 font-sans">${safeLine}</p>`);
             });
+
+            if (inList) {
+                resultHtml.push('</ul>');
+            }
 
             return resultHtml.join('');
         };

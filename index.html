@@ -24,6 +24,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <!-- Google Identity Services (GIS OAuth 2.0) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Marked.js Markdown 解析器 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -41,6 +43,71 @@
         /* 台股紅漲綠跌三角符號專用樣式 */
         .triangle-buy { color: #f43f5e; font-weight: 900; }
         .triangle-sell { color: #10b981; font-weight: 900; }
+
+        /* 戰報 Markdown 排版美化樣式 */
+        .report-markdown-body h1, .report-markdown-body h2, .report-markdown-body h3, .report-markdown-body h4 {
+            font-weight: 700;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+        .report-markdown-body h1, .report-markdown-body h2 {
+            font-size: 0.875rem;
+            color: #38bdf8;
+            border-left: 3px solid #0284c7;
+            padding-left: 0.5rem;
+            background: rgba(2, 132, 199, 0.08);
+            border-radius: 0 0.375rem 0.375rem 0;
+            padding-top: 0.25rem;
+            padding-bottom: 0.25rem;
+        }
+        .report-markdown-body h3, .report-markdown-body h4 {
+            font-size: 0.8125rem;
+            color: #0284c7;
+        }
+        .dark .report-markdown-body h3, .dark .report-markdown-body h4 {
+            color: #38bdf8;
+        }
+        .report-markdown-body p {
+            margin-top: 0.375rem;
+            margin-bottom: 0.375rem;
+            line-height: 1.625;
+            font-size: 0.75rem;
+        }
+        .report-markdown-body ul, .report-markdown-body ol {
+            margin-top: 0.375rem;
+            margin-bottom: 0.5rem;
+            padding-left: 1rem;
+            font-size: 0.75rem;
+            line-height: 1.625;
+        }
+        .report-markdown-body ul { list-style-type: disc; }
+        .report-markdown-body ol { list-style-type: decimal; }
+        .report-markdown-body li {
+            margin-top: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        .report-markdown-body strong, .report-markdown-body b {
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .dark .report-markdown-body strong, .dark .report-markdown-body b {
+            color: #f8fafc;
+        }
+        .report-markdown-body blockquote {
+            border-left: 3px solid #64748b;
+            padding-left: 0.75rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+            color: #64748b;
+            font-style: italic;
+        }
+        .report-markdown-body hr {
+            margin-top: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-color: rgba(148, 163, 184, 0.2);
+        }
     </style>
 </head>
 <body class="bg-[#0b0f19] text-slate-100 flex justify-center min-h-screen transition-colors duration-200">
@@ -1000,7 +1067,7 @@
 
                         <!-- 智慧 HTML 渲染內容 -->
                         <div v-if="currentReportStock?.fullStrategyContent" 
-                             class="select-text space-y-1.5 leading-relaxed" 
+                             class="report-markdown-body select-text space-y-1.5 leading-relaxed text-xs text-slate-700 dark:text-slate-300" 
                              v-html="formatReportHtml(currentReportStock.fullStrategyContent)">
                         </div>
                         <div v-else class="text-xs text-slate-400 py-6 text-center">
@@ -1549,6 +1616,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261011.02"></script>
+    <script src="app.js?v=2.20261011.03"></script>
 </body>
 </html>
