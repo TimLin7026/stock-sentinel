@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.09');
+        const appVersion = ref('v2.20261011.10');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -1247,6 +1247,35 @@ createApp({
             const targetStock = dir < 0 ? prevChartStock.value : nextChartStock.value;
             if (targetStock) {
                 openStockChartModal(targetStock);
+            }
+        };
+
+        // ─── 走勢圖觸控手勢滑動切換模組 (左右 Swipe 切換上一檔 / 下一檔) ───
+        let chartTouchStartX = 0;
+        let chartTouchStartY = 0;
+
+        const handleChartTouchStart = (e) => {
+            if (!e.touches || e.touches.length === 0) return;
+            chartTouchStartX = e.touches[0].clientX;
+            chartTouchStartY = e.touches[0].clientY;
+        };
+
+        const handleChartTouchEnd = (e) => {
+            if (!e.changedTouches || e.changedTouches.length === 0) return;
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const diffX = endX - chartTouchStartX;
+            const diffY = endY - chartTouchStartY;
+
+            // 水平滑動距離大於 45px，且水平位移明顯大於垂直位移 (杜絕干擾垂直滾動)
+            if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY) * 1.4) {
+                if (diffX < 0) {
+                    // 向左滑動 ➔ 下一檔
+                    switchToAdjacentChartStock(1);
+                } else {
+                    // 向右滑動 ➔ 上一檔
+                    switchToAdjacentChartStock(-1);
+                }
             }
         };
 
@@ -5585,6 +5614,8 @@ createApp({
             prevChartStock,
             nextChartStock,
             switchToAdjacentChartStock,
+            handleChartTouchStart,
+            handleChartTouchEnd,
             changeChartDays,
             changeSubOscTab,
             isAppUnlocked,
