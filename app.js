@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261010.24');
+        const appVersion = ref('v2.20261011.01');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2735,11 +2735,99 @@ createApp({
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
                 }
-                showToast(`📋 已成功複製【${currentReportStock.value.code} ${currentReportStock.value.name}】戰報全文！`);
-            } catch (err) {
-                console.error("複製戰報全文失敗:", err);
-                alert(`❌ 複製失敗：${err.message}`);
+        const closeFullReportModal = () => {
+            showFullReportModal.value = false;
+        };
+
+        // ─── 完整戰報個股循環切換模組 (以當前 Tab/篩選後的 currentFilteredStocks 為基準) ───
+        const currentReportStockIndex = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0 || !currentReportStock.value) return -1;
+            const curCode = String(currentReportStock.value.code || '').trim();
+            const curBroker = String(currentReportStock.value.broker || '').trim();
+            const curUid = currentReportStock.value.uid;
+            let idx = list.findIndex(s => (curUid && s.uid === curUid) || (s.code === curCode && s.broker === curBroker));
+            if (idx === -1) {
+                idx = list.findIndex(s => s.code === curCode);
             }
+            return idx;
+        });
+
+        const prevReportStock = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return null;
+            const idx = currentReportStockIndex.value;
+            if (idx === -1) return list[list.length - 1];
+            const prevIdx = (idx - 1 + list.length) % list.length;
+            return list[prevIdx];
+        });
+
+        const nextReportStock = computed(() => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return null;
+            const idx = currentReportStockIndex.value;
+            if (idx === -1) return list[0];
+            const nextIdx = (idx + 1) % list.length;
+            return list[nextIdx];
+        });
+
+        const switchToAdjacentReportStock = (dir) => {
+            const list = currentFilteredStocks.value;
+            if (!list || list.length === 0) return;
+            const targetStock = dir < 0 ? prevReportStock.value : nextReportStock.value;
+            if (targetStock) {
+                currentReportStock.value = targetStock;
+                nextTick(() => {
+                    const scrollContainer = document.getElementById('full-report-scroll-container');
+                    if (scrollContainer) scrollContainer.scrollTop = 0;
+                });
+            }
+        };
+
+        // ─── 戰報全文 HTML 結構化與重點高亮渲染 ───
+        const formatReportHtml = (rawText) => {
+            if (!rawText || typeof rawText !== 'string') return '';
+            const text = rawText.trim();
+            if (!text) return '';
+
+            const escapeHtml = (str) => {
+                return str
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            };
+
+            const lines = text.split('\n');
+            const resultHtml = [];
+
+            lines.forEach((line) => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    resultHtml.push('<div class="h-2"></div>');
+                    return;
+                }
+
+                const safeLine = escapeHtml(trimmed);
+
+                // 判斷章節大標題 (例如 【...】 或 一、 或 二、)
+                if (/^(【[^】]+】|一、|二、|三、|四、|五、|📌|🎯|📊|💡|⚡|🔍)/.test(trimmed)) {
+                    resultHtml.push(`<div class="mt-3.5 mb-1.5 font-bold text-sky-500 dark:text-sky-400 text-xs flex items-center space-x-1.5 border-l-2 border-sky-500 pl-2 bg-sky-500/5 py-1 rounded-r shadow-xs"><span>${safeLine}</span></div>`);
+                    return;
+                }
+
+                // 判斷條列點 (•, -, *, 數字.)
+                if (/^([•\-\*]|\d+[\.、])\s*/.test(trimmed)) {
+                    resultHtml.push(`<div class="pl-2.5 my-1 leading-relaxed text-xs text-slate-700 dark:text-slate-300 flex items-start"><span class="mr-1.5 text-sky-500 dark:text-sky-400 font-bold shrink-0">▪</span><span>${safeLine}</span></div>`);
+                    return;
+                }
+
+                // 一般段落行
+                resultHtml.push(`<p class="leading-relaxed my-1 text-xs text-slate-700 dark:text-slate-300 font-sans">${safeLine}</p>`);
+            });
+
+            return resultHtml.join('');
         };
 
         // ─── 🧠 手機端「匯入戰報」模組 (100% 復刻電腦版正則解析) ───
@@ -5281,6 +5369,12 @@ createApp({
             showFullReportModal,
             currentReportStock,
             openFullReportModal,
+            closeFullReportModal,
+            currentReportStockIndex,
+            prevReportStock,
+            nextReportStock,
+            switchToAdjacentReportStock,
+            formatReportHtml,
             copyFullReportText,
             parseReportText,
             submitImportReport,
