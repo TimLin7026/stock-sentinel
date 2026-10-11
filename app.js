@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.01');
+        const appVersion = ref('v2.20261011.02');
 
         // ─── 📱/🖥️ 主畫面版面 RWD 模式 (手機窄版 mobile / 電腦寬版 wide) ───
         const appLayout = ref(localStorage.getItem('sentinel_app_layout') || 'mobile');
@@ -2735,6 +2735,13 @@ createApp({
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
                 }
+                showToast(`📋 已成功複製【${currentReportStock.value.code} ${currentReportStock.value.name}】戰報全文！`);
+            } catch (err) {
+                console.error("複製戰報全文失敗:", err);
+                alert(`❌ 複製失敗：${err.message}`);
+            }
+        };
+
         const closeFullReportModal = () => {
             showFullReportModal.value = false;
         };
