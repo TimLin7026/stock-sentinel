@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261011.11');
+        const appVersion = ref('v2.20261012.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -218,18 +218,103 @@ createApp({
             sizeKB: 0
         });
 
+        // ─── 👥 多帳號命名空間沙盒工具函式與分頁級 Session 隔離 ───
+        const sanitizeAccountEmail = (email) => {
+            if (!email || typeof email !== 'string') return 'guest';
+            return email.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+        };
+
+        const getUserDbStorageKey = (email) => {
+            const safe = sanitizeAccountEmail(email);
+            return `sentinel_db_bytes_${safe}`;
+        };
+
+        const getUserTokenKey = (email) => {
+            const safe = sanitizeAccountEmail(email);
+            return `sentinel_gdrive_token_${safe}`;
+        };
+
+        const getKnownAccounts = () => {
+            try {
+                const raw = localStorage.getItem('sentinel_known_accounts');
+                if (raw) return JSON.parse(raw);
+            } catch (e) {}
+            const legacyEmail = localStorage.getItem('sentinel_gdrive_email');
+            if (legacyEmail) {
+                return [{ email: legacyEmail, lastUsed: new Date().toISOString() }];
+            }
+            return [];
+        };
+
+        const knownAccounts = ref(getKnownAccounts());
+
+        const saveKnownAccount = (email) => {
+            if (!email || typeof email !== 'string') return;
+            const list = getKnownAccounts();
+            const idx = list.findIndex(a => a.email.toLowerCase() === email.toLowerCase());
+            const nowIso = new Date().toISOString();
+            if (idx >= 0) {
+                list[idx].lastUsed = nowIso;
+            } else {
+                list.push({ email, lastUsed: nowIso });
+            }
+            localStorage.setItem('sentinel_known_accounts', JSON.stringify(list));
+            knownAccounts.value = [...list];
+        };
+
+        const removeKnownAccount = (email) => {
+            const list = getKnownAccounts().filter(a => a.email.toLowerCase() !== email.toLowerCase());
+            localStorage.setItem('sentinel_known_accounts', JSON.stringify(list));
+            knownAccounts.value = [...list];
+            localStorage.removeItem(getUserTokenKey(email));
+        };
+
+        // 優先從 sessionStorage 解析當前分頁帳號 (實現同瀏覽器多分頁各開各的帳號不衝突)
+        const resolveInitialAccountEmail = () => {
+            const sessionEmail = sessionStorage.getItem('sentinel_session_email');
+            if (sessionEmail) return sessionEmail;
+            const activeEmail = localStorage.getItem('sentinel_active_email') || localStorage.getItem('sentinel_gdrive_email') || '';
+            if (activeEmail) {
+                sessionStorage.setItem('sentinel_session_email', activeEmail);
+            }
+            return activeEmail;
+        };
+
+        const initialAccountEmail = resolveInitialAccountEmail();
+        const initialAccountToken = initialAccountEmail 
+            ? (localStorage.getItem(getUserTokenKey(initialAccountEmail)) || localStorage.getItem('sentinel_gdrive_token') || '') 
+            : (localStorage.getItem('sentinel_gdrive_token') || '');
+
         // ─── Google 帳號與雲端狀態 (已對齊專屬 Web Client ID 與雲端資料夾) ───
         const DEFAULT_CLIENT_ID = '790121467016-vpncpfbmsrnldq9fhpiig36cp8b36oub.apps.googleusercontent.com';
         const googleClientId = ref(localStorage.getItem('sentinel_google_client_id') || DEFAULT_CLIENT_ID);
         let tokenClient = null;
-        const googleAccessToken = ref(localStorage.getItem('sentinel_gdrive_token') || '');
+        const googleAccessToken = ref(initialAccountToken);
         const googleUser = ref({
-            isLoggedIn: !!localStorage.getItem('sentinel_gdrive_token'),
-            email: localStorage.getItem('sentinel_gdrive_email') || '',
+            isLoggedIn: !!initialAccountToken,
+            email: initialAccountEmail,
             lastSyncTime: localStorage.getItem('sentinel_last_sync_time') || '',
             driveFileId: localStorage.getItem('sentinel_drive_file_id') || '',
             driveFolderName: '台股戰情室_雲端同步'
         });
+
+        // 平滑遷移舊版未隔離資料庫保險
+        const ensureAccountDbMigrated = async (email) => {
+            if (!window.localforage || !email || email === 'guest') return;
+            const userKey = getUserDbStorageKey(email);
+            try {
+                const userDb = await localforage.getItem(userKey);
+                if (!userDb) {
+                    const legacyDb = await localforage.getItem('sentinel_db_bytes');
+                    if (legacyDb) {
+                        console.log(`[MIGRATE] 檢測到舊版未隔離資料庫，平滑遷移至沙盒: ${userKey}`);
+                        await localforage.setItem(userKey, legacyDb);
+                    }
+                }
+            } catch (e) {
+                console.warn("平滑遷移警告:", e);
+            }
+        };
 
         const syncStatus = ref({
             loading: false,
@@ -2093,9 +2178,10 @@ createApp({
                     } catch (e) {}
                 }
 
-                // 儲存至 IndexedDB
+                // 儲存至專屬帳號 IndexedDB 沙盒
                 if (window.localforage) {
-                    await localforage.setItem('sentinel_db_bytes', arrayBuffer);
+                    const userKey = getUserDbStorageKey(googleUser.value.email);
+                    await localforage.setItem(userKey, arrayBuffer);
                 }
 
                 // 重新渲染資產配置甜甜圈圖
@@ -2481,7 +2567,8 @@ createApp({
         const saveDbToIndexedDb = async () => {
             if (dbInstance && window.localforage) {
                 const u8 = dbInstance.export();
-                await localforage.setItem('sentinel_db_bytes', u8.buffer);
+                const userKey = getUserDbStorageKey(googleUser.value.email);
+                await localforage.setItem(userKey, u8.buffer);
             }
         };
 
@@ -4715,10 +4802,11 @@ createApp({
 
         const isFetchingCloudStats = ref(false);
 
-        // ─── Google 登入、靜默重新授權與智慧心跳監控 ───
+        // ─── Google 登入、靜默重新授權與智慧心跳監控 (支援多帳號原生隔離) ───
         const silentRefreshGoogleToken = (isSilent = true) => {
             if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return;
-            const savedEmail = localStorage.getItem('sentinel_gdrive_email') || googleUser.value.email || '';
+            const curEmail = googleUser.value.email || '';
+            if (!curEmail) return;
             
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: googleClientId.value.trim(),
@@ -4730,9 +4818,11 @@ createApp({
                         return;
                     }
                     googleAccessToken.value = resp.access_token;
+                    // 保存至專屬帳號 Token
+                    localStorage.setItem(getUserTokenKey(curEmail), resp.access_token);
                     localStorage.setItem('sentinel_gdrive_token', resp.access_token);
                     googleUser.value.isLoggedIn = true;
-                    console.log("🟢 Google Token 靜默刷新/重連成功！");
+                    console.log(`🟢 Google Token (${curEmail}) 靜默刷新成功！`);
 
                     // 重新查詢雲端最新狀態
                     await fetchCloudDbStats();
@@ -4740,14 +4830,13 @@ createApp({
             });
 
             try {
-                // prompt: '' 靜默無彈窗授權
-                tokenClient.requestAccessToken({ prompt: '', hint: savedEmail });
+                tokenClient.requestAccessToken({ prompt: '', hint: curEmail });
             } catch (e) {
                 console.warn("requestAccessToken 靜默呼叫失敗:", e);
             }
         };
 
-        const handleGoogleLogin = () => {
+        const handleGoogleLogin = (forceConsent = false, targetHintEmail = null) => {
             if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
                 alert("⚠️ Google 授權模組載入中，請稍候重試或檢查網路連線。");
                 return;
@@ -4761,50 +4850,120 @@ createApp({
                         alert("❌ Google 授權失敗: " + resp.error);
                         return;
                     }
-                    googleAccessToken.value = resp.access_token;
-                    localStorage.setItem('sentinel_gdrive_token', resp.access_token);
-                    googleUser.value.isLoggedIn = true;
 
-                    // 抓取使用者 Email
+                    // 抓取登入使用者 Email
+                    let loggedEmail = targetHintEmail || '';
                     try {
                         const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                             headers: { Authorization: `Bearer ${resp.access_token}` }
                         });
                         const uData = await userRes.json();
                         if (uData.email) {
-                            googleUser.value.email = uData.email;
-                            localStorage.setItem('sentinel_gdrive_email', uData.email);
+                            loggedEmail = uData.email;
                         }
                     } catch (e) {}
 
-                    showToast('🎉 Google 帳號授權成功！正在載入專屬戰情室...', 3000);
+                    if (!loggedEmail) loggedEmail = 'google_user';
+
+                    // 1. 綁定分頁 Session 與全域預設
+                    sessionStorage.setItem('sentinel_session_email', loggedEmail);
+                    localStorage.setItem('sentinel_active_email', loggedEmail);
+                    localStorage.setItem('sentinel_gdrive_email', loggedEmail);
+
+                    // 2. 存入專屬帳號 Token
+                    localStorage.setItem(getUserTokenKey(loggedEmail), resp.access_token);
+                    localStorage.setItem('sentinel_gdrive_token', resp.access_token);
+
+                    googleAccessToken.value = resp.access_token;
+                    googleUser.value.isLoggedIn = true;
+                    googleUser.value.email = loggedEmail;
+
+                    // 3. 記錄到已知帳號名單
+                    saveKnownAccount(loggedEmail);
+
+                    // 4. 平滑資料庫遷移
+                    await ensureAccountDbMigrated(loggedEmail);
+
+                    // 5. 載入該帳號專屬的本地資料庫
+                    if (window.localforage) {
+                        const userKey = getUserDbStorageKey(loggedEmail);
+                        const userDb = await localforage.getItem(userKey);
+                        if (userDb) {
+                            await loadDatabaseFromArrayBuffer(userDb, `${loggedEmail} 本機沙盒`);
+                        }
+                    }
+
+                    showToast(`🎉 帳號【${loggedEmail}】授權成功！已載入專屬戰情室`, 3000);
                     await fetchCloudDbStats();
 
-                    // ⚡ 連鎖自動載入：
-                    // 1. 同步全市場 2,385 檔行情快照
+                    // 6. 連鎖自動同步
                     syncMarketSnapshot().catch(e => console.warn("快照同步警告:", e));
-                    // 2. 雙向合流個人雲端帳本
                     executeTwoWaySync().catch(e => console.warn("雲端帳本同步警告:", e));
                 }
             });
 
-            tokenClient.requestAccessToken({ prompt: 'consent' });
+            tokenClient.requestAccessToken({ 
+                prompt: forceConsent ? 'consent select_account' : 'consent',
+                hint: targetHintEmail || ''
+            });
+        };
+
+        // 新增/登入其他 Google 帳號
+        const addNewGoogleAccount = () => {
+            handleGoogleLogin(true, null);
+        };
+
+        // 快速切換帳號 (一鍵切換本地 SQLite 沙盒與雲端帳本)
+        const switchAccount = async (targetEmail) => {
+            if (!targetEmail || targetEmail === googleUser.value.email) return;
+
+            const tokenKey = getUserTokenKey(targetEmail);
+            const savedToken = localStorage.getItem(tokenKey);
+
+            // 1. 更新當前分頁 Session
+            sessionStorage.setItem('sentinel_session_email', targetEmail);
+            localStorage.setItem('sentinel_active_email', targetEmail);
+            googleUser.value.email = targetEmail;
+
+            // 2. 載入目標帳號專屬本地資料庫沙盒
+            if (window.localforage) {
+                const userKey = getUserDbStorageKey(targetEmail);
+                await ensureAccountDbMigrated(targetEmail);
+                const userDb = await localforage.getItem(userKey);
+                if (userDb) {
+                    await loadDatabaseFromArrayBuffer(userDb, `${targetEmail} 專屬沙盒`);
+                } else {
+                    stockList.value = [];
+                    isDbLoaded.value = false;
+                }
+            }
+
+            // 3. 若有現成 Token 立即切換，否則引導授權
+            if (savedToken) {
+                googleAccessToken.value = savedToken;
+                googleUser.value.isLoggedIn = true;
+                showToast(`🔄 已切換至帳號：${targetEmail}`, 2500);
+                saveKnownAccount(targetEmail);
+                await fetchCloudDbStats();
+                executeTwoWaySync().catch(e => console.warn("切換後同步警告:", e));
+            } else {
+                showToast(`🔑 正在為 ${targetEmail} 喚醒 Google 授權...`, 2000);
+                handleGoogleLogin(false, targetEmail);
+            }
         };
 
         const handleGoogleLogout = () => {
-            if (confirm('🔒 確定要解除 Google 帳號綁定並登出戰情室嗎？\n登出後將鎖定主要戰情功能。')) {
+            const curEmail = googleUser.value.email;
+            if (confirm(`🔒 確定要解除【${curEmail || '當前帳號'}】的授權並登出嗎？\n（本機的離線帳本仍會安全保留於專屬沙盒中）`)) {
+                if (curEmail) {
+                    localStorage.removeItem(getUserTokenKey(curEmail));
+                }
+                sessionStorage.removeItem('sentinel_session_email');
                 googleUser.value.isLoggedIn = false;
                 googleUser.value.email = '';
                 googleAccessToken.value = '';
-                localStorage.removeItem('sentinel_gdrive_token');
-                localStorage.removeItem('sentinel_gdrive_email');
-                localStorage.removeItem('sentinel_last_sync_time');
                 stockList.value = [];
                 isDbLoaded.value = false;
-                currentMarketSnapshotData = null;
-                if (window.localforage) {
-                    localforage.removeItem('sentinel_db_bytes').catch(() => {});
-                }
                 cloudDbStats.value = {
                     lastModified: '未連接雲端或尚未查詢',
                     tradeLogCount: '---',
@@ -4813,18 +4972,19 @@ createApp({
                     fileId: '',
                     sizeKB: 0
                 };
-                showToast('👋 已安全登出戰情室', 3000);
+                showToast('👋 已登出當前帳號', 3000);
             }
         };
 
         // 檢查 Token 是否過期並在需要時自動重連
         const checkGoogleTokenFreshness = async () => {
-            const savedToken = localStorage.getItem('sentinel_gdrive_token');
-            const savedEmail = localStorage.getItem('sentinel_gdrive_email');
+            const curEmail = googleUser.value.email;
+            if (!curEmail) return;
 
-            if (!googleAccessToken.value && savedToken && savedEmail) {
+            const savedToken = localStorage.getItem(getUserTokenKey(curEmail)) || localStorage.getItem('sentinel_gdrive_token');
+
+            if (!googleAccessToken.value && savedToken) {
                 googleAccessToken.value = savedToken;
-                googleUser.value.email = savedEmail;
                 googleUser.value.isLoggedIn = true;
             }
 
@@ -4842,9 +5002,7 @@ createApp({
                     if (uData.email) {
                         googleUser.value.email = uData.email;
                         googleUser.value.isLoggedIn = true;
-                        localStorage.setItem('sentinel_gdrive_email', uData.email);
                     }
-                    // Token 仍有效，查詢雲端狀態
                     await fetchCloudDbStats();
                 }
             } catch (e) {
@@ -5545,12 +5703,21 @@ createApp({
                 if (chartInstance) chartInstance.resize();
             });
 
-            // 優先讀取 IndexedDB 實現 0 延遲秒開
+            // 優先讀取專屬帳號 IndexedDB 沙盒實現 0 延遲秒開 (含平滑相容遷移)
             if (window.localforage) {
                 try {
-                    const cachedBuffer = await localforage.getItem('sentinel_db_bytes');
+                    const curEmail = googleUser.value.email;
+                    if (curEmail) {
+                        await ensureAccountDbMigrated(curEmail);
+                    }
+                    const userKey = getUserDbStorageKey(curEmail);
+                    let cachedBuffer = await localforage.getItem(userKey);
+                    // 向後相容訪客或首發版
+                    if (!cachedBuffer && (!curEmail || curEmail === 'guest')) {
+                        cachedBuffer = await localforage.getItem('sentinel_db_bytes');
+                    }
                     if (cachedBuffer) {
-                        await loadDatabaseFromArrayBuffer(cachedBuffer, '手機離線快取');
+                        await loadDatabaseFromArrayBuffer(cachedBuffer, `${curEmail || '本地'} 離線快取`);
                         updateLocalDbStats();
                     }
                 } catch (e) {
@@ -5609,6 +5776,9 @@ createApp({
             tradeDateRangeFilter,
             googleUser,
             googleClientId,
+            knownAccounts,
+            switchAccount,
+            addNewGoogleAccount,
             syncStatus,
             isDbLoaded,
             dbInfoText,

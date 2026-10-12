@@ -1148,14 +1148,46 @@
                             </div>
 
                             <!-- 登入 / 登出按鈕 -->
-                            <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin" :disabled="syncStatus.loading" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition disabled:opacity-50">
+                            <button v-if="!googleUser.isLoggedIn" @click="handleGoogleLogin(false)" :disabled="syncStatus.loading" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center space-x-2 shadow transition disabled:opacity-50">
                                 <i class="fa-solid fa-link"></i>
                                 <span>立即連結 Google 帳號進行 Drive 授權</span>
                             </button>
                             <button v-else @click="handleGoogleLogout" :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-rose-300 border-rose-900/30' : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'" class="w-full font-bold py-2 rounded-xl text-xs flex items-center justify-center space-x-2 transition border">
                                 <i class="fa-solid fa-right-from-bracket"></i>
-                                <span>解除 Google 帳號連結</span>
+                                <span>解除 Google 帳號連結 (保留離線帳本)</span>
                             </button>
+
+                            <!-- 👥 多帳號沙盒切換看板 -->
+                            <div v-if="knownAccounts && knownAccounts.length > 0" class="pt-2 border-t border-slate-800/40 space-y-2">
+                                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-400">
+                                    <span class="flex items-center"><i class="fa-solid fa-users-viewfinder text-sky-400 mr-1.5"></i>本機多帳號沙盒名冊</span>
+                                    <span class="text-[10px] text-slate-500">獨立資料庫隔離</span>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <div v-for="acc in knownAccounts" :key="acc.email" 
+                                         :class="acc.email === googleUser.email ? (theme === 'dark' ? 'bg-sky-950/40 border-sky-600/50' : 'bg-sky-50 border-sky-300') : (theme === 'dark' ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-200')"
+                                         class="p-2 rounded-xl border flex items-center justify-between text-xs transition">
+                                        <div class="flex items-center space-x-2 min-w-0 flex-1 mr-2">
+                                            <i class="fa-brands fa-google text-xs" :class="acc.email === googleUser.email ? 'text-sky-400' : 'text-slate-500'"></i>
+                                            <span class="font-mono truncate text-[11px]" :class="acc.email === googleUser.email ? 'font-bold text-sky-400' : (theme === 'dark' ? 'text-slate-300' : 'text-slate-700')">{{ acc.email }}</span>
+                                        </div>
+                                        <div class="flex items-center space-x-1 flex-shrink-0">
+                                            <span v-if="acc.email === googleUser.email" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                                                <i class="fa-solid fa-circle-check text-[9px]"></i>
+                                                <span>使用中</span>
+                                            </span>
+                                            <button v-else @click="switchAccount(acc.email)" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-sky-600 hover:bg-sky-500 text-white transition shadow-sm active:scale-95">
+                                                切換
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- ➕ 登入其他帳號按鈕 -->
+                                <button @click="addNewGoogleAccount" class="w-full py-1.5 px-3 rounded-xl border border-dashed border-sky-500/40 hover:border-sky-400 text-sky-400 hover:text-sky-300 text-[11px] font-medium flex items-center justify-center space-x-1.5 transition">
+                                    <i class="fa-solid fa-user-plus text-xs"></i>
+                                    <span>登入或連結另一個 Google 帳號</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- 📊 全市場盤後行情快照狀態 -->
@@ -2033,6 +2065,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261011.11"></script>
+    <script src="app.js?v=2.20261012.01"></script>
 </body>
 </html>
