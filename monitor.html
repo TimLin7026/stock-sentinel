@@ -113,11 +113,130 @@
                 </div>
 
                 <div class="flex items-center space-x-2 w-full sm:w-auto">
-                    <button @click="fetchHealthReport" :disabled="isLoadingReport"
+                    <button @click="fetchHealthReport(); fetchWorkflowRuns();" :disabled="isLoadingReport || isLoadingWorkflow"
                             class="flex-1 sm:flex-none text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5">
-                        <i class="fa-solid fa-rotate" :class="{ 'fa-spin': isLoadingReport }"></i>
+                        <i class="fa-solid fa-rotate" :class="{ 'fa-spin': isLoadingReport || isLoadingWorkflow }"></i>
                         <span>刷新狀態</span>
                     </button>
+                </div>
+            </div>
+
+            <!-- 1.5. ⚙️ GitHub Actions 雲端大腦工作流即時動態與直達傳送門 -->
+            <div class="bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 border border-indigo-900/50 rounded-3xl p-5 shadow-xl space-y-4">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-700 flex items-center justify-center text-indigo-400">
+                            <i class="fa-solid fa-gears text-sm"></i>
+                        </div>
+                        <div>
+                            <h2 class="font-bold text-sm sm:text-base text-slate-100 flex items-center space-x-2">
+                                <span>GitHub 雲端大腦工作流動態</span>
+                                <span v-if="isWorkflowRunning" class="flex h-2 w-2 relative">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                                </span>
+                            </h2>
+                            <p class="text-[11px] text-slate-400">即時監控 GitHub Actions 虛擬機排程與執行狀態</p>
+                        </div>
+                    </div>
+
+                    <!-- 🔗 直達 GitHub Actions 官方頁面按鈕 -->
+                    <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                        <button @click="fetchWorkflowRuns" :disabled="isLoadingWorkflow" title="手動刷新工作流狀態"
+                                class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl border border-slate-700 transition flex items-center space-x-1">
+                            <i class="fa-solid fa-arrows-rotate text-[11px]" :class="{ 'fa-spin': isLoadingWorkflow }"></i>
+                            <span class="hidden sm:inline">檢查進度</span>
+                        </button>
+                        <a href="https://github.com/TimLin7026/stock-sentinel/actions/workflows/market_sync.yml" target="_blank" rel="noopener noreferrer"
+                           class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5 active:scale-95">
+                            <i class="fa-brands fa-github text-sm"></i>
+                            <span>前往 GitHub Actions 頁面</span>
+                            <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 最新執行動態指標 -->
+                <div v-if="latestWorkflowRun" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <span class="text-slate-400 text-[11px] mb-1">最新狀態</span>
+                        <div class="flex items-center space-x-1.5">
+                            <span :class="getWorkflowStatusBadge(latestWorkflowRun).class" class="text-xs px-2.5 py-1 rounded-lg border font-bold font-mono">
+                                {{ getWorkflowStatusBadge(latestWorkflowRun).text }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <span class="text-slate-400 text-[11px] mb-1">觸發模式</span>
+                        <div class="font-bold text-slate-200">
+                            {{ getWorkflowEventLabel(latestWorkflowRun.event) }}
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <span class="text-slate-400 text-[11px] mb-1">啟動時間 / 耗時</span>
+                        <div>
+                            <div class="font-mono text-slate-200 font-semibold">{{ formatIsoToTaipei(latestWorkflowRun.run_started_at || latestWorkflowRun.created_at) }}</div>
+                            <div class="text-[10px] text-sky-400 mt-0.5">總耗時: {{ formatRunDuration(latestWorkflowRun) }}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
+                        <span class="text-slate-400 text-[11px] mb-1">本次執行紀錄</span>
+                        <div>
+                            <a :href="latestWorkflowRun.html_url" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center space-x-1 text-sky-400 hover:text-sky-300 font-bold transition">
+                                <span>#{{ latestWorkflowRun.id.toString().slice(-6) }} 查看詳細 Log</span>
+                                <i class="fa-solid fa-angle-right text-[10px]"></i>
+                            </a>
+                            <div class="text-[10px] text-slate-500 mt-0.5">分支: {{ latestWorkflowRun.head_branch }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="text-center py-4 text-xs text-slate-500">
+                    <i class="fa-solid fa-spinner fa-spin mr-1"></i> 正在連線 GitHub API 查詢工作流狀態...
+                </div>
+
+                <!-- 最近 5 次執行歷史折疊 -->
+                <div v-if="workflowRuns.length > 1" class="pt-2 border-t border-slate-800/80">
+                    <button @click="showWorkflowHistory = !showWorkflowHistory" class="text-xs text-slate-400 hover:text-slate-200 flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-clock-rotate-left text-[11px]"></i>
+                        <span>{{ showWorkflowHistory ? '收合歷史執行紀錄' : '展開最近 5 次歷史執行紀錄' }}</span>
+                        <i class="fa-solid" :class="showWorkflowHistory ? 'fa-angle-up' : 'fa-angle-down'"></i>
+                    </button>
+
+                    <div v-if="showWorkflowHistory" class="mt-3 overflow-x-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-slate-400 text-[11px]">
+                                    <th class="py-2 px-3">序號 / 狀態</th>
+                                    <th class="py-2 px-3">觸發方式</th>
+                                    <th class="py-2 px-3">啟動時間</th>
+                                    <th class="py-2 px-3">耗時</th>
+                                    <th class="py-2 px-3 text-right">日誌</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/60 font-mono">
+                                <tr v-for="r in workflowRuns" :key="r.id" class="hover:bg-slate-800/40 transition">
+                                    <td class="py-2.5 px-3">
+                                        <span :class="getWorkflowStatusBadge(r).class" class="text-[10px] px-2 py-0.5 rounded border font-bold">
+                                            {{ getWorkflowStatusBadge(r).text }}
+                                        </span>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-slate-300 font-sans text-xs">{{ getWorkflowEventLabel(r.event) }}</td>
+                                    <td class="py-2.5 px-3 text-slate-300 text-xs">{{ formatIsoToTaipei(r.run_started_at || r.created_at) }}</td>
+                                    <td class="py-2.5 px-3 text-sky-400 text-xs">{{ formatRunDuration(r) }}</td>
+                                    <td class="py-2.5 px-3 text-right">
+                                        <a :href="r.html_url" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300 underline font-sans text-xs">
+                                            查看
+                                        </a>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -322,12 +441,12 @@
 
         <!-- 頁尾宣告 -->
         <footer class="text-center text-slate-600 text-xs mt-12 mb-4">
-            <p>© 2026 鈔能戰情室 · 專屬雲端運維控制中心 · Version v2.20261010.01</p>
+            <p>© 2026 鈔能戰情室 · 專屬雲端運維控制中心 · Version v2.20261012.01</p>
         </footer>
 
     </div>
 
     <!-- 載入監控邏輯腳本 -->
-    <script src="monitor.js?v=20261010.01"></script>
+    <script src="monitor.js?v=20261012.01"></script>
 </body>
 </html>

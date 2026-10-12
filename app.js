@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.05');
+        const appVersion = ref('v2.20261012.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5392,7 +5392,12 @@ createApp({
                     updateLocalDbStats();
                     await fetchCloudDbStats();
                     markAsSynced();
-                    alert(`✅ 雲端資料庫已成功鏡像同步至手機！\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。`);
+
+                    const brainDate = marketSyncMeta.value.marketDate ? `${marketSyncMeta.value.marketDate} 盤後` : '未同步';
+                    const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
+                    const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
+
+                    alert(`✅ 雲端資料庫已成功鏡像同步至手機！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
                     return;
                 }
 
@@ -5675,7 +5680,11 @@ createApp({
 
                 markAsSynced();
 
-                alert(`🤝 全量鏡像同步成功！\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。`);
+                const brainDate = marketSyncMeta.value.marketDate ? `${marketSyncMeta.value.marketDate} 盤後` : '未同步';
+                const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
+                const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
+
+                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
@@ -5738,7 +5747,12 @@ createApp({
                     updateLocalDbStats();
                     await fetchCloudDbStats();
                     markAsSynced();
-                    alert(`📥 單向下載還原成功！\n已成功載入雲端最新主檔 (${(buffer.byteLength / 1024).toFixed(0)} KB)。`);
+
+                    const brainDate = marketSyncMeta.value.marketDate ? `${marketSyncMeta.value.marketDate} 盤後` : '未同步';
+                    const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
+                    const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
+
+                    alert(`📥 單向下載還原成功！\n\n👤 個人雲端帳本：\n已成功載入雲端最新主檔 (${(buffer.byteLength / 1024).toFixed(0)} KB)。\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
                 } else {
                     alert("ℹ️ 在您的 Google Drive 中尚未找到 sentinel_vault.db。");
                 }

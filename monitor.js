@@ -34,6 +34,12 @@ createApp({
             snapshot_size_kb: 0
         });
 
+        // ─── GitHub Actions 工作流即時動態 ───
+        const isLoadingWorkflow = ref(false);
+        const workflowRuns = ref([]);
+        const showWorkflowHistory = ref(false);
+        let workflowPollTimer = null;
+
         // ─── 遠端控制與 GitHub API ───
         const customTargetDate = ref('');
         const isUserModifiedDate = ref(false);
@@ -159,6 +165,112 @@ createApp({
             } finally {
                 isLoadingReport.value = false;
             }
+        };
+
+        // ─── 2.5. 獲取 GitHub Actions 工作流執行狀態 ───
+        const fetchWorkflowRuns = async () => {
+            isLoadingWorkflow.value = true;
+            try {
+                const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/market_sync.yml/runs?per_page=5`;
+                const headers = {
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                };
+                if (githubPat.value) {
+                    headers['Authorization'] = `Bearer ${githubPat.value.trim()}`;
+                }
+                const res = await fetch(apiUrl, { headers, cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    workflowRuns.value = data.workflow_runs || [];
+                    
+                    // 若當前有工作流正在執行或排隊中，自動啟動 5 秒輪詢
+                    if (isWorkflowRunning.value) {
+                        startWorkflowPolling();
+                    } else if (workflowPollTimer) {
+                        stopWorkflowPolling();
+                        // 剛結束執行，同步刷新健康報表
+                        fetchHealthReport();
+                    }
+                }
+            } catch (err) {
+                console.warn("無法取得 GitHub Actions 狀態:", err);
+            } finally {
+                isLoadingWorkflow.value = false;
+            }
+        };
+
+        const latestWorkflowRun = computed(() => {
+            return workflowRuns.value && workflowRuns.value.length > 0 ? workflowRuns.value[0] : null;
+        });
+
+        const isWorkflowRunning = computed(() => {
+            if (!latestWorkflowRun.value) return false;
+            const st = latestWorkflowRun.value.status;
+            return st === 'in_progress' || st === 'queued';
+        });
+
+        const startWorkflowPolling = () => {
+            if (workflowPollTimer) return;
+            workflowPollTimer = setInterval(() => {
+                fetchWorkflowRuns();
+            }, 5000);
+        };
+
+        const stopWorkflowPolling = () => {
+            if (workflowPollTimer) {
+                clearInterval(workflowPollTimer);
+                workflowPollTimer = null;
+            }
+        };
+
+        const getWorkflowStatusBadge = (run) => {
+            if (!run) return { text: '⚪ 待命', class: 'bg-slate-800 text-slate-400 border-slate-700' };
+            if (run.status === 'queued') {
+                return { text: '⏳ 排隊等候排程 (Queued)', class: 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse' };
+            }
+            if (run.status === 'in_progress') {
+                return { text: '⚡ 大腦運算處理中 (In Progress)', class: 'bg-indigo-950 text-indigo-300 border-indigo-700 animate-pulse' };
+            }
+            if (run.status === 'completed') {
+                if (run.conclusion === 'success') {
+                    return { text: '🟢 執行成功 (Success)', class: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+                } else if (run.conclusion === 'failure') {
+                    return { text: '🔴 執行失敗 (Failure)', class: 'bg-rose-950 text-rose-300 border-rose-800' };
+                } else if (run.conclusion === 'cancelled') {
+                    return { text: '⚪ 已取消 (Cancelled)', class: 'bg-slate-800 text-slate-400 border-slate-700' };
+                }
+            }
+            return { text: run.status || '未知', class: 'bg-slate-800 text-slate-300 border-slate-700' };
+        };
+
+        const getWorkflowEventLabel = (evt) => {
+            if (evt === 'schedule') return '⏰ 自動定時排程';
+            if (evt === 'workflow_dispatch') return '⚡ 手動遠端喚醒';
+            if (evt === 'push') return '📦 代碼推播觸發';
+            return evt || '系統事件';
+        };
+
+        const formatIsoToTaipei = (isoStr) => {
+            if (!isoStr) return '---';
+            try {
+                const d = new Date(isoStr);
+                const pad = (n) => String(n).padStart(2, '0');
+                return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            } catch (e) {
+                return isoStr;
+            }
+        };
+
+        const formatRunDuration = (run) => {
+            if (!run) return '---';
+            const start = new Date(run.run_started_at || run.created_at).getTime();
+            const end = run.status === 'completed' ? new Date(run.updated_at).getTime() : Date.now();
+            const diffSec = Math.max(0, Math.round((end - start) / 1000));
+            if (diffSec < 60) return `${diffSec} 秒`;
+            const m = Math.floor(diffSec / 60);
+            const s = diffSec % 60;
+            return `${m} 分 ${s} 秒`;
         };
 
         // ─── 3. 節點數據輔助函式 ───
@@ -358,7 +470,12 @@ createApp({
                 });
 
                 if (res.status === 204 || res.ok) {
-                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n正在執行 [${targetDate || '最新交易日'}] 的數據爬取、指標滾算與快照發布。\n預計約 30~90 秒內完成，稍後點擊「刷新狀態」即可檢視最新報表。`);
+                    alert(`🚀 [喚醒成功！]\nGitHub Actions 雲端大腦已成功啟動！\n正在執行 [${targetDate || '最新交易日'}] 的數據爬取、指標滾算與快照發布。\n預計約 30~90 秒內完成，下方將自動為您即時追蹤進度！`);
+                    // 即時喚醒輪詢檢測
+                    setTimeout(() => {
+                        fetchWorkflowRuns();
+                        startWorkflowPolling();
+                    }, 1500);
                 } else {
                     const errJson = await res.json().catch(() => ({}));
                     alert(`❌ 觸發失敗 (HTTP ${res.status}):\n${errJson.message || '請確認 GitHub PAT 權限是否包含 workflow 權限。'}`);
@@ -378,6 +495,7 @@ createApp({
         onMounted(() => {
             // 一載入頁面即背景拉取健康報表以獲取官方驗證過的真實 target_date
             fetchHealthReport();
+            fetchWorkflowRuns();
             const savedEmail = localStorage.getItem('sentinel_admin_email');
             if (savedEmail) {
                 verifyAdminEmail(savedEmail);
@@ -394,6 +512,16 @@ createApp({
             isLoadingReport,
             healthData,
             fetchHealthReport,
+            isLoadingWorkflow,
+            workflowRuns,
+            latestWorkflowRun,
+            isWorkflowRunning,
+            showWorkflowHistory,
+            fetchWorkflowRuns,
+            getWorkflowStatusBadge,
+            getWorkflowEventLabel,
+            formatIsoToTaipei,
+            formatRunDuration,
             getNodeCount,
             getNodeElapsed,
             getNodeStatusText,
