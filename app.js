@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.04');
+        const appVersion = ref('v2.20261012.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3228,7 +3228,7 @@ createApp({
             text = text.replace(/^[ \t]*(?:#+\s*)?(\*{0,2}[一二三四五六七八九十]+[、.．][^\n\r]+)$/gm, (match, p1) => {
                 const sId = `report-section-${sectionIdx++}`;
                 const cleanTitle = p1.replace(/^\*+|\*+$/g, '').trim();
-                return `### <span id="${sId}" class="report-section-anchor"></span><span class="report-heading-text flex-1">${cleanTitle}</span><button type="button" onclick="window.scrollToReportBookmarkTop && window.scrollToReportBookmarkTop()" class="report-back-to-bookmark-btn shrink-0 ml-2" title="點擊回到上方章節書籤列"><i class="fa-solid fa-arrow-up-to-line mr-0.5"></i>回書籤</button>`;
+                return `### <span id="${sId}" class="report-section-anchor"></span><span class="report-heading-text flex-1">${cleanTitle}</span><button type="button" onclick="window.scrollToReportBookmarkTop && window.scrollToReportBookmarkTop()" class="report-back-to-bookmark-btn shrink-0 ml-2" title="回到頂部章節書籤">⇪</button>`;
             });
 
             // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
