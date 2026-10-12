@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.03');
+        const appVersion = ref('v2.20261012.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3144,12 +3144,17 @@ createApp({
 
                     // 檢查黑名單過濾
                     if (!isExcludedReportSection(fullTitle)) {
-                        // 移除編號序號 (如 "一、"、"二．" 等) 以及 【】[] 括號，僅保留前 4 字核心詞
+                        // 移除編號序號與【】[]括號，依語意精確提取核心詞
                         let coreTitle = fullTitle
                             .replace(/^[一二三四五六七八九十]+[、.．:：\s]*/, '')
                             .replace(/[【】\[\]]/g, '')
                             .trim();
-                        if (coreTitle.length > 4) {
+
+                        if (fullTitle.includes('空手')) {
+                            coreTitle = '空手者初佈局';
+                        } else if (fullTitle.includes('已持股') || fullTitle.includes('加減碼')) {
+                            coreTitle = '已持股加減碼';
+                        } else if (coreTitle.length > 4) {
                             coreTitle = coreTitle.slice(0, 4);
                         }
                         list.push({
@@ -3163,6 +3168,26 @@ createApp({
 
             return list;
         });
+
+        // ─── 平滑回滾至戰報頂部書籤導航列 ───
+        const scrollToReportBookmarkTop = () => {
+            Vue.nextTick(() => {
+                const el = document.getElementById('report-bookmarks-bar');
+                const container = document.getElementById('full-report-scroll-container');
+                if (el && container) {
+                    const elRect = el.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const targetScrollTop = container.scrollTop + (elRect.top - containerRect.top) - 10;
+                    container.scrollTo({
+                        top: Math.max(0, targetScrollTop),
+                        behavior: 'smooth'
+                    });
+                } else if (container) {
+                    container.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
+        };
+        window.scrollToReportBookmarkTop = scrollToReportBookmarkTop;
 
         // 平滑滾動定位到戰報指定章節錨點
         const scrollToReportBookmark = (targetId) => {
@@ -3198,12 +3223,12 @@ createApp({
             if (!text) return '';
 
             // 0. 自動校準規範「一、二、三、...」章節大標題：若原始文字未帶 ###，自動補齊 ### 統一跨個股標題風格
-            // 0. 自動校準規範「一、二、三、...」章節大標題並注入專屬錨點 ID
+            // 0. 自動校準規範「一、二、三、...」章節大標題並注入專屬錨點 ID 與「回書籤」快捷按鈕
             let sectionIdx = 0;
             text = text.replace(/^[ \t]*(?:#+\s*)?(\*{0,2}[一二三四五六七八九十]+[、.．][^\n\r]+)$/gm, (match, p1) => {
                 const sId = `report-section-${sectionIdx++}`;
                 const cleanTitle = p1.replace(/^\*+|\*+$/g, '').trim();
-                return `### <span id="${sId}" class="report-section-anchor"></span>${cleanTitle}`;
+                return `### <span id="${sId}" class="report-section-anchor"></span><span class="report-heading-text flex-1">${cleanTitle}</span><button type="button" onclick="window.scrollToReportBookmarkTop && window.scrollToReportBookmarkTop()" class="report-back-to-bookmark-btn shrink-0 ml-2" title="點擊回到上方章節書籤列"><i class="fa-solid fa-arrow-up-to-line mr-0.5"></i>回書籤</button>`;
             });
 
             // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
@@ -5917,6 +5942,7 @@ createApp({
             switchToAdjacentReportStock,
             currentReportBookmarks,
             scrollToReportBookmark,
+            scrollToReportBookmarkTop,
             formatReportHtml,
             copyFullReportText,
             parseReportText,
