@@ -45,6 +45,17 @@
             overflow-x: hidden;
         }
 
+        /* 戰報書籤跳轉目標高亮微光瞬閃動畫 */
+        @keyframes bookmark-pulse {
+            0% { background: rgba(56, 189, 248, 0.45); transform: scale(1.01); }
+            50% { background: rgba(56, 189, 248, 0.25); }
+            100% { background: transparent; transform: scale(1); }
+        }
+        .bookmark-target-pulse {
+            animation: bookmark-pulse 1.4s ease-out;
+            transition: all 0.3s ease;
+        }
+
         /* 隱藏滾動條但保持滾動 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -1504,6 +1515,21 @@
                             <span class="text-[10px] text-slate-400 font-mono">HTML 結構化</span>
                         </div>
 
+                        <!-- 📑 戰報章節快速導航書籤列 (動態萃取一、二、三... 大標題，排除風險預警與系統專用區塊) -->
+                        <div v-if="currentReportBookmarks && currentReportBookmarks.length > 0" 
+                             class="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-1 select-none border-b border-slate-800/40 pb-2">
+                            <span class="text-[10px] text-sky-400 shrink-0 font-bold flex items-center pr-1">
+                                <i class="fa-solid fa-bookmark text-xs mr-1"></i>導航
+                            </span>
+                            <button v-for="bm in currentReportBookmarks" :key="bm.id" 
+                                    @click="scrollToReportBookmark(bm.id)"
+                                    :title="bm.title"
+                                    :class="theme === 'dark' ? 'bg-slate-800/90 hover:bg-slate-700 text-sky-300 border-slate-700/80 active:bg-sky-950' : 'bg-slate-100 hover:bg-slate-200 text-sky-700 border-slate-300 active:bg-sky-100'"
+                                    class="px-2.5 py-1 rounded-lg border text-[11px] font-medium whitespace-nowrap transition-all duration-150 active:scale-95 shadow-2xs shrink-0 flex items-center space-x-1">
+                                <span>{{ bm.shortTitle }}</span>
+                            </button>
+                        </div>
+
                         <!-- 智慧 HTML 渲染內容 -->
                         <div v-if="currentReportStock?.fullStrategyContent" 
                              class="report-markdown-body select-text space-y-1.5 leading-relaxed text-xs text-slate-700 dark:text-slate-300" 
@@ -2065,6 +2091,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261012.01"></script>
+    <script src="app.js?v=2.20261012.02"></script>
 </body>
 </html>

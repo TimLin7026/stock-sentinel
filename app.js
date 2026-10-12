@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.01');
+        const appVersion = ref('v2.20261012.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3109,6 +3109,84 @@ createApp({
             }
         };
 
+        // ─── 📑 戰報書籤排除關鍵字黑名單 (語意動態彈性過濾，不寫死固定數字序號) ───
+        const EXCLUDED_REPORT_BOOKMARKS = [
+            '風險預警',
+            '合規聲明',
+            '系統解析',
+            '解析專用',
+            '免責聲明',
+            '系統專用'
+        ];
+
+        // 判斷該標題是否屬於應排除的非核心策略內容
+        const isExcludedReportSection = (text) => {
+            if (!text || typeof text !== 'string') return true;
+            return EXCLUDED_REPORT_BOOKMARKS.some(kw => text.includes(kw));
+        };
+
+        // 當前完整戰報的章節書籤清單 (依據 currentReportStock.fullStrategyContent 自動動態提取)
+        const currentReportBookmarks = computed(() => {
+            const raw = currentReportStock.value?.fullStrategyContent;
+            if (!raw || typeof raw !== 'string') return [];
+            
+            const lines = raw.split('\n');
+            const list = [];
+            let sectionIdx = 0;
+
+            lines.forEach((line) => {
+                const trimmed = line.trim().replace(/^#+\s*/, '').replace(/^\*+|\*+$/g, '').trim();
+                const match = trimmed.match(/^([一二三四五六七八九十]+[、.．]\s*(?:【[^】]+】|[^\n\r]+))/);
+                if (match) {
+                    const fullTitle = match[1].trim();
+                    const sectionId = `report-section-${sectionIdx}`;
+                    sectionIdx++;
+
+                    // 檢查黑名單過濾
+                    if (!isExcludedReportSection(fullTitle)) {
+                        let shortTitle = fullTitle.replace(/【|】/g, '').trim();
+                        if (shortTitle.length > 11) {
+                            shortTitle = shortTitle.slice(0, 10) + '…';
+                        }
+                        list.push({
+                            id: sectionId,
+                            title: fullTitle,
+                            shortTitle: shortTitle
+                        });
+                    }
+                }
+            });
+
+            return list;
+        });
+
+        // 平滑滾動定位到戰報指定章節錨點
+        const scrollToReportBookmark = (targetId) => {
+            if (!targetId) return;
+            Vue.nextTick(() => {
+                const el = document.getElementById(targetId);
+                const container = document.getElementById('full-report-scroll-container');
+                if (el && container) {
+                    const elRect = el.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const targetScrollTop = container.scrollTop + (elRect.top - containerRect.top) - 12;
+                    container.scrollTo({
+                        top: Math.max(0, targetScrollTop),
+                        behavior: 'smooth'
+                    });
+                    
+                    // 父層標題或目標元素高亮瞬閃提示
+                    const headingEl = el.closest('h1, h2, h3, h4, div') || el;
+                    headingEl.classList.add('bookmark-target-pulse');
+                    setTimeout(() => {
+                        headingEl.classList.remove('bookmark-target-pulse');
+                    }, 1400);
+                } else if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        };
+
         // ─── 戰報全文 Markdown 轉 HTML 結構化與重點高亮渲染 ───
         const formatReportHtml = (rawText) => {
             if (!rawText || typeof rawText !== 'string') return '';
@@ -3116,7 +3194,13 @@ createApp({
             if (!text) return '';
 
             // 0. 自動校準規範「一、二、三、...」章節大標題：若原始文字未帶 ###，自動補齊 ### 統一跨個股標題風格
-            text = text.replace(/^[ \t]*(?!(?:#|>|[-*]\s|\d+\.))[ \t]*(\*{0,2}[一二三四五六七八九十]+[、.．][^\n]+)$/gm, (match, p1) => `### ${p1}`);
+            // 0. 自動校準規範「一、二、三、...」章節大標題並注入專屬錨點 ID
+            let sectionIdx = 0;
+            text = text.replace(/^[ \t]*(?:#+\s*)?(\*{0,2}[一二三四五六七八九十]+[、.．][^\n\r]+)$/gm, (match, p1) => {
+                const sId = `report-section-${sectionIdx++}`;
+                const cleanTitle = p1.replace(/^\*+|\*+$/g, '').trim();
+                return `### <span id="${sId}" class="report-section-anchor"></span>${cleanTitle}`;
+            });
 
             // 1. 若環境支援 marked.js，直接使用標準 Markdown 解析器
             if (window.marked && typeof window.marked.parse === 'function') {
@@ -5827,6 +5911,8 @@ createApp({
             prevReportStock,
             nextReportStock,
             switchToAdjacentReportStock,
+            currentReportBookmarks,
+            scrollToReportBookmark,
             formatReportHtml,
             copyFullReportText,
             parseReportText,
