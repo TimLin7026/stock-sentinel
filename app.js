@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.02');
+        const appVersion = ref('v2.20261012.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3144,14 +3144,18 @@ createApp({
 
                     // 檢查黑名單過濾
                     if (!isExcludedReportSection(fullTitle)) {
-                        let shortTitle = fullTitle.replace(/【|】/g, '').trim();
-                        if (shortTitle.length > 11) {
-                            shortTitle = shortTitle.slice(0, 10) + '…';
+                        // 移除編號序號 (如 "一、"、"二．" 等) 以及 【】[] 括號，僅保留前 4 字核心詞
+                        let coreTitle = fullTitle
+                            .replace(/^[一二三四五六七八九十]+[、.．:：\s]*/, '')
+                            .replace(/[【】\[\]]/g, '')
+                            .trim();
+                        if (coreTitle.length > 4) {
+                            coreTitle = coreTitle.slice(0, 4);
                         }
                         list.push({
                             id: sectionId,
                             title: fullTitle,
-                            shortTitle: shortTitle
+                            shortTitle: coreTitle
                         });
                     }
                 }
