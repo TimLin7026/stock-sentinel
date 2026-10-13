@@ -1750,8 +1750,15 @@
                             </button>
                             <button v-for="b in activeBrokers.filter(x => x !== '關注')" :key="b" @click="onBrokerSelect(b)"
                                     :class="(!isAddingNewBroker && tradeForm.broker === b) ? 'bg-sky-600 text-white font-bold border-sky-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
-                                    class="px-3 py-1.5 rounded-lg border text-[11px] transition font-semibold">
-                                {{ b }}
+                                    class="pl-3 pr-2 py-1.5 rounded-lg border text-[11px] transition font-semibold inline-flex items-center space-x-1.5">
+                                <span>{{ b }}</span>
+                                <span v-if="canRemoveBroker(b)"
+                                      @click.stop="removeCustomBroker(b)"
+                                      title="移除此空白證券商"
+                                      :class="(!isAddingNewBroker && tradeForm.broker === b) ? 'hover:bg-sky-700 text-sky-100 hover:text-white' : (theme === 'dark' ? 'hover:bg-slate-700 text-slate-400 hover:text-rose-400' : 'hover:bg-slate-200 text-slate-400 hover:text-rose-500')"
+                                      class="w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] leading-none transition -mr-0.5">
+                                    ×
+                                </span>
                             </button>
                             <button @click="startAddNewBroker"
                                     :class="isAddingNewBroker ? 'bg-emerald-600 text-white font-bold border-emerald-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-emerald-400 border-emerald-800/70 border-dashed' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 border-dashed')"
@@ -2165,6 +2172,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.04"></script>
+    <script src="app.js?v=2.20261013.05"></script>
 </body>
 </html>

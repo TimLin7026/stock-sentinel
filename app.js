@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.04');
+        const appVersion = ref('v2.20261013.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -365,34 +365,82 @@ createApp({
             } catch (e) {}
         };
 
-        // 🏢 讀取與寫入帳號專屬自訂證券商清單 (db_meta.custom_brokers)
-        const loadCustomBrokersFromDb = (db) => {
-            if (!db) {
-                customBrokersList.value = [];
-                return [];
-            }
+        // 🏢 讀取與寫入帳號專屬自訂證券商清單 (SQLite db_meta.custom_brokers + localStorage 帳號專屬雙重持久化)
+        const getCustomBrokersStorageKey = (email) => {
+            const cleanEmail = (email || googleUser.value.email || 'guest').trim().toLowerCase();
+            return `sentinel_custom_brokers_${cleanEmail}`;
+        };
+
+        const readCustomBrokersFromLocalStorage = (email) => {
+            try {
+                const raw = localStorage.getItem(getCustomBrokersStorageKey(email));
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                if (Array.isArray(arr)) {
+                    return Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
+                }
+            } catch (e) {}
+            return [];
+        };
+
+        const writeCustomBrokersToLocalStorage = (arr, email) => {
+            try {
+                const clean = Array.from(new Set((arr || []).map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
+                localStorage.setItem(getCustomBrokersStorageKey(email), JSON.stringify(clean));
+            } catch (e) {}
+        };
+
+        // 純讀取指定 DB 的 db_meta.custom_brokers (無副作用，不直接覆蓋 customBrokersList.value)
+        const readCustomBrokersFromDbPure = (db) => {
+            if (!db) return [];
             try {
                 const res = db.exec("SELECT value FROM db_meta WHERE key = 'custom_brokers'");
                 if (res.length > 0 && res[0].values && res[0].values[0]) {
                     const arr = JSON.parse(String(res[0].values[0][0] || '[]'));
                     if (Array.isArray(arr)) {
-                        const clean = Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
-                        customBrokersList.value = clean;
-                        return clean;
+                        return Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
                     }
                 }
             } catch (e) {}
-            customBrokersList.value = [];
             return [];
+        };
+
+        // 載入並聯集合併 DB + localStorage + 目前記憶體中的自訂證券商清單 (確保新增券商後切關注存檔絕不消失)
+        const loadCustomBrokersFromDb = (db) => {
+            const dbList = readCustomBrokersFromDbPure(db);
+            const lsList = readCustomBrokersFromLocalStorage();
+            const memList = Array.isArray(customBrokersList.value) ? customBrokersList.value : [];
+            const merged = Array.from(new Set([...dbList, ...lsList, ...memList].map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
+            customBrokersList.value = merged;
+            writeCustomBrokersToLocalStorage(merged);
+            if (db && merged.length > dbList.length) {
+                try {
+                    db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                    db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(merged)]);
+                } catch (e) {}
+            }
+            return merged;
         };
 
         const addCustomBrokerToDb = async (brokerName) => {
             const cleanName = String(brokerName || '').trim();
             if (!cleanName || cleanName === '關注') return;
-            const nextSet = new Set(customBrokersList.value);
+            const nextSet = new Set([
+                ...(customBrokersList.value || []),
+                ...readCustomBrokersFromLocalStorage()
+            ]);
             nextSet.add(cleanName);
-            const nextArr = Array.from(nextSet);
+            const nextArr = Array.from(nextSet).filter(x => x && x !== '關注');
             customBrokersList.value = nextArr;
+            writeCustomBrokersToLocalStorage(nextArr);
+
+            if (!dbInstance) {
+                try {
+                    await ensureLocalDatabaseInitialized('新增自訂券商初始化');
+                } catch (eInit) {
+                    console.warn("初始化 DB 以儲存自訂券商略過:", eInit);
+                }
+            }
             if (dbInstance) {
                 try {
                     dbInstance.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
@@ -400,6 +448,23 @@ createApp({
                     await saveDbToIndexedDb();
                 } catch (e) {
                     console.warn("寫入 custom_brokers 警告:", e);
+                }
+            }
+        };
+
+        const removeCustomBrokerFromDb = async (brokerName) => {
+            const cleanName = String(brokerName || '').trim();
+            if (!cleanName || cleanName === '關注') return;
+            const nextArr = (customBrokersList.value || []).filter(x => x && x !== '關注' && x !== cleanName);
+            customBrokersList.value = nextArr;
+            writeCustomBrokersToLocalStorage(nextArr);
+            if (dbInstance) {
+                try {
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                    dbInstance.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(nextArr)]);
+                    await saveDbToIndexedDb();
+                } catch (e) {
+                    console.warn("移除 custom_brokers 警告:", e);
                 }
             }
         };
@@ -2852,7 +2917,14 @@ createApp({
             date: getNowDateStr()
         });
 
-        const onBrokerSelect = (brokerName) => {
+        const onBrokerSelect = async (brokerName) => {
+            // 若使用者在「➕ 新增券商」輸入框已打字，但沒按確認就直接點了其他券商(如「關注」)，自動先幫他把剛輸入的券商存起來！
+            if (isAddingNewBroker.value && String(newBrokerInput.value || '').trim()) {
+                const pendingTyped = String(newBrokerInput.value || '').trim();
+                if (pendingTyped && pendingTyped !== '關注') {
+                    await addCustomBrokerToDb(pendingTyped);
+                }
+            }
             isAddingNewBroker.value = false;
             newBrokerInput.value = '';
             tradeForm.value.broker = brokerName;
@@ -2867,6 +2939,34 @@ createApp({
                     tradeForm.value.shares = null;
                 }
             }
+        };
+
+        // 判斷該證券商是否尚無任何持股與歷史交易紀錄，可安全顯示「×」移除
+        const canRemoveBroker = (brokerName) => {
+            const clean = String(brokerName || '').trim();
+            if (!clean || clean === '關注') return false;
+            const hasStock = (stockList.value || []).some(s => String(s.broker || '').trim() === clean);
+            const hasTrade = (recentTradeLogs.value || []).some(t => String(t.broker || '').trim() === clean);
+            return !hasStock && !hasTrade;
+        };
+
+        // 點擊券商膠囊右側的小「×」移除空白自訂券商
+        const removeCustomBroker = async (brokerName) => {
+            const clean = String(brokerName || '').trim();
+            if (!clean || clean === '關注') return;
+            if (!canRemoveBroker(clean)) {
+                alert(`⚠️ 證券商「${clean}」目前尚有持股或歷史交易紀錄，無法移除！`);
+                return;
+            }
+            await removeCustomBrokerFromDb(clean);
+            if (selectedBrokerFilter.value === clean) {
+                selectedBrokerFilter.value = '全部';
+            }
+            if (tradeForm.value.broker === clean) {
+                const remaining = activeBrokers.value.filter(b => b && b !== '關注' && b !== clean);
+                await onBrokerSelect(remaining.length > 0 ? remaining[0] : '關注');
+            }
+            showToast(`🗑️ 已移除證券商：${clean}`, 2000);
         };
 
         const startAddNewBroker = () => {
@@ -2886,18 +2986,22 @@ createApp({
                 alert('請輸入證券商名稱！');
                 return;
             }
+            isAddingNewBroker.value = false;
+            newBrokerInput.value = '';
             if (clean !== '關注') {
                 await addCustomBrokerToDb(clean);
             }
-            onBrokerSelect(clean);
+            await onBrokerSelect(clean);
             showToast(`✅ 已新增並選取證券商：${clean}`, 2000);
         };
 
         const selectQuickNewBroker = async (brokerName) => {
             const clean = String(brokerName || '').trim();
             if (!clean) return;
+            isAddingNewBroker.value = false;
+            newBrokerInput.value = '';
             await addCustomBrokerToDb(clean);
-            onBrokerSelect(clean);
+            await onBrokerSelect(clean);
             showToast(`✅ 已新增並選取證券商：${clean}`, 2000);
         };
 
@@ -5857,15 +5961,20 @@ createApp({
                 migrateMobileDatabase(dbInstance);
                 migrateMobileDatabase(cloudDb);
 
-                // 0.1 合流自訂證券商清單 (db_meta.custom_brokers)
+                // 0.1 合流自訂證券商清單 (db_meta.custom_brokers - 本機當前清單優先，若本機尚未設定則繼承雲端)
                 try {
-                    const lBrokers = loadCustomBrokersFromDb(dbInstance);
-                    const cBrokers = loadCustomBrokersFromDb(cloudDb);
-                    const mergedBrokers = Array.from(new Set([...cBrokers, ...lBrokers])).filter(x => x && x !== '關注');
-                    if (mergedBrokers.length > 0) {
-                        cloudDb.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
-                        cloudDb.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(mergedBrokers)]);
-                    }
+                    const lBrokers = readCustomBrokersFromDbPure(dbInstance);
+                    const cBrokers = readCustomBrokersFromDbPure(cloudDb);
+                    const lsBrokers = readCustomBrokersFromLocalStorage();
+                    const finalBrokers = Array.from(new Set(
+                        (customBrokersList.value && customBrokersList.value.length > 0)
+                            ? customBrokersList.value
+                            : (lsBrokers.length > 0 ? lsBrokers : (lBrokers.length > 0 ? lBrokers : cBrokers))
+                    )).filter(x => x && x !== '關注');
+                    customBrokersList.value = finalBrokers;
+                    writeCustomBrokersToLocalStorage(finalBrokers);
+                    cloudDb.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                    cloudDb.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(finalBrokers)]);
                 } catch (e) {}
 
                 // 合流墓碑至 cloudDb (保留 stock_created_at)
@@ -6308,6 +6417,8 @@ createApp({
                         if (cachedBuffer) {
                             await loadDatabaseFromArrayBuffer(cachedBuffer, `${curEmail} 離線快取`);
                             updateLocalDbStats();
+                        } else {
+                            customBrokersList.value = readCustomBrokersFromLocalStorage(curEmail);
                         }
                     }
                 } catch (e) {
@@ -6397,6 +6508,8 @@ createApp({
             startAddNewBroker,
             confirmAddNewBroker,
             selectQuickNewBroker,
+            canRemoveBroker,
+            removeCustomBroker,
             onCodeInput,
             onBrokerSelect,
             onBrokerInputChange,
