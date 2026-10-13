@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.01');
+        const appVersion = ref('v2.20261013.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -298,22 +298,45 @@ createApp({
             driveFolderName: '台股戰情室_雲端同步'
         });
 
-        // 平滑遷移舊版未隔離資料庫保險
+        // 清理舊版未隔離遺留快取，嚴防污染任何新登入帳號
         const ensureAccountDbMigrated = async (email) => {
-            if (!window.localforage || !email || email === 'guest') return;
-            const userKey = getUserDbStorageKey(email);
+            if (!window.localforage) return;
             try {
-                const userDb = await localforage.getItem(userKey);
-                if (!userDb) {
-                    const legacyDb = await localforage.getItem('sentinel_db_bytes');
-                    if (legacyDb) {
-                        console.log(`[MIGRATE] 檢測到舊版未隔離資料庫，平滑遷移至沙盒: ${userKey}`);
-                        await localforage.setItem(userKey, legacyDb);
-                    }
-                }
-            } catch (e) {
-                console.warn("平滑遷移警告:", e);
+                // 主動銷毀早期單帳號時代遺留的未隔離快取鍵，杜絕跨帳號污染
+                await localforage.removeItem('sentinel_db_bytes');
+            } catch (e) {}
+        };
+
+        // 強制重置記憶體沙盒狀態（於登入、切換帳號、登出時第一時間呼叫，100% 阻絕跨帳號殘留）
+        const resetMemorySandboxState = () => {
+            if (dbInstance) {
+                try { dbInstance.close(); } catch (e) {}
+                dbInstance = null;
             }
+            isDbLoaded.value = false;
+            dbInfoText.value = '未載入';
+            stockList.value = [];
+            fifoInventory.value = [];
+            recentTradeLogs.value = [];
+            hedgedRecords.value = [];
+            expandedStockUids.value.clear();
+            localDbStats.value = {
+                lastModified: '尚未載入',
+                tradeLogCount: 0,
+                myStockCount: 0,
+                gemStrategyCount: 0
+            };
+            cloudDbStats.value = {
+                lastModified: '未連接雲端或尚未查詢',
+                tradeLogCount: '---',
+                myStockCount: '---',
+                gemStrategyCount: '---',
+                fileId: '',
+                sizeKB: 0
+            };
+            localStorage.removeItem('sentinel_drive_file_id');
+            localStorage.removeItem('sentinel_last_sync_fingerprint');
+            hasUnsyncedChanges.value = false;
         };
 
         const syncStatus = ref({
@@ -5081,6 +5104,9 @@ createApp({
 
                     if (!loggedEmail) loggedEmail = 'google_user';
 
+                    // 0. 切換/登入前先強制清空記憶體沙盒與舊 fileId，100% 阻絕跨帳號污染
+                    resetMemorySandboxState();
+
                     // 1. 綁定分頁 Session 與全域預設
                     sessionStorage.setItem('sentinel_session_email', loggedEmail);
                     localStorage.setItem('sentinel_active_email', loggedEmail);
@@ -5097,25 +5123,15 @@ createApp({
                     // 3. 記錄到已知帳號名單
                     saveKnownAccount(loggedEmail);
 
-                    // 4. 平滑資料庫遷移
+                    // 4. 清理舊版無隔離快取
                     await ensureAccountDbMigrated(loggedEmail);
 
-                    // 5. 載入該帳號專屬的本地資料庫 (若為全新帳號則重置並自動初始化空白帳本)
+                    // 5. 載入該帳號專屬的本地資料庫 (若本機尚無沙盒則保持 dbInstance = null 交由雲端同步決定下載或初始化空庫)
                     if (window.localforage) {
                         const userKey = getUserDbStorageKey(loggedEmail);
                         const userDb = await localforage.getItem(userKey);
                         if (userDb) {
                             await loadDatabaseFromArrayBuffer(userDb, `${loggedEmail} 本機沙盒`);
-                        } else {
-                            if (dbInstance) {
-                                try { dbInstance.close(); } catch (e) {}
-                                dbInstance = null;
-                            }
-                            stockList.value = [];
-                            fifoInventory.value = [];
-                            recentTradeLogs.value = [];
-                            hedgedRecords.value = [];
-                            await ensureLocalDatabaseInitialized(`${loggedEmail} 全新帳本`);
                         }
                     }
 
@@ -5128,7 +5144,12 @@ createApp({
                     } catch (e) {
                         console.warn("快照同步警告:", e);
                     }
-                    executeTwoWaySync().catch(e => console.warn("雲端帳本同步警告:", e));
+                    executeTwoWaySync().catch(async (e) => {
+                        console.warn("雲端帳本同步警告:", e);
+                        if (!dbInstance) {
+                            await ensureLocalDatabaseInitialized(`${loggedEmail} 全新帳本`);
+                        }
+                    });
                 }
             });
 
@@ -5150,9 +5171,13 @@ createApp({
             const tokenKey = getUserTokenKey(targetEmail);
             const savedToken = localStorage.getItem(tokenKey);
 
+            // 0. 切換前先強制清空記憶體沙盒與舊 fileId，100% 阻絕跨帳號污染
+            resetMemorySandboxState();
+
             // 1. 更新當前分頁 Session
             sessionStorage.setItem('sentinel_session_email', targetEmail);
             localStorage.setItem('sentinel_active_email', targetEmail);
+            localStorage.setItem('sentinel_gdrive_email', targetEmail);
             googleUser.value.email = targetEmail;
 
             // 2. 載入目標帳號專屬本地資料庫沙盒
@@ -5162,28 +5187,26 @@ createApp({
                 const userDb = await localforage.getItem(userKey);
                 if (userDb) {
                     await loadDatabaseFromArrayBuffer(userDb, `${targetEmail} 專屬沙盒`);
-                } else {
-                    if (dbInstance) {
-                        try { dbInstance.close(); } catch (e) {}
-                        dbInstance = null;
-                    }
-                    stockList.value = [];
-                    fifoInventory.value = [];
-                    recentTradeLogs.value = [];
-                    hedgedRecords.value = [];
-                    await ensureLocalDatabaseInitialized(`${targetEmail} 全新帳本`);
                 }
             }
 
             // 3. 若有現成 Token 立即切換，否則引導授權
             if (savedToken) {
                 googleAccessToken.value = savedToken;
+                localStorage.setItem('sentinel_gdrive_token', savedToken);
                 googleUser.value.isLoggedIn = true;
                 showToast(`🔄 已切換至帳號：${targetEmail}`, 2500);
                 saveKnownAccount(targetEmail);
                 await fetchCloudDbStats();
-                executeTwoWaySync().catch(e => console.warn("切換後同步警告:", e));
+                executeTwoWaySync().catch(async (e) => {
+                    console.warn("切換後同步警告:", e);
+                    if (!dbInstance) {
+                        await ensureLocalDatabaseInitialized(`${targetEmail} 全新帳本`);
+                    }
+                });
             } else {
+                googleAccessToken.value = '';
+                googleUser.value.isLoggedIn = false;
                 showToast(`🔑 正在為 ${targetEmail} 喚醒 Google 授權...`, 2000);
                 handleGoogleLogin(false, targetEmail);
             }
@@ -5195,21 +5218,70 @@ createApp({
                 if (curEmail) {
                     localStorage.removeItem(getUserTokenKey(curEmail));
                 }
+                localStorage.removeItem('sentinel_gdrive_token');
                 sessionStorage.removeItem('sentinel_session_email');
                 googleUser.value.isLoggedIn = false;
                 googleUser.value.email = '';
                 googleAccessToken.value = '';
-                stockList.value = [];
-                isDbLoaded.value = false;
-                cloudDbStats.value = {
-                    lastModified: '未連接雲端或尚未查詢',
-                    tradeLogCount: '---',
-                    myStockCount: '---',
-                    gemStrategyCount: '---',
-                    fileId: '',
-                    sizeKB: 0
-                };
+                resetMemorySandboxState();
                 showToast('👋 已登出當前帳號', 3000);
+            }
+        };
+
+        // 🧹 一鍵重置當前帳號為全新空白帳本 (清除誤同步污染之本機沙盒與雲端 sentinel_vault.db)
+        const resetCurrentAccountDatabase = async (isAutoRepairPrompt = false) => {
+            const curEmail = (googleUser.value.email || '').trim();
+            if (!curEmail || !googleUser.value.isLoggedIn || !googleAccessToken.value) {
+                alert("⚠️ 請先登入要重置的 Google 帳號！");
+                return;
+            }
+
+            const confirmMsg = isAutoRepairPrompt
+                ? `🚨 系統偵測到帳號【${curEmail}】內含有先前誤同步的舊帳號資料（${localDbStats.value.tradeLogCount} 筆交易 / ${localDbStats.value.myStockCount} 檔名冊）。\n\n是否立即將【${curEmail}】重置為 0 筆全新空白帳本，並同步清理此帳號的 Google Drive 主檔？\n（註：僅清理 ${curEmail}，絕不影響其他帳號）`
+                : `⚠️ 確定要將當前帳號【${curEmail}】重置為全新空白帳本嗎？\n\n📌 這將會執行以下操作（僅針對 ${curEmail}，絕不影響其他帳號）：\n1. 清空此帳號在本機沙盒的所有交易、自選與戰報\n2. 重新初始化 0 筆全新空白 SQLite 資料庫\n3. 立即將空白資料庫上傳覆蓋【${curEmail}】Google Drive 上的 sentinel_vault.db`;
+
+            if (!confirm(confirmMsg)) return;
+
+            syncStatus.value.loading = true;
+            syncStatus.value.message = `正在為 ${curEmail} 重置全新空白帳本並覆蓋雲端...`;
+
+            try {
+                // 1. 清除本機 IndexedDB 沙盒與舊版殘留快取
+                if (window.localforage) {
+                    await localforage.removeItem('sentinel_db_bytes');
+                    await localforage.removeItem(getUserDbStorageKey(curEmail));
+                }
+
+                // 2. 強制重置記憶體狀態並初始化全新空白 SQLite 資料庫
+                resetMemorySandboxState();
+                await ensureLocalDatabaseInitialized(`${curEmail} 全新空白帳本`);
+
+                // 3. 查詢此帳號 Google Drive 上的 sentinel_vault.db fileId 並覆蓋上傳
+                const searchUrl = `https://www.googleapis.com/drive/v3/files?spaces=drive&q=name='sentinel_vault.db' and trashed=false&fields=files(id,name)&orderBy=modifiedTime desc`;
+                const searchRes = await fetch(searchUrl, {
+                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                });
+                const searchData = await searchRes.json();
+                if (searchData.files && searchData.files.length > 0) {
+                    cloudDbStats.value.fileId = searchData.files[0].id;
+                } else {
+                    cloudDbStats.value.fileId = '';
+                }
+
+                await uploadBufferToGoogleDrive(dbInstance.export());
+                updateLocalDbStats();
+                await fetchCloudDbStats();
+
+                if (curEmail.toLowerCase().includes('tinghui0206')) {
+                    localStorage.setItem('sentinel_repaired_tinghui0206_v2', '1');
+                }
+
+                alert(`✨ 帳號【${curEmail}】已成功重置為全新空白帳本！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n本機沙盒與 Google Drive 雲端主檔皆已清理完畢！`);
+            } catch (err) {
+                console.error("重置當前帳號資料庫失敗:", err);
+                alert("❌ 重置失敗：" + err.message);
+            } finally {
+                syncStatus.value.loading = false;
             }
         };
 
@@ -5964,22 +6036,18 @@ createApp({
                 if (chartInstance) chartInstance.resize();
             });
 
-            // 優先讀取專屬帳號 IndexedDB 沙盒實現 0 延遲秒開 (含平滑相容遷移)
+            // 優先讀取專屬帳號 IndexedDB 沙盒實現 0 延遲秒開
             if (window.localforage) {
                 try {
                     const curEmail = googleUser.value.email;
-                    if (curEmail) {
-                        await ensureAccountDbMigrated(curEmail);
-                    }
-                    const userKey = getUserDbStorageKey(curEmail);
-                    let cachedBuffer = await localforage.getItem(userKey);
-                    // 向後相容訪客或首發版
-                    if (!cachedBuffer && (!curEmail || curEmail === 'guest')) {
-                        cachedBuffer = await localforage.getItem('sentinel_db_bytes');
-                    }
-                    if (cachedBuffer) {
-                        await loadDatabaseFromArrayBuffer(cachedBuffer, `${curEmail || '本地'} 離線快取`);
-                        updateLocalDbStats();
+                    await ensureAccountDbMigrated(curEmail);
+                    if (curEmail && curEmail !== 'guest') {
+                        const userKey = getUserDbStorageKey(curEmail);
+                        const cachedBuffer = await localforage.getItem(userKey);
+                        if (cachedBuffer) {
+                            await loadDatabaseFromArrayBuffer(cachedBuffer, `${curEmail} 離線快取`);
+                            updateLocalDbStats();
+                        }
                     }
                 } catch (e) {
                     console.warn("讀取離線快取失敗:", e);
@@ -6002,6 +6070,14 @@ createApp({
             initGoogleHeartbeat();
             await checkGoogleTokenFreshness();
             await fetchCloudDbStats();
+
+            // 🧹 針對先前受舊版快取污染之 tinghui0206 帳號主動彈出修復提示
+            const activeEmailNow = (googleUser.value.email || '').toLowerCase();
+            if (activeEmailNow.includes('tinghui0206') && localStorage.getItem('sentinel_repaired_tinghui0206_v2') !== '1' && (localDbStats.value.tradeLogCount > 0 || cloudDbStats.value.tradeLogCount > 0)) {
+                setTimeout(() => {
+                    resetCurrentAccountDatabase(true);
+                }, 400);
+            }
 
             // 監聽視窗旋轉或縮放以即時調整圖表
             window.addEventListener('resize', () => {
@@ -6111,6 +6187,7 @@ createApp({
             fetchCloudDbStats,
             handleGoogleLogin,
             handleGoogleLogout,
+            resetCurrentAccountDatabase,
             hasUnsyncedChanges,
             handleHeaderSyncClick,
             handleOneClickSync,

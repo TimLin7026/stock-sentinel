@@ -859,7 +859,7 @@
                                     <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center justify-between">
                                         <div class="flex items-center truncate mr-1">
                                             <span class="mr-1 text-xs shrink-0">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
-                                            <span class="mr-1.5 shrink-0">📖</span><span class="truncate">戰情報告短評 ({{ stock.reportDate || '最新' }})</span>
+                                            <span class="mr-1.5 shrink-0">📖</span><span class="truncate">短評 ({{ stock.reportDate || '最新' }})</span>
                                         </div>
                                         <div class="flex items-center space-x-1.5 shrink-0">
                                             <!-- 📄 查看最新戰報完整內容按鈕 -->
@@ -1349,6 +1349,15 @@
                                         <span>單向從雲端下載</span>
                                     </button>
                                 </div>
+
+                                <!-- 🧹 一鍵重置當前帳號為全新空白帳本 (修復誤同步污染) -->
+                                <button @click="resetCurrentAccountDatabase(false)" :disabled="syncStatus.loading || !googleUser.isLoggedIn"
+                                        :class="theme === 'dark' ? 'bg-amber-950/60 hover:bg-amber-900/80 border-amber-800/70 text-amber-300' : 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-800'"
+                                        class="w-full border py-2 px-3 rounded-xl text-[11px] font-bold flex items-center justify-center space-x-1.5 transition shadow-sm disabled:opacity-50"
+                                        title="清空當前 Google 帳號的本機與雲端資料並重建為全新空白帳本（不影響其他帳號）">
+                                    <i class="fa-solid fa-broom text-amber-400"></i>
+                                    <span>重置當前帳號為全新空白帳本 (清除誤同步資料)</span>
+                                </button>
                             </div>
 
                             <!-- 📅 市場曆法與數據健康維護 (對齊電腦端) -->
@@ -1956,7 +1965,7 @@
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
                         </div>
 
-                        <div id="chart-kline" class="w-full h-56"></div>
+                        <div id="chart-kline" class="w-full" style="height: 21rem;"></div>
                     </div>
 
                     <!-- 圖 2 (原 3)：MACD / OSC (DIF 亮黃, MACD_S 亮藍) -->
@@ -2134,6 +2143,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.01"></script>
+    <script src="app.js?v=2.20261013.02"></script>
 </body>
 </html>
