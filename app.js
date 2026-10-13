@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.07');
+        const appVersion = ref('v2.20261013.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -727,7 +727,13 @@ createApp({
         const decompressGzip = async (arrayBuffer) => {
             if ('DecompressionStream' in window) {
                 const stream = new Response(arrayBuffer).body.pipeThrough(new DecompressionStream('gzip'));
-                const text = await new Response(stream).text();
+                let text = await new Response(stream).text();
+                // 🛡️ 防禦性容錯：若快照中含非法 JSON 格式數值 (如少數個股指標除以零產生 NaN / Infinity)，自動清洗為 0.0
+                if (text.includes('NaN') || text.includes('Infinity')) {
+                    text = text.replace(/:\s*NaN\b/g, ': 0.0')
+                               .replace(/:\s*Infinity\b/g, ': 0.0')
+                               .replace(/:\s*-Infinity\b/g, ': 0.0');
+                }
                 return JSON.parse(text);
             }
             throw new Error('您的瀏覽器不支援原生 DecompressionStream 解壓');

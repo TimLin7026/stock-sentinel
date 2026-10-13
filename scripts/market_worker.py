@@ -68,6 +68,19 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super(NumpyEncoder, self).default(obj)
 
+def sanitize_nan_deep(obj):
+    """遞迴清洗任何 dict/list 中的 float('nan') 或 inf，確保 JSON 絕對合規"""
+    if isinstance(obj, dict):
+        return {k: sanitize_nan_deep(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_nan_deep(v) for v in obj]
+    elif isinstance(obj, (float, np.floating)):
+        val = float(obj)
+        return 0.0 if (math.isnan(val) or math.isinf(val)) else val
+    elif isinstance(obj, (int, np.integer)):
+        return int(obj)
+    return obj
+
 def clean_num(v, digits=2, default=0.0):
     if v is None:
         return default
@@ -1295,7 +1308,8 @@ def main():
 
     # 6. 藍綠雙分區熱切換：暫存至 staging_snapshot.json.gz 與 staging_history_60d.json.gz
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    json_bytes = json.dumps(snapshot_map, ensure_ascii=False, cls=NumpyEncoder).encode('utf-8')
+    clean_snapshot = sanitize_nan_deep(snapshot_map)
+    json_bytes = json.dumps(clean_snapshot, ensure_ascii=False, cls=NumpyEncoder, allow_nan=False).encode('utf-8')
     staging_gz_path = os.path.join(OUTPUT_DIR, "staging_snapshot.json.gz")
     with gzip.open(staging_gz_path, 'wb', compresslevel=9) as f:
         f.write(json_bytes)
@@ -1305,7 +1319,8 @@ def main():
     print(f"📦 [Staging 清洗區] 暫存單日快照生成完畢 -> {staging_gz_path} ({gz_size_kb} KB)")
 
     # 6.2 輸出 60 日全量技術指標時序數據包 (供手機端 ECharts Dialog 秒繪)
-    hist_bytes = json.dumps(history_map, ensure_ascii=False, cls=NumpyEncoder).encode('utf-8')
+    clean_history = sanitize_nan_deep(history_map)
+    hist_bytes = json.dumps(clean_history, ensure_ascii=False, cls=NumpyEncoder, allow_nan=False).encode('utf-8')
     staging_hist_path = os.path.join(OUTPUT_DIR, "staging_history_60d.json.gz")
     with gzip.open(staging_hist_path, 'wb', compresslevel=9) as f:
         f.write(hist_bytes)
