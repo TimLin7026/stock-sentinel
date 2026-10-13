@@ -72,6 +72,10 @@ def clean_num(v, digits=2, default=0.0):
     if v is None:
         return default
     try:
+        if isinstance(v, str):
+            v = re.sub(r'[^\d.-]', '', v.replace(',', '').strip())
+            if not v or v in ('-', '.', '-.'):
+                return default
         val = float(v)
         if math.isnan(val) or math.isinf(val):
             return default
@@ -83,6 +87,10 @@ def clean_int(v, default=0):
     if v is None:
         return default
     try:
+        if isinstance(v, str):
+            v = re.sub(r'[^\d.-]', '', v.replace(',', '').strip())
+            if not v or v in ('-', '.', '-.'):
+                return default
         val = float(v)
         if math.isnan(val) or math.isinf(val):
             return default
@@ -427,17 +435,25 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
                 target_market_days.append(d_str)
             curr_dt -= datetime.timedelta(days=1)
 
-        # 查詢資料庫中現存之交易日與筆數
+        # 查詢資料庫中現存之交易日、有效量價筆數與有效籌碼筆數
         placeholders = ",".join(["?"] * len(target_market_days))
-        cur.execute(f"SELECT trade_date, COUNT(*) FROM daily_kline WHERE trade_date IN ({placeholders}) AND length(stock_code) <= 5 GROUP BY trade_date", target_market_days)
-        existing_counts = {row[0]: row[1] for row in cur.fetchall()}
+        cur.execute(f"""
+            SELECT trade_date,
+                   COUNT(*),
+                   SUM(CASE WHEN close > 0 AND volume > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN ABS(foreign_buy) + ABS(sitc_buy) + ABS(dealers_buy) > 0 THEN 1 ELSE 0 END)
+            FROM daily_kline
+            WHERE trade_date IN ({placeholders}) AND length(stock_code) <= 5
+            GROUP BY trade_date
+        """, target_market_days)
+        existing_stats = {row[0]: (row[1], row[2] or 0, row[3] or 0) for row in cur.fetchall()}
 
         missing_dates = []
         for d_str in reversed(target_market_days): # 依時間正向 (舊到新)
-            cnt = existing_counts.get(d_str, 0)
-            if cnt < 1000: # 筆數過少判定為殘缺或未爬取
+            cnt, valid_vol_cnt, valid_chip_cnt = existing_stats.get(d_str, (0, 0, 0))
+            if cnt < 1000 or valid_vol_cnt < 500: # 筆數過少或有效成交量異常為 0 判定為殘缺需重抓
                 missing_dates.append(d_str)
-                print(f"  🚨 發現缺漏交易日: {d_str} (現存筆數: {cnt})")
+                print(f"  🚨 發現缺漏或殘缺交易日: {d_str} (總筆數: {cnt}, 有效量價: {valid_vol_cnt})")
                 
         if not missing_dates:
             print(f"✅ [完整性檢驗通過] 最近 {scan_days} 個開市日歷史數據 100% 齊全，無需補抓！")
@@ -451,8 +467,35 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
     if not last_db_date:
         start_dt = end_dt - datetime.timedelta(days=30)
     else:
+        # 檢查最新一日是否為殘缺數據 (例如 14:30 僅抓了收盤價尚未抓晚間籌碼資券，或成交量異常為 0)
+        cur.execute("""
+            SELECT COUNT(*),
+                   SUM(CASE WHEN close > 0 AND volume > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN ABS(foreign_buy) + ABS(sitc_buy) + ABS(dealers_buy) > 0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN margin_balance > 0 THEN 1 ELSE 0 END)
+            FROM daily_kline
+            WHERE trade_date = ? AND length(stock_code) <= 5
+        """, (last_db_date,))
+        stat_row = cur.fetchone()
+        total_cnt = (stat_row[0] or 0) if stat_row else 0
+        valid_vol_cnt = (stat_row[1] or 0) if stat_row else 0
+        valid_chip_cnt = (stat_row[2] or 0) if stat_row else 0
+        valid_margin_cnt = (stat_row[3] or 0) if stat_row else 0
+
+        today_str = now.strftime("%Y%m%d")
+        is_evening_ready = (last_db_date < today_str) or (now.hour >= 16)
+        needs_re_crawl_last = (
+            total_cnt < 1000 or
+            valid_vol_cnt < 500 or
+            (is_evening_ready and (valid_chip_cnt < 300 or valid_margin_cnt < 300))
+        )
+
         last_dt = datetime.datetime.strptime(last_db_date, "%Y%m%d")
-        start_dt = last_dt + datetime.timedelta(days=1)
+        if needs_re_crawl_last:
+            print(f"🔄 [籌碼/量價補齊] 檢測到最新交易日 {last_db_date} 需更新完整盤後數據 (有效量價:{valid_vol_cnt}, 法人:{valid_chip_cnt}, 資券:{valid_margin_cnt})，納入重抓佇列。")
+            start_dt = last_dt
+        else:
+            start_dt = last_dt + datetime.timedelta(days=1)
         
     if start_dt > end_dt:
         print(f"✅ [最新狀態] 歷史資料庫已是最新狀態 (最新日期: {last_db_date})。")
@@ -799,21 +842,207 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
             if (c2 > o2) and (o1 > c1) and (c > o) and c > o1 and o < c1: pats.append("🥪 雙陽夾一陰")
         k_pattern = "、".join(pats) if pats else "無明顯型態"
 
-        # RSI12 搶反彈與預估 (超跌恐慌點位)
-        if bias20 <= -8:
-            p1 = round(c * 1.054, 2)
-            p2 = round(c * 1.035, 2)
-            p3 = round(c * 1.017, 2)
-            p_start = round(c * 1.256, 2)
-            rsi_info = {
-                "emoji": "🔴",
-                "text": f"⚠️ 一級低吸點 (RSI=30): {p1} 元 (預估跌幅: 5.44%)\n🚨 二級強力反彈 (RSI=27.5 - 首選推薦): {p2} 元 (預估跌幅: 3.57%)\n🔥 三級極限冰點 (RSI=25): {p3} 元 (預估跌幅: 1.70%)\n(以 {p_start} 元 (RSI=57.0) 為起跌點推估買點)\n賣點預估: 已觸發動能衰竭或橫盤冷卻 (橫盤冷卻)，停止預估價位"
-            }
-        else:
-            rsi_info = {
-                "emoji": "⚪",
-                "text": "買點預測：目前股價強勢/橫盤，未滿足起跌條件\n賣點預估：目前無反彈賣信號"
-            }
+        # RSI12 搶反彈與預估 (100% 對齊電腦版 Stock_Sentinel.py compute_rsi12_rebound_strategy)
+        rsi_info = {
+            "emoji": "⚪",
+            "text": "買點預測：目前股價強勢/橫盤，未滿足起跌條件\n賣點預估：目前無反彈賣信號"
+        }
+        try:
+            df_slice = df_raw.tail(15).reset_index(drop=True)
+            if len(df_slice) >= 3:
+                curr_p = float(df_slice["close"].iloc[-1])
+                curr_rsi = float(df_slice["RSI12"].iloc[-1])
+                rsi12_min = float(df_slice["RSI12"].min())
+                
+                idx_min = int(df_slice["RSI12"].idxmin())
+                rsi_min_val = float(df_slice["RSI12"].iloc[idx_min])
+                p_min_val = float(df_slice["close"].iloc[idx_min])
+                
+                # 1. 三方案交叉驗證尋找起跌點
+                idx_a = int(df_slice["RSI12"].idxmax())
+                rsi_a = float(df_slice["RSI12"].iloc[idx_a])
+                p_a = float(df_slice["close"].iloc[idx_a])
+                
+                idx_b = -1
+                for i in range(len(df_slice) - 2, 0, -1):
+                    r_prev = float(df_slice["RSI12"].iloc[i - 1])
+                    r_c = float(df_slice["RSI12"].iloc[i])
+                    r_next = float(df_slice["RSI12"].iloc[i + 1])
+                    if r_prev < r_c > r_next and r_c >= 35:
+                        idx_b = i
+                        break
+                        
+                idx_c = -1
+                for i in range(len(df_slice) - 2, -1, -1):
+                    r_val = float(df_slice["RSI12"].iloc[i])
+                    p_val = float(df_slice["close"].iloc[i])
+                    if r_val >= 35 and r_val > curr_rsi and p_val > curr_p:
+                        idx_c = i
+                        break
+                        
+                start_idx = -1
+                if idx_b != -1 and float(df_slice["RSI12"].iloc[idx_b]) > curr_rsi and float(df_slice["close"].iloc[idx_b]) > curr_p:
+                    start_idx = idx_b
+                elif idx_c != -1:
+                    start_idx = idx_c
+                elif rsi_a >= 35 and rsi_a > curr_rsi and p_a > curr_p:
+                    start_idx = idx_a
+                    
+                has_pred = False
+                p_30, p_27, p_25 = 0.0, 0.0, 0.0
+                p_30_pct, p_27_pct, p_25_pct = 0.0, 0.0, 0.0
+                start_rsi, start_p = 0.0, 0.0
+                sensitivity = 0.0
+                
+                if start_idx != -1:
+                    p_start = float(df_slice["close"].iloc[start_idx])
+                    rsi_start = float(df_slice["RSI12"].iloc[start_idx])
+                    delta_rsi = rsi_start - curr_rsi
+                    delta_p = p_start - curr_p
+                    
+                    if delta_p > 0 and delta_rsi >= 5:
+                        sensitivity = delta_p / delta_rsi
+                        p_30 = p_start - (rsi_start - 30) * sensitivity
+                        p_27 = p_start - (rsi_start - 27.5) * sensitivity
+                        p_25 = p_start - (rsi_start - 25) * sensitivity
+                        
+                        p_30_pct = ((p_30 - curr_p) / curr_p * 100) if curr_p > 0 else 0.0
+                        p_27_pct = ((p_27 - curr_p) / curr_p * 100) if curr_p > 0 else 0.0
+                        p_25_pct = ((p_25 - curr_p) / curr_p * 100) if curr_p > 0 else 0.0
+                        start_rsi, start_p = rsi_start, p_start
+                        has_pred = True
+
+                # 2. 決定反彈敏感度 (sensitivity_up)
+                if curr_rsi > rsi_min_val and curr_p > p_min_val:
+                    sensitivity_up = (curr_p - p_min_val) / (curr_rsi - rsi_min_val)
+                elif has_pred and sensitivity > 0:
+                    sensitivity_up = sensitivity
+                else:
+                    sensitivity_up = curr_p / 30.0
+                    
+                p_sell10 = p_min_val + 10 * sensitivity_up
+                p_sell15 = p_min_val + 15 * sensitivity_up
+                p_sell20 = p_min_val + 20 * sensitivity_up
+                
+                p_sell10_pct = ((p_sell10 - p_min_val) / p_min_val * 100) if p_min_val > 0 else 0.0
+                p_sell15_pct = ((p_sell15 - p_min_val) / p_min_val * 100) if p_min_val > 0 else 0.0
+                p_sell20_pct = ((p_sell20 - p_min_val) / p_min_val * 100) if p_min_val > 0 else 0.0
+
+                # 3.0 前置驗證：最近 15 日最低 RSI12 必須小於 30.0，才視為有發生過搶反彈事件
+                has_rebound_event = (rsi_min_val < 30.0)
+                if not has_rebound_event:
+                    has_pred = False
+
+                # 3.1 股價橫盤盤整濾網 (近 4 日收盤價最大/最小振幅 <= 2%)
+                is_sideways = False
+                if len(df_raw) >= 4:
+                    close_4d = df_raw["close"].tail(4)
+                    p_min_4d = float(close_4d.min())
+                    if p_min_4d > 0:
+                        p_amp_4d = (float(close_4d.max()) - p_min_4d) / p_min_4d * 100
+                        if p_amp_4d <= 2.0:
+                            is_sideways = True
+
+                # 3.2 時效過期濾網 (近 3 日 T-1, T-2, T-3 曾觸及過三級停利賣點)
+                has_touched_sell3_recently = False
+                if len(df_raw) >= 4:
+                    for offset in [-4, -3, -2]:
+                        idx = len(df_raw) + offset
+                        if idx >= 15:
+                            df_slice_past = df_raw.iloc[idx - 14:idx + 1]
+                            past_rsi_min = float(df_slice_past["RSI12"].min())
+                            past_rsi_curr = float(df_raw["RSI12"].iloc[idx])
+                            if past_rsi_curr > past_rsi_min + 20:
+                                has_touched_sell3_recently = True
+                                break
+
+                # 3.3 反彈動能衰竭濾網
+                is_decayed = False
+                if len(df_raw) >= 4:
+                    df_15d = df_raw.tail(15)
+                    idx_rsi_min = df_15d["RSI12"].idxmin()
+                    rebound_idxs = df_raw.loc[idx_rsi_min:].index.tolist()
+                    for pos, cur_idx in enumerate(rebound_idxs):
+                        if pos < 2:
+                            continue
+                        zone_before = df_raw.loc[rebound_idxs[0]:rebound_idxs[pos - 1]]
+                        if zone_before.empty:
+                            continue
+                        peak_idx = zone_before["close"].idxmax()
+                        p_max_low = float(df_raw["low"].iloc[df_raw.index.get_loc(peak_idx)])
+                        prev_rsi_max = float(df_raw["RSI12"].loc[rebound_idxs[pos - 2]:rebound_idxs[pos - 1]].max())
+                        cur_rsi_d = float(df_raw["RSI12"].iloc[df_raw.index.get_loc(cur_idx)])
+                        rsi_hook = cur_rsi_d < (prev_rsi_max - 1.5)
+                        cur_close_d = float(df_raw["close"].iloc[df_raw.index.get_loc(cur_idx)])
+                        price_break = cur_close_d < p_max_low
+                        if rsi_hook and price_break:
+                            is_decayed = True
+                            break
+
+                # 3.4 10日時效保護傘自癒判定
+                is_outdated = False
+                if not has_rebound_event:
+                    is_outdated = True
+                elif len(df_raw) >= 4:
+                    df_15d = df_raw.tail(15)
+                    idx_rsi_min = df_15d["RSI12"].idxmin()
+                    days_since_rsi_min = len(df_raw) - 1 - idx_rsi_min
+                    if days_since_rsi_min > 10:
+                        is_outdated = True
+
+                # 3.5 整合冷卻開關
+                if is_outdated:
+                    disable_sell_warnings = False
+                    is_decayed = False
+                    is_sideways = False
+                    has_touched_sell3_recently = False
+                else:
+                    disable_sell_warnings = is_sideways or has_touched_sell3_recently or is_decayed
+
+                cool_reason_lbl = " (橫盤冷卻)" if is_sideways else (" (3日內已觸頂)" if has_touched_sell3_recently else (" (反彈結束)" if is_decayed else ""))
+
+                if has_pred:
+                    rsi_pred_str = (
+                        f"⚠️ 一級低吸點 (RSI=30): {p_30:.2f} 元 (預估跌幅: {p_30_pct:.2f}%)"
+                        f"\n🚨 二級強力反彈 (RSI=27.5 - 首選推薦): {p_27:.2f} 元 (預估跌幅: {p_27_pct:.2f}%)"
+                        f"\n🔥 三級極限冰點 (RSI=25): {p_25:.2f} 元 (預估跌幅: {p_25_pct:.2f}%)"
+                        f"\n(以 {start_p:.2f} 元 (RSI={start_rsi:.1f}) 為起跌點推估買點)"
+                    )
+                else:
+                    rsi_pred_str = "買點預測：目前股價強勢/橫盤，未滿足起跌條件"
+
+                if is_outdated:
+                    rsi_pred_str += "\n賣點預估：目前無反彈賣信號"
+                elif disable_sell_warnings:
+                    rsi_pred_str += f"\n賣點預估：已觸發動能衰竭或橫盤冷卻{cool_reason_lbl}，停止預估價位"
+                else:
+                    rsi_pred_str += (
+                        f"\n💡 一級反彈賣點 (RSI=最低值+10): {p_sell10:.2f} 元 (相對最低點反彈幅: +{p_sell10_pct:.2f}%)"
+                        f"\n🚨 二級反彈賣點 (RSI=最低值+15): {p_sell15:.2f} 元 (相對最低點反彈幅: +{p_sell15_pct:.2f}%)"
+                        f"\n🔥 三級終極賣點 (RSI=最低值+20): {p_sell20:.2f} 元 (相對最低點反彈幅: +{p_sell20_pct:.2f}%)"
+                    )
+
+                if curr_rsi <= 25:
+                    rsi_emoji = "🔴"
+                elif 25 < curr_rsi <= 27.5:
+                    rsi_emoji = "🔴"
+                elif 27.5 < curr_rsi <= 30:
+                    rsi_emoji = "🟡"
+                elif curr_rsi > rsi12_min + 20 and not disable_sell_warnings and not is_outdated:
+                    rsi_emoji = "🔴"
+                elif curr_rsi > rsi12_min + 15 and not disable_sell_warnings and not is_outdated:
+                    rsi_emoji = "🟡"
+                elif curr_rsi > rsi12_min + 10 and not disable_sell_warnings and not is_outdated:
+                    rsi_emoji = "🟢"
+                else:
+                    rsi_emoji = "⚪"
+
+                rsi_info = {
+                    "emoji": rsi_emoji,
+                    "text": rsi_pred_str
+                }
+        except Exception as e_rsi:
+            pass
 
         # 6 大青紅燈指標 (數值 1: 多/紅, -1: 空/綠)
         t_mtm = int(latest_row["P10_MTM_Cross"])

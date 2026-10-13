@@ -819,12 +819,12 @@
                                 </div>
                                 <div class="flex items-center space-x-1.5 shrink-0">
                                     <span class="text-emerald-600 dark:text-emerald-400 font-bold">{{ stock.sellPriceTarget || stock.targetRange }} &lt; 賣出 🔽</span>
-                                    <!-- 📄 完整戰報快捷按鈕 (純 emoji / 圖示) -->
+                                    <!-- 📄 完整戰報快捷按鈕 (FontAwesome 圖示) -->
                                     <button @click.stop="openFullReportModal(stock)" 
                                             class="w-5 h-5 rounded-md font-bold transition active:scale-90 flex items-center justify-center border shrink-0 text-[10px]"
                                             :class="theme === 'dark' ? 'bg-sky-950/80 text-sky-300 border-sky-800/60 hover:bg-sky-900' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'"
                                             title="查看最新完整戰情報告">
-                                        📄
+                                        <i class="fa-solid fa-file-lines text-[10px]"></i>
                                     </button>
                                 </div>
                             </div>
@@ -854,29 +854,29 @@
                         <transition name="card-expand">
                             <div v-if="isExpanded(stock.uid)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="stock-detail-body px-3.5 py-3 border-t space-y-3 text-xs">
                                 
-                                <!-- 1. 戰報戰情總結 (置頂顯示：資訊日期與時效燈號 + [完整戰報] 與 [匯入戰報] 按鈕) -->
+                                <!-- 1. 戰報戰情總結 (置頂顯示：資訊日期與時效燈號 + [戰報] 與 [匯入] 按鈕) -->
                                 <div>
                                     <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center justify-between">
-                                        <div class="flex items-center">
-                                            <span class="mr-1 text-xs">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
-                                            <span class="mr-1.5">📖</span>戰情報告短評 ({{ stock.reportDate || '最新' }})
+                                        <div class="flex items-center truncate mr-1">
+                                            <span class="mr-1 text-xs shrink-0">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
+                                            <span class="mr-1.5 shrink-0">📖</span><span class="truncate">戰情報告短評 ({{ stock.reportDate || '最新' }})</span>
                                         </div>
-                                        <div class="flex items-center space-x-1.5">
+                                        <div class="flex items-center space-x-1.5 shrink-0">
                                             <!-- 📄 查看最新戰報完整內容按鈕 -->
                                             <button @click.stop="openFullReportModal(stock)" 
                                                     :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
-                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
+                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
                                                     title="查看最新完整戰情報告">
                                                 <i class="fa-solid fa-file-lines text-[10px]"></i>
-                                                <span>完整戰報</span>
+                                                <span>戰報</span>
                                             </button>
                                             <!-- 🧠 單一入口：匯入戰報小按鈕 -->
                                             <button @click.stop="openImportReportModal(stock)" 
                                                     :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
-                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95" 
+                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
                                                     title="匯入戰情報告">
                                                 <i class="fa-solid fa-brain text-[10px]"></i>
-                                                <span>匯入戰報</span>
+                                                <span>匯入</span>
                                             </button>
                                         </div>
                                     </div>
@@ -2134,6 +2134,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261012.06"></script>
+    <script src="app.js?v=2.20261013.01"></script>
 </body>
 </html>

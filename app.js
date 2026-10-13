@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261012.06');
+        const appVersion = ref('v2.20261013.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -618,10 +618,24 @@ createApp({
                     }
 
                     if (snap.d) {
-                        s.priceDate = snap.d.length === 8 ? `${snap.d.slice(0, 4)}/${snap.d.slice(4, 6)}/${snap.d.slice(6, 8)}` : snap.d;
+                        const snapDigits = String(snap.d).replace(/\D/g, '').slice(0, 8);
+                        s.priceDate = snapDigits.length === 8 ? `${snapDigits.slice(0, 4)}/${snapDigits.slice(4, 6)}/${snapDigits.slice(6, 8)}` : snap.d;
+                        s.strategyDate = s.priceDate;
                         s.isPriceFresh = true;
                         s.isIndicatorFresh = true;
                         s.isStrategyFresh = true;
+
+                        // 🎯 依據雲端大腦最新開市日即時重算戰報時效 (戰報日期必須 >= 最新開市日才亮綠勾 ✅，否則顯示 ⚠️)
+                        const repDigits = String(s.reportDate || '').replace(/\D/g, '').slice(0, 8);
+                        const hasActualRep = Boolean(
+                            (s.summaryText && s.summaryText !== '暫無策略總結，請於 PC 端進行全量掃描分析。') ||
+                            (s.fullStrategyContent && s.fullStrategyContent.trim()) ||
+                            (s.buyPriceTarget && s.buyPriceTarget !== '---') ||
+                            (s.sellPriceTarget && s.sellPriceTarget !== '---')
+                        );
+                        if (snapDigits.length === 8) {
+                            s.isReportFresh = Boolean(hasActualRep && repDigits.length === 8 && repDigits >= snapDigits);
+                        }
                     }
 
                     // 🎯 雲端大腦全量 6 燈注入
@@ -1593,38 +1607,18 @@ createApp({
             else if (bearishK.some(w => kp.includes(w))) kpEmoji = '🟢';
             features.push({ name: 'K線型態', desc: kp || '無明顯型態', emoji: kpEmoji });
 
-            // 11. 🎯 RSI12搶反彈與預估 (100% 完全對齊地端截圖與規則)
+            // 11. 🎯 RSI12搶反彈與預估 (100% 完全對齊地端截圖與規則，直接採用真實計算之 rsi_info)
             let rsiEmoji = '⚪';
             let rsiSubLines = [];
 
-            // 檢查月線乖離是否觸發超跌恐慌
-            const isOversold = bias.includes('超跌') || bias.includes('恐慌');
-
             if (stratDict.rsi_info && typeof stratDict.rsi_info === 'object') {
-                rsiEmoji = stratDict.rsi_info.emoji || (isOversold ? '🔴' : '⚪');
+                rsiEmoji = stratDict.rsi_info.emoji || '⚪';
                 const rawText = String(stratDict.rsi_info.text || '');
                 rsiSubLines = rawText.split('\n').map(l => l.replace(/^[\s↳\-\*]+/, '').trim()).filter(Boolean);
             } else if (typeof stratDict.rsi_info === 'string' && stratDict.rsi_info.trim()) {
                 const rawText = stratDict.rsi_info.trim();
                 rsiSubLines = rawText.split('\n').map(l => l.replace(/^[\s↳\-\*]+/, '').trim()).filter(Boolean);
-            } else if (isOversold) {
-                // 只有超跌恐慌（如 2542 興富發）才產生搶反彈低吸點位
-                const p = Number(curPrice) || 38.05;
-                const p1 = Number((p * 1.054).toFixed(2));
-                const p2 = Number((p * 1.035).toFixed(2));
-                const p3 = Number((p * 1.017).toFixed(2));
-                const pStart = Number((p * 1.256).toFixed(2));
-                
-                rsiEmoji = '🔴';
-                rsiSubLines = [
-                    `⚠️ 一級低吸點 (RSI=30): ${p1} 元 (預估跌幅: 5.44%)`,
-                    `🚨 二級強力反彈 (RSI=27.5 - 首選推薦): ${p2} 元 (預估跌幅: 3.57%)`,
-                    `🔥 三級極限冰點 (RSI=25): ${p3} 元 (預估跌幅: 1.70%)`,
-                    `(以 ${pStart} 元 (RSI=57.0) 為起跌點推估買點)`,
-                    `賣點預估: 已觸發動能衰竭或橫盤冷卻 (橫盤冷卻)，停止預估價位`
-                ];
             } else {
-                // 未觸發超跌事件（如 00919 溫和整理）
                 rsiEmoji = '⚪';
                 rsiSubLines = [
                     '買點預測：目前股價強勢/橫盤，未滿足起跌條件',
@@ -1716,6 +1710,96 @@ createApp({
                 }
             } catch (err) {
                 console.warn("[MIGRATE] Overall migration error:", err);
+            }
+        };
+
+        // ─── 全新帳號 / 空庫自動初始化引擎 (確保首次登入無雲端 DB 時也能直接新增交易、關注與同步) ───
+        const ensureLocalDatabaseInitialized = async (sourceLabel = '全新初始化帳本') => {
+            if (dbInstance) return dbInstance;
+            try {
+                if (!SQL_ENGINE) {
+                    SQL_ENGINE = await initSqlJs({
+                        locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                    });
+                }
+                const newDb = new SQL_ENGINE.Database();
+                newDb.run(`
+                    CREATE TABLE IF NOT EXISTS trade_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        股票代號 TEXT,
+                        股票名稱 TEXT,
+                        動作 TEXT,
+                        成交股數 REAL,
+                        成交價 REAL,
+                        證券商 TEXT,
+                        交易時間 TEXT,
+                        特別關注 TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS my_stock (
+                        股票代號 TEXT,
+                        股票名稱 TEXT,
+                        個股股數 REAL DEFAULT 0,
+                        損平價 REAL DEFAULT 0,
+                        證券商 TEXT,
+                        特別關注 TEXT DEFAULT '否',
+                        created_at TEXT,
+                        PRIMARY KEY (股票代號, 證券商)
+                    );
+                    CREATE TABLE IF NOT EXISTS gem_strategy (
+                        記錄時間 TEXT PRIMARY KEY,
+                        股票代號 TEXT,
+                        策略內容 TEXT,
+                        佈局下限 REAL,
+                        佈局上限 REAL,
+                        防守點 REAL,
+                        目標下限 REAL,
+                        目標上限 REAL,
+                        戰情總結 TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS deleted_records (
+                        table_name TEXT,
+                        unique_key TEXT,
+                        deleted_at TEXT,
+                        stock_created_at TEXT,
+                        PRIMARY KEY (table_name, unique_key)
+                    );
+                    CREATE TABLE IF NOT EXISTS fifo_cache (stock_code TEXT PRIMARY KEY, cache_data TEXT);
+                    CREATE TABLE IF NOT EXISTS stock_heatmap_cache (stock_code TEXT PRIMARY KEY, cache_data TEXT);
+                    CREATE TABLE IF NOT EXISTS stock_analysis (stock_code TEXT PRIMARY KEY, cache_data TEXT);
+                    CREATE TABLE IF NOT EXISTS stock_dict (stock_code TEXT PRIMARY KEY, stock_name TEXT);
+                    CREATE TABLE IF NOT EXISTS stock_price (stock_code TEXT PRIMARY KEY, cache_data TEXT);
+                    CREATE TABLE IF NOT EXISTS holidays (holiday_date INTEGER PRIMARY KEY, holiday_name TEXT);
+                `);
+
+                // 若記憶體中已有台股代號字典，預先寫入 stock_dict
+                try {
+                    const dictEntries = Object.entries(stockDictMap.value || {});
+                    if (dictEntries.length > 0) {
+                        newDb.run("BEGIN TRANSACTION");
+                        const stmt = newDb.prepare("INSERT OR IGNORE INTO stock_dict (stock_code, stock_name) VALUES (?, ?)");
+                        dictEntries.forEach(([k, v]) => {
+                            if (k && v && k.length >= 4 && k.length <= 5) {
+                                stmt.run([k, v]);
+                            }
+                        });
+                        stmt.free();
+                        newDb.run("COMMIT");
+                    }
+                } catch (eDict) {
+                    try { newDb.run("ROLLBACK"); } catch (eR) {}
+                }
+
+                dbInstance = newDb;
+                isDbLoaded.value = true;
+                const u8 = dbInstance.export();
+                const sizeKB = (u8.byteLength / 1024).toFixed(0);
+                dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceLabel})`;
+                await saveDbToIndexedDb();
+                updateLocalDbStats();
+                return dbInstance;
+            } catch (err) {
+                console.error("初始化空白 SQLite 資料庫失敗:", err);
+                throw err;
             }
         };
 
@@ -1983,11 +2067,15 @@ createApp({
                 });
                 fifoInventory.value = flatFifo;
 
-                // 5. 推算全市場最新基準交易日 (取所有表的最大日期)
+                // 5. 推算全市場最新基準交易日 (取所有表與雲端大腦的最大開市日期)
                 let allDates = [];
                 Object.values(priceMap).forEach(p => { if (p.date) allDates.push(String(p.date).replace(/\D/g, '')); });
                 Object.values(heatmapMap).forEach(h => { if (h.dataDate) allDates.push(String(h.dataDate).replace(/\D/g, '')); });
                 parsedTrades.forEach(t => { if (t.date) allDates.push(String(t.date).replace(/\D/g, '')); });
+                if (marketSyncMeta.value && marketSyncMeta.value.marketDate) {
+                    const mDigits = String(marketSyncMeta.value.marketDate).replace(/\D/g, '').slice(0, 8);
+                    if (mDigits.length === 8) allDates.push(mDigits);
+                }
                 allDates = allDates.filter(d => d.length >= 8).sort().reverse();
                 const latestMarketTradingDay = allDates.length > 0 ? allDates[0].slice(0, 8) : '20260331';
 
@@ -2162,9 +2250,7 @@ createApp({
                     console.warn("my_stock 讀取失敗:", e);
                 }
 
-                if (parsedStocks.length > 0) {
-                    stockList.value = parsedStocks;
-                }
+                stockList.value = parsedStocks;
 
                 // ⚡ 若記憶體或本機存有最新行情快照，立即全盤注入最新收盤價與 6 大指標 (拒絕現價為 0)
                 if (currentMarketSnapshotData) {
@@ -2742,6 +2828,15 @@ createApp({
             if (!codeVal) {
                 alert('請填寫股票代號！');
                 return;
+            }
+
+            if (!dbInstance) {
+                try {
+                    await ensureLocalDatabaseInitialized();
+                } catch (eInit) {
+                    alert("⚠️ 初始化本地資料庫失敗：" + eInit.message);
+                    return;
+                }
             }
 
             // 沉澱至本地字典與資料庫
@@ -3362,8 +3457,12 @@ createApp({
 
         const submitImportReport = async () => {
             if (!dbInstance) {
-                alert("⚠️ 資料庫未載入，無法匯入戰報。");
-                return;
+                try {
+                    await ensureLocalDatabaseInitialized();
+                } catch (eInit) {
+                    alert("⚠️ 初始化本地資料庫失敗：" + eInit.message);
+                    return;
+                }
             }
             const parsed = parseReportText(importReportText.value);
             if (!parsed) {
@@ -3416,8 +3515,12 @@ createApp({
         // ─── 📅 手機端「更新休市日」模組 (對接證交所 OpenAPI + GitHub Pages 雲端自訂休市表) ───
         const updateMarketHolidays = async () => {
             if (!dbInstance) {
-                alert("⚠️ 本機尚未載入資料庫，無法更新休市日。");
-                return;
+                try {
+                    await ensureLocalDatabaseInitialized();
+                } catch (eInit) {
+                    alert("⚠️ 初始化本地資料庫失敗：" + eInit.message);
+                    return;
+                }
             }
             if (isUpdatingHolidays.value) return;
 
@@ -4997,20 +5100,34 @@ createApp({
                     // 4. 平滑資料庫遷移
                     await ensureAccountDbMigrated(loggedEmail);
 
-                    // 5. 載入該帳號專屬的本地資料庫
+                    // 5. 載入該帳號專屬的本地資料庫 (若為全新帳號則重置並自動初始化空白帳本)
                     if (window.localforage) {
                         const userKey = getUserDbStorageKey(loggedEmail);
                         const userDb = await localforage.getItem(userKey);
                         if (userDb) {
                             await loadDatabaseFromArrayBuffer(userDb, `${loggedEmail} 本機沙盒`);
+                        } else {
+                            if (dbInstance) {
+                                try { dbInstance.close(); } catch (e) {}
+                                dbInstance = null;
+                            }
+                            stockList.value = [];
+                            fifoInventory.value = [];
+                            recentTradeLogs.value = [];
+                            hedgedRecords.value = [];
+                            await ensureLocalDatabaseInitialized(`${loggedEmail} 全新帳本`);
                         }
                     }
 
                     showToast(`🎉 帳號【${loggedEmail}】授權成功！已載入專屬戰情室`, 3000);
                     await fetchCloudDbStats();
 
-                    // 6. 連鎖自動同步
-                    syncMarketSnapshot().catch(e => console.warn("快照同步警告:", e));
+                    // 6. 連鎖自動同步 (先同步雲端行情大腦，再執行雲端帳本同步)
+                    try {
+                        await syncMarketSnapshot();
+                    } catch (e) {
+                        console.warn("快照同步警告:", e);
+                    }
                     executeTwoWaySync().catch(e => console.warn("雲端帳本同步警告:", e));
                 }
             });
@@ -5046,8 +5163,15 @@ createApp({
                 if (userDb) {
                     await loadDatabaseFromArrayBuffer(userDb, `${targetEmail} 專屬沙盒`);
                 } else {
+                    if (dbInstance) {
+                        try { dbInstance.close(); } catch (e) {}
+                        dbInstance = null;
+                    }
                     stockList.value = [];
-                    isDbLoaded.value = false;
+                    fifoInventory.value = [];
+                    recentTradeLogs.value = [];
+                    hedgedRecords.value = [];
+                    await ensureLocalDatabaseInitialized(`${targetEmail} 全新帳本`);
                 }
             }
 
@@ -5358,12 +5482,18 @@ createApp({
 
                 if (!searchData.files || searchData.files.length === 0) {
                     if (!dbInstance) {
-                        alert("⚠️ 本地尚未載入資料庫，無法建立雲端檔案。");
-                        return;
+                        await ensureLocalDatabaseInitialized('全新帳號雲端初始化');
                     }
-                    syncStatus.value.message = '雲端尚無檔案，正在上傳本機資料庫作為主檔...';
+                    syncStatus.value.message = '雲端尚無檔案，正在自動初始化並上傳建立雲端主檔...';
                     await uploadBufferToGoogleDrive(dbInstance.export());
-                    alert("✨ 雲端主檔建立成功！兩端資料已同步。");
+                    updateLocalDbStats();
+                    await fetchCloudDbStats();
+
+                    const brainDate = marketSyncMeta.value.marketDate ? `${marketSyncMeta.value.marketDate} 盤後` : '未同步';
+                    const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
+                    const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
+
+                    alert(`✨ 全新帳號雲端主檔建立成功！\n\n👤 個人雲端帳本：\n已在您的 Google Drive 自動初始化建立 sentinel_vault.db 主檔。\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n您現在可以直接新增交易、關注個股與匯入戰報！\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
                     return;
                 }
 
@@ -5696,8 +5826,12 @@ createApp({
         // 📤 2. 單向上傳備份至雲端
         const executeSingleUpload = async () => {
             if (!dbInstance) {
-                alert("⚠️ 本機尚未載入資料庫，無法上傳。");
-                return;
+                try {
+                    await ensureLocalDatabaseInitialized();
+                } catch (eInit) {
+                    alert("⚠️ 初始化本地資料庫失敗：" + eInit.message);
+                    return;
+                }
             }
             if (!confirm("⚠️ 確定要執行【單向上傳備份】嗎？\n這將會以手機本機的資料庫直接覆蓋雲端上的 sentinel_vault.db！")) return;
 

@@ -47,8 +47,8 @@ jobs:
       - name: 💾 自動提交並推播快照、歷史庫與健康報表至 GitHub
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore(data): auto-update market snapshot, history db and health audit [skip ci]"
-          file_pattern: "market_snapshot.json.gz market_health.json scripts/market_history.db"
+          commit_message: "chore(data): auto-update market snapshot, 60d history, db and health audit [skip ci]"
+          file_pattern: "market_snapshot.json.gz market_history_60d.json.gz market_health.json scripts/market_history.db"
           commit_user_name: "github-actions[bot]"
           commit_user_email: "github-actions[bot]@users.noreply.github.com"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
