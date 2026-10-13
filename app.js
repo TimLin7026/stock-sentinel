@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.05');
+        const appVersion = ref('v2.20261013.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2449,11 +2449,8 @@ createApp({
                     } catch (e) {}
                 }
 
-                // 儲存至專屬帳號 IndexedDB 沙盒
-                if (window.localforage) {
-                    const userKey = getUserDbStorageKey(googleUser.value.email);
-                    await localforage.setItem(userKey, arrayBuffer);
-                }
+                // 儲存最新 SQLite 實例至專屬帳號 IndexedDB 沙盒
+                await saveDbToIndexedDb();
 
                 // 重新渲染資產配置甜甜圈圖
                 renderAssetChart();
@@ -5544,75 +5541,6 @@ createApp({
             }
         };
 
-        // 🧹 輔助：刪除指定 Token 帳號 Google Drive 上的所有 sentinel_vault.db
-        const deleteAllCloudDbForToken = async (token) => {
-            if (!token) return false;
-            const searchUrl = `https://www.googleapis.com/drive/v3/files?spaces=drive&q=name='sentinel_vault.db' and trashed=false&fields=files(id,name)`;
-            const searchRes = await fetch(searchUrl, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if (!searchRes.ok) return false;
-            const searchData = await searchRes.json();
-            if (searchData.files && searchData.files.length > 0) {
-                for (const f of searchData.files) {
-                    await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}`, {
-                        method: 'DELETE',
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                }
-            }
-            return true;
-        };
-
-        // 🧹 一次性自動將 tinghui0206@gmail.com 徹底清空還原為「從未使用過」狀態（刪除雲端 DB、清空本機快取、移除帳號紀錄）
-        const purgeTinghui0206ToVirginState = async () => {
-            const targetEmail = 'tinghui0206@gmail.com';
-            const localDone = localStorage.getItem('sentinel_virgin_0206_local_purged_v3') === '1';
-            const driveDone = localStorage.getItem('sentinel_virgin_0206_drive_deleted_v3') === '1';
-            if (localDone && driveDone) return;
-
-            try {
-                // 1. 若有保存的 tinghui0206 Token，先刪除其 Google Drive 上的 sentinel_vault.db
-                const token0206 = localStorage.getItem(getUserTokenKey(targetEmail)) ||
-                    ((googleUser.value.email || '').toLowerCase().includes('tinghui0206') ? googleAccessToken.value : '');
-                if (token0206 && !driveDone) {
-                    const ok = await deleteAllCloudDbForToken(token0206);
-                    if (ok) {
-                        localStorage.setItem('sentinel_virgin_0206_drive_deleted_v3', '1');
-                    }
-                }
-
-                // 2. 清空本機 IndexedDB 快取與舊版無隔離快取
-                if (window.localforage) {
-                    await localforage.removeItem('sentinel_db_bytes');
-                    await localforage.removeItem(getUserDbStorageKey(targetEmail));
-                }
-
-                // 3. 移除 tinghui0206 的本機 Token 與已知帳號名冊，完全還原為「從未使用過」狀態
-                localStorage.removeItem(getUserTokenKey(targetEmail));
-                const filteredAccounts = (knownAccounts.value || []).filter(e => !e.toLowerCase().includes('tinghui0206'));
-                knownAccounts.value = filteredAccounts;
-                localStorage.setItem('sentinel_known_accounts', JSON.stringify(filteredAccounts));
-
-                // 4. 若當前正處於 tinghui0206 登入狀態，自動登出並清空畫面狀態
-                if ((googleUser.value.email || '').toLowerCase().includes('tinghui0206')) {
-                    sessionStorage.removeItem('sentinel_session_email');
-                    localStorage.removeItem('sentinel_active_email');
-                    localStorage.removeItem('sentinel_gdrive_email');
-                    localStorage.removeItem('sentinel_gdrive_token');
-                    googleUser.value.isLoggedIn = false;
-                    googleUser.value.email = '';
-                    googleAccessToken.value = '';
-                    resetMemorySandboxState();
-                    showToast('✨ 已將 tinghui0206@gmail.com 徹底清空並還原為「從未使用過」初始狀態！', 4500);
-                }
-
-                localStorage.setItem('sentinel_virgin_0206_local_purged_v3', '1');
-            } catch (err) {
-                console.warn("還原 tinghui0206 初始狀態警告:", err);
-            }
-        };
-
         // 檢查 Token 是否過期並在需要時自動重連
         const checkGoogleTokenFreshness = async () => {
             const curEmail = googleUser.value.email;
@@ -6402,9 +6330,6 @@ createApp({
             window.addEventListener('resize', () => {
                 if (chartInstance) chartInstance.resize();
             });
-
-            // 🧹 一次性自動將 tinghui0206@gmail.com 徹底清空還原為「從未使用過」初始狀態
-            await purgeTinghui0206ToVirginState();
 
             // 優先讀取專屬帳號 IndexedDB 沙盒實現 0 延遲秒開
             if (window.localforage) {
