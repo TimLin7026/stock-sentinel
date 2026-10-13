@@ -1734,24 +1734,55 @@
                         </div>
                     </div>
 
-                    <!-- 證券商選擇 (首位固定加入【關注】，其餘顯示真實券商) -->
+                    <!-- 證券商選擇 (首位固定加入【關注】，中間顯示真實券商，末尾提供【➕ 新增券商】) -->
                     <div>
-                        <label :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="block mb-1 font-semibold">證券商</label>
+                        <div class="flex items-center justify-between mb-1">
+                            <label :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="font-semibold">證券商</label>
+                            <span v-if="!isAddingNewBroker && tradeForm.broker" class="text-[11px] font-bold" :class="tradeForm.broker === '關注' ? 'text-amber-500' : 'text-sky-500'">
+                                目前選取：{{ tradeForm.broker }}
+                            </span>
+                        </div>
                         <div class="flex flex-wrap gap-1.5 mb-1.5">
                             <button @click="onBrokerSelect('關注')"
-                                    :class="tradeForm.broker === '關注' ? 'bg-amber-600 text-white font-bold border-amber-500' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
-                                    class="px-3 py-1 rounded-lg border text-[11px] transition font-bold">
+                                    :class="(!isAddingNewBroker && tradeForm.broker === '關注') ? 'bg-amber-600 text-white font-bold border-amber-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
+                                    class="px-3 py-1.5 rounded-lg border text-[11px] transition font-bold">
                                 關注
                             </button>
                             <button v-for="b in activeBrokers.filter(x => x !== '關注')" :key="b" @click="onBrokerSelect(b)"
-                                    :class="tradeForm.broker === b ? 'bg-sky-600 text-white font-bold border-sky-500' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
-                                    class="px-3 py-1 rounded-lg border text-[11px] transition">
+                                    :class="(!isAddingNewBroker && tradeForm.broker === b) ? 'bg-sky-600 text-white font-bold border-sky-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300')"
+                                    class="px-3 py-1.5 rounded-lg border text-[11px] transition font-semibold">
                                 {{ b }}
                             </button>
+                            <button @click="startAddNewBroker"
+                                    :class="isAddingNewBroker ? 'bg-emerald-600 text-white font-bold border-emerald-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-emerald-400 border-emerald-800/70 border-dashed' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 border-dashed')"
+                                    class="px-3 py-1.5 rounded-lg border text-[11px] transition font-bold flex items-center space-x-1">
+                                <i class="fa-solid fa-plus text-[10px]"></i>
+                                <span>新增券商</span>
+                            </button>
                         </div>
-                        <input v-model="tradeForm.broker" @input="onBrokerInputChange" type="text" placeholder="或自訂證券商名稱..." 
-                                :class="theme === 'dark' ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
-                                class="w-full border rounded-xl px-3 py-1.5 focus:outline-none focus:border-sky-500 text-xs">
+
+                        <!-- ➕ 展開新增券商輸入與常用快選區 -->
+                        <div v-if="isAddingNewBroker" :class="theme === 'dark' ? 'bg-slate-950/90 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border space-y-2 mt-1">
+                            <div class="flex space-x-1.5">
+                                <input v-model="newBrokerInput" @keyup.enter="confirmAddNewBroker" type="text" placeholder="輸入新券商名稱 (如：富邦證券)..." 
+                                       :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                       class="flex-1 border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 text-xs">
+                                <button @click="confirmAddNewBroker" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shrink-0 shadow-sm">
+                                    確認新增
+                                </button>
+                            </div>
+                            <div v-if="commonTaiwanBrokers.filter(b => !activeBrokers.includes(b)).length > 0" class="space-y-1">
+                                <div class="text-[10px] text-slate-400">⚡ 點選常用券商直接帶入：</div>
+                                <div class="flex flex-wrap gap-1">
+                                    <button v-for="cb in commonTaiwanBrokers.filter(b => !activeBrokers.includes(b))" :key="cb"
+                                            @click="selectQuickNewBroker(cb)"
+                                            :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'"
+                                            class="px-2 py-0.5 rounded-md border text-[10px] transition active:scale-95">
+                                        + {{ cb }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 股票代號/名稱 -->
@@ -2134,6 +2165,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.03"></script>
+    <script src="app.js?v=2.20261013.04"></script>
 </body>
 </html>

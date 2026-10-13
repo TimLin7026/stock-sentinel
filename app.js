@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.03');
+        const appVersion = ref('v2.20261013.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -307,6 +307,9 @@ createApp({
             } catch (e) {}
         };
 
+        // 自訂新增之證券商清單 (持久化於該帳號 SQLite db_meta.custom_brokers)
+        const customBrokersList = ref([]);
+
         // 強制重置記憶體沙盒狀態（於登入、切換帳號、登出時第一時間呼叫，100% 阻絕跨帳號殘留）
         const resetMemorySandboxState = () => {
             if (dbInstance) {
@@ -319,6 +322,9 @@ createApp({
             fifoInventory.value = [];
             recentTradeLogs.value = [];
             hedgedRecords.value = [];
+            customBrokersList.value = [];
+            stockSubTab.value = 'holding';
+            selectedBrokerFilter.value = '全部';
             expandedStockUids.value.clear();
             localDbStats.value = {
                 lastModified: '尚未載入',
@@ -357,6 +363,45 @@ createApp({
                 db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
                 db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('owner_email', ?)", [email.trim().toLowerCase()]);
             } catch (e) {}
+        };
+
+        // 🏢 讀取與寫入帳號專屬自訂證券商清單 (db_meta.custom_brokers)
+        const loadCustomBrokersFromDb = (db) => {
+            if (!db) {
+                customBrokersList.value = [];
+                return [];
+            }
+            try {
+                const res = db.exec("SELECT value FROM db_meta WHERE key = 'custom_brokers'");
+                if (res.length > 0 && res[0].values && res[0].values[0]) {
+                    const arr = JSON.parse(String(res[0].values[0][0] || '[]'));
+                    if (Array.isArray(arr)) {
+                        const clean = Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && x !== '關注')));
+                        customBrokersList.value = clean;
+                        return clean;
+                    }
+                }
+            } catch (e) {}
+            customBrokersList.value = [];
+            return [];
+        };
+
+        const addCustomBrokerToDb = async (brokerName) => {
+            const cleanName = String(brokerName || '').trim();
+            if (!cleanName || cleanName === '關注') return;
+            const nextSet = new Set(customBrokersList.value);
+            nextSet.add(cleanName);
+            const nextArr = Array.from(nextSet);
+            customBrokersList.value = nextArr;
+            if (dbInstance) {
+                try {
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                    dbInstance.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(nextArr)]);
+                    await saveDbToIndexedDb();
+                } catch (e) {
+                    console.warn("寫入 custom_brokers 警告:", e);
+                }
+            }
         };
 
         const syncStatus = ref({
@@ -2170,7 +2215,7 @@ createApp({
                             const shares = Number(r[2]) || 0;
                             const rawCost = Number(r[3]) || 0;
                             const costPrice = Number(rawCost.toFixed(2));
-                            const broker = String(r[4] || '玉山證券').trim();
+                            const broker = String(r[4] || '關注').trim();
                             const focusStatus = String(r[5] || '否').trim();
                             const uid = `${code}_${broker}`;
 
@@ -2324,6 +2369,8 @@ createApp({
                 }
 
                 stockList.value = parsedStocks;
+                loadCustomBrokersFromDb(dbInstance);
+                autoSelectNonEmptyStockSubTab();
 
                 // ⚡ 若記憶體或本機存有最新行情快照，立即全盤注入最新收盤價與 6 大指標 (拒絕現價為 0)
                 if (currentMarketSnapshotData) {
@@ -2355,16 +2402,38 @@ createApp({
             }
         };
 
+        // 🧭 單次智慧子分頁定位：當目前子分頁 (預設現役持股區) 為 0 檔時，依序單次尋找有股票的分頁 (holding ➔ starred ➔ watchlist)；若全空則固定停在 holding，100% 杜絕無限 Loop
+        const autoSelectNonEmptyStockSubTab = () => {
+            const list = stockList.value || [];
+            const hasHolding = list.some(s => Number(s.shares || 0) > 0);
+            const hasStarred = list.some(s => s.focusStatus === '買' || s.focusStatus === '賣');
+            const hasWatchlist = list.some(s => Number(s.shares || 0) === 0 || s.broker === '關注');
+
+            if (stockSubTab.value === 'holding' && hasHolding) return;
+            if (stockSubTab.value === 'starred' && hasStarred) return;
+            if (stockSubTab.value === 'watchlist' && hasWatchlist) return;
+
+            if (hasHolding) {
+                stockSubTab.value = 'holding';
+            } else if (hasStarred) {
+                stockSubTab.value = 'starred';
+            } else if (hasWatchlist) {
+                stockSubTab.value = 'watchlist';
+            } else {
+                stockSubTab.value = 'holding';
+            }
+        };
+
         // ─── 計算屬性：持股清單與券商篩選 ───
         const holdingStocks = computed(() => stockList.value.filter(s => s.shares > 0));
 
-        // 真實證券商清單 (只取 DB 中有的券商，拒絕自己腦補)
+        // 真實證券商清單 (只取該帳號 DB 中真實存在的券商與自訂新增券商，絕不寫死預塞玉山證券)
         const activeBrokers = computed(() => {
             const set = new Set();
             stockList.value.forEach(s => { if (s.broker && s.broker !== '關注') set.add(s.broker); });
             recentTradeLogs.value.forEach(t => { if (t.broker && t.broker !== '關注') set.add(t.broker); });
-            const list = Array.from(set).filter(Boolean);
-            return list.length > 0 ? list : ['玉山證券'];
+            customBrokersList.value.forEach(b => { if (b && b !== '關注') set.add(b); });
+            return Array.from(set).filter(Boolean);
         });
 
         // 資產總覽可用券商清單 (對齊地端：全部 / 玉山 / 中信 ...)
@@ -2765,9 +2834,17 @@ createApp({
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
         };
 
+        const isAddingNewBroker = ref(false);
+        const newBrokerInput = ref('');
+        const commonTaiwanBrokers = [
+            '元大證券', '凱基證券', '富邦證券', '永豐金證券',
+            '國泰證券', '玉山證券', '群益金鼎', '台新證券',
+            '華南永昌', '兆豐證券', '統一證券', '口袋證券'
+        ];
+
         const tradeForm = ref({
             action: '買進',
-            broker: '玉山證券',
+            broker: '關注',
             code: '',
             name: '',
             price: null,
@@ -2776,18 +2853,52 @@ createApp({
         });
 
         const onBrokerSelect = (brokerName) => {
+            isAddingNewBroker.value = false;
+            newBrokerInput.value = '';
             tradeForm.value.broker = brokerName;
             if (brokerName === '關注') {
                 tradeForm.value.price = 0;
                 tradeForm.value.shares = 1;
             } else {
                 if (tradeForm.value.price === 0 && tradeForm.value.shares === 1) {
-                    const trimmed = tradeForm.value.code.trim();
+                    const trimmed = (tradeForm.value.code || '').trim();
                     const matched = stockList.value.find(s => s.code === trimmed);
                     tradeForm.value.price = matched ? matched.price : null;
                     tradeForm.value.shares = null;
                 }
             }
+        };
+
+        const startAddNewBroker = () => {
+            isAddingNewBroker.value = true;
+            newBrokerInput.value = '';
+            if (tradeForm.value.price === 0 && tradeForm.value.shares === 1) {
+                const trimmed = (tradeForm.value.code || '').trim();
+                const matched = stockList.value.find(s => s.code === trimmed);
+                tradeForm.value.price = matched ? matched.price : null;
+                tradeForm.value.shares = null;
+            }
+        };
+
+        const confirmAddNewBroker = async () => {
+            const clean = String(newBrokerInput.value || '').trim();
+            if (!clean) {
+                alert('請輸入證券商名稱！');
+                return;
+            }
+            if (clean !== '關注') {
+                await addCustomBrokerToDb(clean);
+            }
+            onBrokerSelect(clean);
+            showToast(`✅ 已新增並選取證券商：${clean}`, 2000);
+        };
+
+        const selectQuickNewBroker = async (brokerName) => {
+            const clean = String(brokerName || '').trim();
+            if (!clean) return;
+            await addCustomBrokerToDb(clean);
+            onBrokerSelect(clean);
+            showToast(`✅ 已新增並選取證券商：${clean}`, 2000);
         };
 
         const onBrokerInputChange = () => {
@@ -2848,11 +2959,15 @@ createApp({
         };
 
         const openTradeModal = (targetStock = null, editingLog = null) => {
+            isAddingNewBroker.value = false;
+            newBrokerInput.value = '';
+            const existingRealBrokers = activeBrokers.value.filter(b => b && b !== '關注');
+
             if (editingLog) {
                 isEditingTrade.value = true;
                 editingTradeId.value = editingLog.id;
                 tradeForm.value.action = editingLog.action || '買進';
-                tradeForm.value.broker = editingLog.broker || '玉山證券';
+                tradeForm.value.broker = editingLog.broker || (existingRealBrokers[0] || '關注');
                 tradeForm.value.code = editingLog.code;
                 tradeForm.value.name = editingLog.name;
                 tradeForm.value.price = editingLog.price;
@@ -2862,22 +2977,37 @@ createApp({
                 isEditingTrade.value = false;
                 editingTradeId.value = null;
                 tradeForm.value.action = '買進';
-                tradeForm.value.broker = targetStock.broker || '玉山證券';
                 tradeForm.value.code = targetStock.code;
                 tradeForm.value.name = targetStock.name;
-                if (tradeForm.value.broker === '關注') {
-                    tradeForm.value.price = 0;
-                    tradeForm.value.shares = 1;
-                } else {
+
+                if (targetStock.broker && targetStock.broker !== '關注') {
+                    tradeForm.value.broker = targetStock.broker;
                     tradeForm.value.price = targetStock.price;
-                    tradeForm.value.shares = null; // 🌟 預設保持空白
+                    tradeForm.value.shares = null;
+                } else if (existingRealBrokers.length > 0) {
+                    // 從自選觀察池點選「錄入交易」且已有常用券商：預設帶入第一個真實券商準備買進
+                    tradeForm.value.broker = existingRealBrokers[0];
+                    tradeForm.value.price = targetStock.price;
+                    tradeForm.value.shares = null;
+                } else {
+                    // 全新帳號尚無任何真實券商：自動展開「➕ 新增券商」引導選取或輸入第一家券商
+                    tradeForm.value.broker = '';
+                    isAddingNewBroker.value = true;
+                    tradeForm.value.price = targetStock.price;
+                    tradeForm.value.shares = null;
                 }
                 tradeForm.value.date = getNowDateStr();
             } else {
                 isEditingTrade.value = false;
                 editingTradeId.value = null;
                 tradeForm.value.action = '買進';
-                tradeForm.value.broker = selectedBrokerFilter.value !== '全部' ? selectedBrokerFilter.value : '玉山證券';
+                if (selectedBrokerFilter.value !== '全部') {
+                    tradeForm.value.broker = selectedBrokerFilter.value;
+                } else if (existingRealBrokers.length > 0) {
+                    tradeForm.value.broker = existingRealBrokers[0];
+                } else {
+                    tradeForm.value.broker = '關注';
+                }
                 tradeForm.value.code = '';
                 tradeForm.value.name = '';
                 if (tradeForm.value.broker === '關注') {
@@ -2893,10 +3023,23 @@ createApp({
         };
 
         const saveTradeRecord = async () => {
-            const brokerName = (tradeForm.value.broker || '玉山證券').trim();
+            // 若正處於「➕ 新增券商」輸入狀態且使用者已填寫名稱，直接採納並儲存該新券商
+            if (isAddingNewBroker.value && String(newBrokerInput.value || '').trim()) {
+                const customTyped = String(newBrokerInput.value || '').trim();
+                tradeForm.value.broker = customTyped;
+                isAddingNewBroker.value = false;
+                newBrokerInput.value = '';
+            }
+
+            const brokerName = String(tradeForm.value.broker || '').trim();
             const actionName = tradeForm.value.action || '買進';
-            const codeVal = tradeForm.value.code.trim();
-            const nameVal = tradeForm.value.name.trim() || codeVal;
+            const codeVal = (tradeForm.value.code || '').trim();
+            const nameVal = (tradeForm.value.name || '').trim() || codeVal;
+
+            if (!brokerName) {
+                alert('請選擇證券商，或點選「➕ 新增券商」輸入您的證券商名稱！');
+                return;
+            }
 
             if (!codeVal) {
                 alert('請填寫股票代號！');
@@ -2910,6 +3053,10 @@ createApp({
                     alert("⚠️ 初始化本地資料庫失敗：" + eInit.message);
                     return;
                 }
+            }
+
+            if (brokerName !== '關注') {
+                await addCustomBrokerToDb(brokerName);
             }
 
             // 沉澱至本地字典與資料庫
@@ -5710,6 +5857,17 @@ createApp({
                 migrateMobileDatabase(dbInstance);
                 migrateMobileDatabase(cloudDb);
 
+                // 0.1 合流自訂證券商清單 (db_meta.custom_brokers)
+                try {
+                    const lBrokers = loadCustomBrokersFromDb(dbInstance);
+                    const cBrokers = loadCustomBrokersFromDb(cloudDb);
+                    const mergedBrokers = Array.from(new Set([...cBrokers, ...lBrokers])).filter(x => x && x !== '關注');
+                    if (mergedBrokers.length > 0) {
+                        cloudDb.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                        cloudDb.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(mergedBrokers)]);
+                    }
+                } catch (e) {}
+
                 // 合流墓碑至 cloudDb (保留 stock_created_at)
                 try {
                     const localTombs = dbInstance.exec("SELECT table_name, unique_key, deleted_at, stock_created_at FROM deleted_records");
@@ -6233,6 +6391,12 @@ createApp({
             formatNumber,
             showTradeModal,
             tradeForm,
+            isAddingNewBroker,
+            newBrokerInput,
+            commonTaiwanBrokers,
+            startAddNewBroker,
+            confirmAddNewBroker,
+            selectQuickNewBroker,
             onCodeInput,
             onBrokerSelect,
             onBrokerInputChange,
