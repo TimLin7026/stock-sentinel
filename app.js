@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.08');
+        const appVersion = ref('v2.20261013.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1033,7 +1033,7 @@ createApp({
         const showStockChartModal = ref(false);
         const activeChartStock = ref({});
         const chartDaysCount = ref(Number(localStorage.getItem('sentinel_chart_days')) || 40);
-        const subOscTab = ref('MTM'); // 'MTM' | 'RSI' | 'WR'
+        const subOscTab = ref('青紅燈'); // '青紅燈' | 'MTM' | 'RSI' | 'WR'
         const isChartLoading = ref(false);
         
         // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本)，預設全開並支援本機記憶
@@ -1083,15 +1083,24 @@ createApp({
             rsi4: '--',
             rsi12: '--',
             wr3: '--',
-            wr50: '--'
+            wr50: '--',
+            heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0 }
         });
 
         let stockHistoryCache = null; // 記憶體歷史快取字典
         const chartInstances = {}; // ECharts 實例字典
 
-        // 更新十字準心即時數值看板
-        const updateCrosshairValuesFromRow = (r) => {
+        // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢)
+        const updateCrosshairValuesFromRow = (r, prevR) => {
             if (!r) return;
+            // 計算 6 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平)
+            const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
+            const oscVal = prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : -1) : (Number(r[13]) >= 0 ? 1 : -1);
+            const kVal = prevR ? (Number(r[14]) > Number(prevR[14]) ? 1 : -1) : 1;
+            const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
+            const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
+            const macdVal = (Number(r[11]) > Number(r[12])) ? 1 : -1;
+
             crosshairData.value = {
                 date: String(r[0]),
                 open: r[1],
@@ -1121,7 +1130,15 @@ createApp({
                 wr3: r[25],
                 wr50: r[26],
                 marginCost: r[27] !== undefined ? r[27] : '--',
-                foreignCost: r[28] !== undefined ? r[28] : '--'
+                foreignCost: r[28] !== undefined ? r[28] : '--',
+                heatLights: {
+                    mtm: mtmVal,
+                    osc: oscVal,
+                    k: kVal,
+                    dif: difVal,
+                    kd: kdVal,
+                    macd: macdVal
+                }
             };
         };
 
@@ -1269,7 +1286,7 @@ createApp({
 
             // 初始化看板最後一筆（最新一日）數值
             if (rows.length > 0) {
-                updateCrosshairValuesFromRow(rows[rows.length - 1]);
+                updateCrosshairValuesFromRow(rows[rows.length - 1], rows.length > 1 ? rows[rows.length - 2] : null);
             }
 
             const commonGrid = {
@@ -1458,7 +1475,7 @@ createApp({
                 chartInstance.on('updateAxisPointer', (event) => {
                     const dataIndex = event.dataIndex;
                     if (dataIndex !== undefined && rows[dataIndex]) {
-                        updateCrosshairValuesFromRow(rows[dataIndex]);
+                        updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
                     }
                 });
             };
@@ -1509,7 +1526,61 @@ createApp({
             let seriesData = [];
             let yAxisConfig = { ...commonYAxis };
 
-            if (subOscTab.value === 'MTM') {
+            if (subOscTab.value === '青紅燈') {
+                // 🔥 熱力青紅燈 (6 大信號：MTM金, OSC縮, K趨, DIF趨, KD金, MACD金)
+                // Y 軸由下至上排列: MACD金, KD金, DIF趨, K趨, OSC縮, MTM金 (與電腦端 Stock_Sentinel 100% 對齊)
+                const yLabels = ['MACD金', 'KD金', 'DIF趨', 'K趨', 'OSC縮', 'MTM金'];
+                const heatData = [];
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i];
+                    const prevR = i > 0 ? rows[i - 1] : null;
+
+                    const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
+                    const oscVal = prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : -1) : (Number(r[13]) >= 0 ? 1 : -1);
+                    const kVal = prevR ? (Number(r[14]) > Number(prevR[14]) ? 1 : -1) : 1;
+                    const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
+                    const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
+                    const macdVal = (Number(r[11]) > Number(r[12])) ? 1 : -1;
+
+                    // index 0: MACD金, 1: KD金, 2: DIF趨, 3: K趨, 4: OSC縮, 5: MTM金
+                    const vals = [macdVal, kdVal, difVal, kVal, oscVal, mtmVal];
+                    for (let yIdx = 0; yIdx < 6; yIdx++) {
+                        const v = vals[yIdx];
+                        heatData.push({
+                            value: [i, yIdx, v],
+                            itemStyle: {
+                                color: v === 1 ? '#ef4444' : (v === -1 ? '#10b981' : '#64748b'),
+                                borderColor: isDark ? '#0f172a' : '#ffffff',
+                                borderWidth: 0.8
+                            }
+                        });
+                    }
+                }
+
+                yAxisConfig = {
+                    type: 'category',
+                    data: yLabels,
+                    position: 'right',
+                    axisLine: { show: true, lineStyle: { color: gridBorder } },
+                    axisLabel: { color: bgText, fontSize: 9, margin: 4 },
+                    splitLine: { show: false }
+                };
+
+                seriesData = [
+                    {
+                        name: '熱力青紅燈',
+                        type: 'heatmap',
+                        data: heatData,
+                        label: { show: false },
+                        emphasis: {
+                            itemStyle: {
+                                shadowBlur: 4,
+                                shadowColor: 'rgba(0, 0, 0, 0.5)'
+                            }
+                        }
+                    }
+                ];
+            } else if (subOscTab.value === 'MTM') {
                 const mtm = rows.map(r => r[21]);
                 const mtmMa = rows.map(r => r[22]);
                 seriesData = [
@@ -1559,14 +1630,14 @@ createApp({
                 xAxis: commonXAxis,
                 yAxis: yAxisConfig,
                 series: seriesData
-            });
+            }, true);
             chartInstances.mtm = chart;
 
             // 綁定十字準心
             chart.on('updateAxisPointer', (event) => {
                 const dataIndex = event.dataIndex;
                 if (dataIndex !== undefined && rows[dataIndex]) {
-                    updateCrosshairValuesFromRow(rows[dataIndex]);
+                    updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
                 }
             });
 
@@ -1672,7 +1743,7 @@ createApp({
             }
         };
 
-        // 切換動能副圖 Tab (MTM / RSI / WR)
+        // 切換動能副圖 Tab (青紅燈 / MTM / RSI / WR)
         const changeSubOscTab = (tab) => {
             subOscTab.value = tab;
             if (stockHistoryCache && activeChartStock.value && activeChartStock.value.code) {
@@ -1680,6 +1751,9 @@ createApp({
                 const rawRows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
                 const rows = rawRows.slice(-chartDaysCount.value);
                 renderSubOscChart(rows);
+                if (rows.length > 0) {
+                    updateCrosshairValuesFromRow(rows[rows.length - 1], rows.length > 1 ? rows[rows.length - 2] : null);
+                }
             }
         };
 

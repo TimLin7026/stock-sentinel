@@ -2082,14 +2082,14 @@
                         <div id="chart-chip" class="w-full h-36"></div>
                     </div>
 
-                    <!-- 圖 6 (原 6)：MTM / RSI / 威廉指標 (支援 Tab 切換，快線亮黃，慢線亮藍) -->
+                    <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (支援 Tab 切換，預設青紅燈) -->
                     <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <div class="flex items-center space-x-1.5">
                                 <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪</span>
-                                <!-- 子切換 Tab (MTM / RSI / WR) -->
+                                <!-- 子切換 Tab (青紅燈 / MTM / RSI / WR) -->
                                 <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
-                                    <button v-for="t in ['MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
+                                    <button v-for="t in ['青紅燈', 'MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
                                             :class="subOscTab === t ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
                                             class="px-1.5 py-0.2 rounded transition">
                                         {{ t }}
@@ -2097,7 +2097,20 @@
                                 </div>
                             </div>
                             <!-- 動態數值顯示 -->
-                            <span v-if="subOscTab === 'MTM'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            <span v-if="subOscTab === '青紅燈'" class="text-[9px] font-mono flex items-center space-x-0.5 text-slate-400">
+                                <span :class="crosshairData.heatLights?.mtm === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.mtm === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MTM{{ crosshairData.heatLights?.mtm === 1 ? '🔴' : (crosshairData.heatLights?.mtm === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.osc === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.osc === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">OSC{{ crosshairData.heatLights?.osc === 1 ? '🔴' : (crosshairData.heatLights?.osc === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.k === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.k === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">K{{ crosshairData.heatLights?.k === 1 ? '🔴' : (crosshairData.heatLights?.k === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.dif === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.dif === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">DIF{{ crosshairData.heatLights?.dif === 1 ? '🔴' : (crosshairData.heatLights?.dif === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.kd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.kd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">KD{{ crosshairData.heatLights?.kd === 1 ? '🔴' : (crosshairData.heatLights?.kd === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.macd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.macd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MACD{{ crosshairData.heatLights?.macd === 1 ? '🔴' : (crosshairData.heatLights?.macd === -1 ? '🟢' : '⚪') }}</span>
+                            </span>
+                            <span v-else-if="subOscTab === 'MTM'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
                                 <span class="text-amber-400 font-bold">MTM3:{{ crosshairData.mtm }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">MA2:{{ crosshairData.mtmMa }}</span>
@@ -2192,6 +2205,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.08"></script>
+    <script src="app.js?v=2.20261013.09"></script>
 </body>
 </html>
