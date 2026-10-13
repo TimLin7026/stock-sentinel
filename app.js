@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.06');
+        const appVersion = ref('v2.20261013.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -546,7 +546,7 @@ createApp({
             status: localStorage.getItem('sentinel_market_status') || 'READY'
         });
 
-        // ⏰ 智慧計算下一次開市日抓取時間 (14:30 / 21:00)
+        // ⏰ 智慧計算下一次開市日抓取時間 (對齊三班制：14:05 盤後第一時間 / 16:45 法人籌碼 / 21:10 全量資券校準)
         const nextCrawlTimeInfo = computed(() => {
             if (marketSyncMeta.value.nextScheduledRun) {
                 return {
@@ -565,8 +565,9 @@ createApp({
                 if (dayOfWeek === 0 || dayOfWeek === 6) continue;
 
                 const slots = [
-                    { h: 14, m: 30, tag: '盤後即時' },
-                    { h: 21, m: 0, tag: '全量籌碼' }
+                    { h: 14, m: 5, tag: '盤後第一時間' },
+                    { h: 16, m: 45, tag: '法人籌碼' },
+                    { h: 21, m: 10, tag: '全量資券校準' }
                 ];
                 for (const slot of slots) {
                     const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
@@ -587,7 +588,57 @@ createApp({
                     }
                 }
             }
-            return { label: '開市日 14:30 / 21:00', countdown: '', tag: '自動排程' };
+            return { label: '開市日 14:05 / 16:45 / 21:10', countdown: '', tag: '三班制排程' };
+        });
+
+        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (感知今日是否開市、引導 User 同步)
+        const calendarMarketStatus = computed(() => {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const twNow = new Date(utc + (3600000 * 8));
+            const pad = (n) => String(n).padStart(2, '0');
+
+            // 判斷當前台灣時間若已過 14:00 (13:30 收盤後的盤後結算期)，則今日納入已收盤開市日探測點
+            const isTodayClosed = (twNow.getHours() > 14) || (twNow.getHours() === 14 && twNow.getMinutes() >= 0);
+            let checkDt = new Date(twNow.getFullYear(), twNow.getMonth(), twNow.getDate());
+            if (!isTodayClosed) {
+                checkDt.setDate(checkDt.getDate() - 1);
+            }
+
+            // 往前倒推找到最近一個週一至週五的開市日 (排除週末)
+            while (checkDt.getDay() === 0 || checkDt.getDay() === 6) {
+                checkDt.setDate(checkDt.getDate() - 1);
+            }
+
+            const expectedYear = checkDt.getFullYear();
+            const expectedMonth = pad(checkDt.getMonth() + 1);
+            const expectedDay = pad(checkDt.getDate());
+            const expectedDigits = `${expectedYear}${expectedMonth}${expectedDay}`;
+            const expectedFormatted = `${expectedYear}/${expectedMonth}/${expectedDay}`;
+
+            const todayFormatted = `${twNow.getFullYear()}/${pad(twNow.getMonth() + 1)}/${pad(twNow.getDate())}`;
+            const isExpectedToday = (expectedFormatted === todayFormatted);
+
+            // 本機快照收錄日期
+            const snapDateRaw = String(marketSyncMeta.value.marketDate || '').trim();
+            const snapDigits = snapDateRaw.replace(/\D/g, '').slice(0, 8);
+            const snapFormatted = snapDigits.length === 8 
+                ? `${snapDigits.slice(0, 4)}/${snapDigits.slice(4, 6)}/${snapDigits.slice(6, 8)}`
+                : (snapDateRaw || '尚未同步');
+
+            // 是否落後待同步
+            const isNeedsSync = Boolean(expectedDigits && (!snapDigits || snapDigits < expectedDigits));
+
+            return {
+                expectedDateStr: expectedFormatted,
+                expectedDigits,
+                isExpectedToday,
+                snapshotDateStr: snapFormatted,
+                isNeedsSync,
+                statusTag: isNeedsSync 
+                    ? (isExpectedToday ? '⚠️ 今日行情待同步' : '⚠️ 有新開市日待同步')
+                    : '🟢 已為最新開市日行情'
+            };
         });
 
         // 🔔 主動提醒狀態 (開市日 15:00 / 21:30 推播)
@@ -963,17 +1014,9 @@ createApp({
                 if (totalMinutes >= 870 && totalMinutes < 1020) { // 14:30~17:00
                     localStorage.setItem(`sentinel_notified_1500_${todayDateStr}`, 'true');
                 }
-                if (totalMinutes >= 1260 && totalMinutes < 1440) { // 21:00~24:00
-                    localStorage.setItem(`sentinel_notified_2130_${todayDateStr}`, 'true');
-                }
                 activeSyncNotice.value.show = false;
             } catch(e) {}
-
-            if (snapInfo) {
-                const timeOnly = snapInfo.fetchTime.split(' ')[1] || snapInfo.fetchTime;
-                const cloudOnly = snapInfo.cloudGeneratedAt.split(' ')[1] || snapInfo.cloudGeneratedAt;
-                showToast(`✅ 一鍵同步完成！\n📅 開市日：${snapInfo.marketDate} (${snapInfo.totalCount} 檔)\n⏱️ 下載時間：${timeOnly} │ ☁️ 雲端產出：${cloudOnly}`, 4500);
-            }
+            // 同步完成 (已移除重複彈出的黑色 Toast 提示框，維持簡潔視覺體驗)
         };
 
         const handleHeaderSyncClick = handleOneClickSync;
@@ -6489,6 +6532,7 @@ createApp({
             handleOneClickSync,
             syncMarketSnapshot,
             marketSyncMeta,
+            calendarMarketStatus,
             nextCrawlTimeInfo,
             activeSyncNotice,
             dismissSyncNotice,

@@ -1252,17 +1252,37 @@
                                     <i class="fa-solid fa-chart-line text-sky-500"></i>
                                     <span>全市場盤後行情快照</span>
                                 </h3>
-                                <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
-                                        class="text-[10px] text-sky-400 hover:text-sky-300 font-bold flex items-center space-x-1 border border-sky-500/30 px-2 py-0.5 rounded-lg transition active:scale-95 disabled:opacity-50">
-                                    <i class="fa-solid fa-rotate text-[9px]" :class="syncStatus.loading ? 'fa-spin' : ''"></i>
-                                    <span>立即同步</span>
-                                </button>
+                                <div class="flex items-center space-x-1.5">
+                                    <span v-if="calendarMarketStatus.isNeedsSync" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse">
+                                        {{ calendarMarketStatus.statusTag }}
+                                    </span>
+                                    <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
+                                            :class="calendarMarketStatus.isNeedsSync ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-md' : 'text-sky-400 hover:text-sky-300 border border-sky-500/30'"
+                                            class="text-[10px] font-bold flex items-center space-x-1 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50">
+                                        <i class="fa-solid fa-rotate text-[9px]" :class="syncStatus.loading ? 'fa-spin' : ''"></i>
+                                        <span>立即同步</span>
+                                    </button>
+                                </div>
                             </div>
 
                             <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'" class="p-2.5 rounded-xl border text-[11px] font-mono space-y-1.5">
+                                <!-- 📅 日曆最新開市日 (現實中台股最新已收盤日) -->
                                 <div class="flex justify-between items-center">
-                                    <span class="text-slate-400">📅 最新開市日：</span>
-                                    <span class="font-bold text-sky-400">{{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }} <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }} 檔)</span></span>
+                                    <span class="text-slate-400">📅 日曆最新開市：</span>
+                                    <span class="font-bold text-amber-400 flex items-center space-x-1">
+                                        <span>{{ calendarMarketStatus.expectedDateStr }}</span>
+                                        <span class="text-[10px] px-1.5 py-0.2 rounded font-normal" :class="calendarMarketStatus.isExpectedToday ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-slate-800 text-slate-400'">
+                                            {{ calendarMarketStatus.isExpectedToday ? '今日已收盤' : '最近開市' }}
+                                        </span>
+                                    </span>
+                                </div>
+                                <!-- 📦 本機快照收錄開市日 -->
+                                <div class="flex justify-between items-center">
+                                    <span class="text-slate-400">📦 快照收錄開市：</span>
+                                    <span class="font-bold flex items-center space-x-1" :class="calendarMarketStatus.isNeedsSync ? 'text-slate-400' : 'text-sky-400'">
+                                        <span>{{ marketSyncMeta.marketDate ? marketSyncMeta.marketDate + ' 盤後' : '尚未同步行情' }}</span>
+                                        <span v-if="marketSyncMeta.totalStocks" class="text-slate-500 text-[10px]">({{ marketSyncMeta.totalStocks }} 檔)</span>
+                                    </span>
                                 </div>
                                 <div class="flex justify-between items-center">
                                     <span class="text-slate-400">📥 本機下載時間：</span>
@@ -2172,6 +2192,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.06"></script>
+    <script src="app.js?v=2.20261013.07"></script>
 </body>
 </html>
