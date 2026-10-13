@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.02');
+        const appVersion = ref('v2.20261013.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -337,6 +337,26 @@ createApp({
             localStorage.removeItem('sentinel_drive_file_id');
             localStorage.removeItem('sentinel_last_sync_fingerprint');
             hasUnsyncedChanges.value = false;
+        };
+
+        // 🛡️ 資料庫擁有者信箱簽章讀取與寫入防呆 (100% 物理阻斷跨帳號資料庫混用)
+        const getDbOwnerEmail = (db) => {
+            if (!db) return '';
+            try {
+                const res = db.exec("SELECT value FROM db_meta WHERE key = 'owner_email'");
+                if (res.length > 0 && res[0].values && res[0].values[0]) {
+                    return String(res[0].values[0][0] || '').trim().toLowerCase();
+                }
+            } catch (e) {}
+            return '';
+        };
+
+        const setDbOwnerEmail = (db, email) => {
+            if (!db || !email || email === 'guest') return;
+            try {
+                db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('owner_email', ?)", [email.trim().toLowerCase()]);
+            } catch (e) {}
         };
 
         const syncStatus = ref({
@@ -1792,7 +1812,13 @@ createApp({
                     CREATE TABLE IF NOT EXISTS stock_dict (stock_code TEXT PRIMARY KEY, stock_name TEXT);
                     CREATE TABLE IF NOT EXISTS stock_price (stock_code TEXT PRIMARY KEY, cache_data TEXT);
                     CREATE TABLE IF NOT EXISTS holidays (holiday_date INTEGER PRIMARY KEY, holiday_name TEXT);
+                    CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT);
                 `);
+
+                // 🛡️ 寫入當前擁有者信箱簽章，防止跨帳號混用
+                if (googleUser.value.email) {
+                    setDbOwnerEmail(newDb, googleUser.value.email);
+                }
 
                 // 若記憶體中已有台股代號字典，預先寫入 stock_dict
                 try {
@@ -1836,7 +1862,31 @@ createApp({
                 }
 
                 const u8Array = new Uint8Array(arrayBuffer);
-                dbInstance = new SQL_ENGINE.Database(u8Array);
+                const candidateDb = new SQL_ENGINE.Database(u8Array);
+
+                // 🛡️ 防呆第一關：驗證資料庫擁有者簽章是否與當前登入帳號一致
+                const curEmail = (googleUser.value.email || '').trim().toLowerCase();
+                const dbOwner = getDbOwnerEmail(candidateDb);
+                if (curEmail && curEmail !== 'guest') {
+                    if (dbOwner && dbOwner !== curEmail) {
+                        console.warn(`🛡️ [防呆攔截] 偵測到跨帳號資料庫快取 (DB屬於 ${dbOwner}，當前帳號為 ${curEmail})，已自動攔截並清除！`);
+                        try { candidateDb.close(); } catch (e) {}
+                        if (window.localforage) {
+                            await localforage.removeItem(getUserDbStorageKey(curEmail));
+                        }
+                        resetMemorySandboxState();
+                        return false;
+                    }
+                    // 若來自雲端下載或合流，自動補印當前擁有者簽章
+                    if (!dbOwner && (sourceName.includes('雲端') || sourceName.includes('鏡像') || sourceName.includes('本機 SQLite'))) {
+                        setDbOwnerEmail(candidateDb, curEmail);
+                    }
+                }
+
+                if (dbInstance && dbInstance !== candidateDb) {
+                    try { dbInstance.close(); } catch (e) {}
+                }
+                dbInstance = candidateDb;
                 isDbLoaded.value = true;
                 const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(0);
                 dbInfoText.value = `真實 SQLite (${sizeKB} KB - ${sourceName})`;
@@ -5104,6 +5154,21 @@ createApp({
 
                     if (!loggedEmail) loggedEmail = 'google_user';
 
+                    // 🧹 若為 tinghui0206 重新測試且雲端舊污染檔尚未刪除，於取得最新 Token 第一時間立即徹底刪除雲端舊檔與本機快取
+                    if (loggedEmail.toLowerCase().includes('tinghui0206') && localStorage.getItem('sentinel_virgin_0206_drive_deleted_v3') !== '1') {
+                        try {
+                            await deleteAllCloudDbForToken(resp.access_token);
+                            if (window.localforage) {
+                                await localforage.removeItem('sentinel_db_bytes');
+                                await localforage.removeItem(getUserDbStorageKey(loggedEmail));
+                            }
+                            localStorage.setItem('sentinel_virgin_0206_drive_deleted_v3', '1');
+                            localStorage.setItem('sentinel_virgin_0206_local_purged_v3', '1');
+                        } catch (ePurge) {
+                            console.warn("清除 tinghui0206 舊雲端檔案警告:", ePurge);
+                        }
+                    }
+
                     // 0. 切換/登入前先強制清空記憶體沙盒與舊 fileId，100% 阻絕跨帳號污染
                     resetMemorySandboxState();
 
@@ -5228,60 +5293,72 @@ createApp({
             }
         };
 
-        // 🧹 一鍵重置當前帳號為全新空白帳本 (清除誤同步污染之本機沙盒與雲端 sentinel_vault.db)
-        const resetCurrentAccountDatabase = async (isAutoRepairPrompt = false) => {
-            const curEmail = (googleUser.value.email || '').trim();
-            if (!curEmail || !googleUser.value.isLoggedIn || !googleAccessToken.value) {
-                alert("⚠️ 請先登入要重置的 Google 帳號！");
-                return;
+        // 🧹 輔助：刪除指定 Token 帳號 Google Drive 上的所有 sentinel_vault.db
+        const deleteAllCloudDbForToken = async (token) => {
+            if (!token) return false;
+            const searchUrl = `https://www.googleapis.com/drive/v3/files?spaces=drive&q=name='sentinel_vault.db' and trashed=false&fields=files(id,name)`;
+            const searchRes = await fetch(searchUrl, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (!searchRes.ok) return false;
+            const searchData = await searchRes.json();
+            if (searchData.files && searchData.files.length > 0) {
+                for (const f of searchData.files) {
+                    await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                }
             }
+            return true;
+        };
 
-            const confirmMsg = isAutoRepairPrompt
-                ? `🚨 系統偵測到帳號【${curEmail}】內含有先前誤同步的舊帳號資料（${localDbStats.value.tradeLogCount} 筆交易 / ${localDbStats.value.myStockCount} 檔名冊）。\n\n是否立即將【${curEmail}】重置為 0 筆全新空白帳本，並同步清理此帳號的 Google Drive 主檔？\n（註：僅清理 ${curEmail}，絕不影響其他帳號）`
-                : `⚠️ 確定要將當前帳號【${curEmail}】重置為全新空白帳本嗎？\n\n📌 這將會執行以下操作（僅針對 ${curEmail}，絕不影響其他帳號）：\n1. 清空此帳號在本機沙盒的所有交易、自選與戰報\n2. 重新初始化 0 筆全新空白 SQLite 資料庫\n3. 立即將空白資料庫上傳覆蓋【${curEmail}】Google Drive 上的 sentinel_vault.db`;
-
-            if (!confirm(confirmMsg)) return;
-
-            syncStatus.value.loading = true;
-            syncStatus.value.message = `正在為 ${curEmail} 重置全新空白帳本並覆蓋雲端...`;
+        // 🧹 一次性自動將 tinghui0206@gmail.com 徹底清空還原為「從未使用過」狀態（刪除雲端 DB、清空本機快取、移除帳號紀錄）
+        const purgeTinghui0206ToVirginState = async () => {
+            const targetEmail = 'tinghui0206@gmail.com';
+            const localDone = localStorage.getItem('sentinel_virgin_0206_local_purged_v3') === '1';
+            const driveDone = localStorage.getItem('sentinel_virgin_0206_drive_deleted_v3') === '1';
+            if (localDone && driveDone) return;
 
             try {
-                // 1. 清除本機 IndexedDB 沙盒與舊版殘留快取
+                // 1. 若有保存的 tinghui0206 Token，先刪除其 Google Drive 上的 sentinel_vault.db
+                const token0206 = localStorage.getItem(getUserTokenKey(targetEmail)) ||
+                    ((googleUser.value.email || '').toLowerCase().includes('tinghui0206') ? googleAccessToken.value : '');
+                if (token0206 && !driveDone) {
+                    const ok = await deleteAllCloudDbForToken(token0206);
+                    if (ok) {
+                        localStorage.setItem('sentinel_virgin_0206_drive_deleted_v3', '1');
+                    }
+                }
+
+                // 2. 清空本機 IndexedDB 快取與舊版無隔離快取
                 if (window.localforage) {
                     await localforage.removeItem('sentinel_db_bytes');
-                    await localforage.removeItem(getUserDbStorageKey(curEmail));
+                    await localforage.removeItem(getUserDbStorageKey(targetEmail));
                 }
 
-                // 2. 強制重置記憶體狀態並初始化全新空白 SQLite 資料庫
-                resetMemorySandboxState();
-                await ensureLocalDatabaseInitialized(`${curEmail} 全新空白帳本`);
+                // 3. 移除 tinghui0206 的本機 Token 與已知帳號名冊，完全還原為「從未使用過」狀態
+                localStorage.removeItem(getUserTokenKey(targetEmail));
+                const filteredAccounts = (knownAccounts.value || []).filter(e => !e.toLowerCase().includes('tinghui0206'));
+                knownAccounts.value = filteredAccounts;
+                localStorage.setItem('sentinel_known_accounts', JSON.stringify(filteredAccounts));
 
-                // 3. 查詢此帳號 Google Drive 上的 sentinel_vault.db fileId 並覆蓋上傳
-                const searchUrl = `https://www.googleapis.com/drive/v3/files?spaces=drive&q=name='sentinel_vault.db' and trashed=false&fields=files(id,name)&orderBy=modifiedTime desc`;
-                const searchRes = await fetch(searchUrl, {
-                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
-                });
-                const searchData = await searchRes.json();
-                if (searchData.files && searchData.files.length > 0) {
-                    cloudDbStats.value.fileId = searchData.files[0].id;
-                } else {
-                    cloudDbStats.value.fileId = '';
+                // 4. 若當前正處於 tinghui0206 登入狀態，自動登出並清空畫面狀態
+                if ((googleUser.value.email || '').toLowerCase().includes('tinghui0206')) {
+                    sessionStorage.removeItem('sentinel_session_email');
+                    localStorage.removeItem('sentinel_active_email');
+                    localStorage.removeItem('sentinel_gdrive_email');
+                    localStorage.removeItem('sentinel_gdrive_token');
+                    googleUser.value.isLoggedIn = false;
+                    googleUser.value.email = '';
+                    googleAccessToken.value = '';
+                    resetMemorySandboxState();
+                    showToast('✨ 已將 tinghui0206@gmail.com 徹底清空並還原為「從未使用過」初始狀態！', 4500);
                 }
 
-                await uploadBufferToGoogleDrive(dbInstance.export());
-                updateLocalDbStats();
-                await fetchCloudDbStats();
-
-                if (curEmail.toLowerCase().includes('tinghui0206')) {
-                    localStorage.setItem('sentinel_repaired_tinghui0206_v2', '1');
-                }
-
-                alert(`✨ 帳號【${curEmail}】已成功重置為全新空白帳本！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n本機沙盒與 Google Drive 雲端主檔皆已清理完畢！`);
+                localStorage.setItem('sentinel_virgin_0206_local_purged_v3', '1');
             } catch (err) {
-                console.error("重置當前帳號資料庫失敗:", err);
-                alert("❌ 重置失敗：" + err.message);
-            } finally {
-                syncStatus.value.loading = false;
+                console.warn("還原 tinghui0206 初始狀態警告:", err);
             }
         };
 
@@ -5553,7 +5630,10 @@ createApp({
                 const searchData = await searchRes.json();
 
                 if (!searchData.files || searchData.files.length === 0) {
-                    if (!dbInstance) {
+                    const curEmail = (googleUser.value.email || '').trim().toLowerCase();
+                    // 🛡️ 防呆第二關：雲端尚無主檔（全新帳號），必須確保本機記憶體 DB 擁有者簽章與當前帳號完全一致，否則強制重置為空白資料庫
+                    if (!dbInstance || getDbOwnerEmail(dbInstance) !== curEmail) {
+                        resetMemorySandboxState();
                         await ensureLocalDatabaseInitialized('全新帳號雲端初始化');
                     }
                     syncStatus.value.message = '雲端尚無檔案，正在自動初始化並上傳建立雲端主檔...';
@@ -5585,12 +5665,16 @@ createApp({
                 }
 
                 const cloudDb = new SQL_ENGINE.Database(new Uint8Array(cloudBuf));
+                if (googleUser.value.email) {
+                    setDbOwnerEmail(cloudDb, googleUser.value.email);
+                }
 
                 if (!dbInstance) {
                     // 本地無 DB，直接 100% 鏡像採用雲端完整庫
                     dbInstance = cloudDb;
                     await saveDbToIndexedDb();
-                    await loadDatabaseFromArrayBuffer(cloudBuf, '雲端資料庫');
+                    const stampedBuf = dbInstance.export();
+                    await loadDatabaseFromArrayBuffer(stampedBuf.buffer, '雲端資料庫');
                     updateLocalDbStats();
                     await fetchCloudDbStats();
                     markAsSynced();
@@ -5605,6 +5689,22 @@ createApp({
 
                 // 🎯【核心升級：全量二進位鏡像合流 (以雲端完整 DB 為基底，全量保留現價/指標/字典)】
                 syncStatus.value.message = '正在執行雙向合流 (保留全量現價報價與指標)...';
+
+                // 🛡️ 合流前再次確認本機 dbInstance 擁有者簽章與當前帳號相符，若不符則不將舊快取混入雲端
+                const activeOwner = (googleUser.value.email || '').trim().toLowerCase();
+                const localOwner = getDbOwnerEmail(dbInstance);
+                if (localOwner && activeOwner && localOwner !== activeOwner) {
+                    console.warn(`🛡️ [跨帳號防呆攔截] 本機 DB 簽章 (${localOwner}) 與當前帳號 (${activeOwner}) 不符，放棄本地合流直接採用雲端主檔`);
+                    dbInstance.close();
+                    dbInstance = cloudDb;
+                    await saveDbToIndexedDb();
+                    const cleanBuf = dbInstance.export();
+                    await loadDatabaseFromArrayBuffer(cleanBuf.buffer, '雲端資料庫');
+                    updateLocalDbStats();
+                    await fetchCloudDbStats();
+                    markAsSynced();
+                    return;
+                }
 
                 // 0. 確保 deleted_records 與 my_stock 資料表結構完整
                 migrateMobileDatabase(dbInstance);
@@ -6036,6 +6136,9 @@ createApp({
                 if (chartInstance) chartInstance.resize();
             });
 
+            // 🧹 一次性自動將 tinghui0206@gmail.com 徹底清空還原為「從未使用過」初始狀態
+            await purgeTinghui0206ToVirginState();
+
             // 優先讀取專屬帳號 IndexedDB 沙盒實現 0 延遲秒開
             if (window.localforage) {
                 try {
@@ -6070,14 +6173,6 @@ createApp({
             initGoogleHeartbeat();
             await checkGoogleTokenFreshness();
             await fetchCloudDbStats();
-
-            // 🧹 針對先前受舊版快取污染之 tinghui0206 帳號主動彈出修復提示
-            const activeEmailNow = (googleUser.value.email || '').toLowerCase();
-            if (activeEmailNow.includes('tinghui0206') && localStorage.getItem('sentinel_repaired_tinghui0206_v2') !== '1' && (localDbStats.value.tradeLogCount > 0 || cloudDbStats.value.tradeLogCount > 0)) {
-                setTimeout(() => {
-                    resetCurrentAccountDatabase(true);
-                }, 400);
-            }
 
             // 監聽視窗旋轉或縮放以即時調整圖表
             window.addEventListener('resize', () => {
@@ -6187,7 +6282,6 @@ createApp({
             fetchCloudDbStats,
             handleGoogleLogin,
             handleGoogleLogout,
-            resetCurrentAccountDatabase,
             hasUnsyncedChanges,
             handleHeaderSyncClick,
             handleOneClickSync,

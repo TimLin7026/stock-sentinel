@@ -1,43 +1,30 @@
 /**
  * ============================================================================
- * 🚀 鈔能戰情室・Google Apps Script (GAS) 外部精準定時觸發器
+ * 🚀 鈔能戰情室・Google Apps Script (GAS) 外部精準定時觸發器 (含金鑰到期自動寄信提醒)
  * ============================================================================
  * 作用：
- *   透過 Google 雲端伺服器的精準定時器，在每個台股開市日（週一至週五）的：
- *     1. 下午 14:30 ~ 14:40（盤後第一時間收盤價與成交量同步）
- *     2. 晚上 21:00 ~ 21:10（晚間全量三大法人與融資融券校準）
- *   主動發送最高優先權的 `workflow_dispatch` API 喚醒 GitHub Actions，
- *   徹底解決 GitHub 內建 `schedule` 排程在整點尖峰時段排隊延遲 1~3 小時的問題！
+ *   1. 透過 Google 雲端伺服器的精準定時器，在每個台股開市日（週一至週五）的：
+ *      - 下午 14:30 ~ 14:40（盤後第一時間收盤價與成交量同步）
+ *      - 晚上 21:00 ~ 21:10（晚間全量三大法人與融資融券校準）
+ *      主動發送最高優先權的 `workflow_dispatch` API 喚醒 GitHub Actions (0 秒排隊延遲)。
+ *   2. 每次呼叫 GitHub API 時，自動從回應標頭 (`github-authentication-token-expiration`)
+ *      偵測您的 GitHub 金鑰到期日：
+ *      - 當剩餘天數 <= 7 天（或金鑰已過期 HTTP 401）時，自動寄發 Gmail 提醒信給您！
  *
  * ============================================================================
- * 📋 3 分鐘首次設定步驟：
+ * 📋 設定步驟：
  * ============================================================================
- * Step 1：取得 GitHub Personal Access Token (PAT)
- *   1. 前往 GitHub 個人設定：https://github.com/settings/tokens?type=beta (或 Classic Token: https://github.com/settings/tokens)
- *   2. 若使用 Classic Token (推薦，最簡單)：
- *      - 點擊「Generate new token (classic)」
- *      - Note 填寫：`GAS-Stock-Sentinel-Trigger`
- *      - Expiration 選擇：`No expiration` (永不過期)
- *      - 勾選權限：`repo` 與 `workflow`
- *      - 點擊底部「Generate token」，複製產生的 `ghp_xxxxxxxxxxxx` 金鑰。
- *
- * Step 2：建立 Google Apps Script 專案
- *   1. 前往：https://script.google.com/
- *   2. 點擊左上角「＋ 新專案」，將專案命名為「台股戰情室_雲端大腦定時器」。
- *   3. 將本檔案全部程式碼複製並貼上（覆蓋原本的 `myFunction`）。
- *   4. 將下方第 41 行的 `GITHUB_PAT` 替換為您剛才複製的 `ghp_xxxx` 金鑰，按 `Ctrl + S` 儲存。
- *
- * Step 3：一鍵測試與自動安裝每日排程
- *   1. 在上方工具列的函式下拉選單，選擇 `testTriggerNow` 並點擊「▷ 執行」：
- *      - 首次執行會跳出 Google 權限審核，請點擊「審查權限」➔ 選擇您的帳號 ➔「進階」➔「前往 台股戰情室_雲端大腦定時器 (不安全)」➔「允許」。
- *      - 看到下方執行記錄顯示「✅ 成功喚醒 GitHub Actions Workflow (HTTP 204)」即代表連線成功！
- *   2. 接著在上方工具列的函式下拉選單，改選 `setupDailyTriggers` 並點擊「▷ 執行」：
- *      - 系統會自動幫您建立每天 14:30 與 21:00 的兩組台灣時區定時器，設定完成！
+ * 1. 將下方 `GITHUB_PAT` 替換為您的 `ghp_xxxx` 金鑰，按 `Ctrl + S` 儲存。
+ * 2. 在上方下拉選單選擇 `testTriggerNow` 點擊「▷ 執行」測試連線與權限授權。
+ * 3. 在上方下拉選單選擇 `setupDailyTriggers` 點擊「▷ 執行」掛載每日 14:30 / 21:00 定時器。
  * ============================================================================
  */
 
 // 🔑 請在此填入您的 GitHub Personal Access Token (需具備 repo 與 workflow 權限)
 const GITHUB_PAT = '請在此貼上您的_ghp_開頭金鑰';
+
+// 📧 金鑰到期提前幾天寄信通知 (預設提前 7 天，每天最多寄 1 封提醒信)
+const EXPIRY_WARN_DAYS = 7;
 
 // 📦 GitHub 儲存庫與 Workflow 設定
 const GITHUB_OWNER = 'TimLin7026';
@@ -70,7 +57,7 @@ function triggerEveningMarketSync() {
 }
 
 /**
- * 🧪 手動立即測試觸發 (初次設定時，選此函式按「執行」即可立即喚醒 GitHub Workflow)
+ * 🧪 手動立即測試觸發 (同時顯示金鑰剩餘有效天數)
  */
 function testTriggerNow() {
   Logger.log('🧪 執行手動立即測試觸發...');
@@ -116,17 +103,16 @@ function setupDailyTriggers() {
  */
 function isWeekdayInTaipei_() {
   const now = new Date();
-  // 取得台灣時區星期幾 (1=週一 ... 5=週五, 6=週六, 7=週日)
   const isoDay = Number(Utilities.formatDate(now, 'Asia/Taipei', 'u'));
   return isoDay >= 1 && isoDay <= 5;
 }
 
 /**
- * 內部核心：發送 POST 請求至 GitHub Actions workflow_dispatch API
+ * 內部核心：發送 POST 請求至 GitHub Actions workflow_dispatch API，並自動檢查金鑰到期日
  */
 function triggerGitHubWorkflow_(targetDate, scanDays) {
   if (!GITHUB_PAT || GITHUB_PAT.indexOf('請在此貼上') !== -1) {
-    throw new Error('❌ 請先在第 41 行設定您的 GITHUB_PAT 金鑰！');
+    throw new Error('❌ 請先在上方 GITHUB_PAT 填入您的 ghp_ 金鑰！');
   }
 
   const url = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/actions/workflows/' + WORKFLOW_FILE + '/dispatches';
@@ -154,6 +140,10 @@ function triggerGitHubWorkflow_(targetDate, scanDays) {
   const response = UrlFetchApp.fetch(url, options);
   const statusCode = response.getResponseCode();
   const body = response.getContentText();
+  const headers = response.getAllHeaders() || {};
+
+  // 🔑 自動檢查 GitHub Token 到期日並於需要時寄信通知
+  checkTokenExpirationAndNotify_(headers, statusCode);
 
   if (statusCode === 204) {
     const twTime = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
@@ -161,5 +151,105 @@ function triggerGitHubWorkflow_(targetDate, scanDays) {
   } else {
     Logger.log('❌ 喚醒失敗 (HTTP ' + statusCode + ')：' + body);
     throw new Error('GitHub API 回傳錯誤 HTTP ' + statusCode + ': ' + body);
+  }
+}
+
+/**
+ * 🔑 自動解析 GitHub 回傳標頭 `github-authentication-token-expiration`
+ *    當金鑰剩餘天數 <= EXPIRY_WARN_DAYS (7天) 或 HTTP 401 失效時，自動發送 Gmail 提醒信
+ */
+function checkTokenExpirationAndNotify_(headers, statusCode) {
+  try {
+    const todayStr = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+    const props = PropertiesService.getScriptProperties();
+
+    // 情況 A：HTTP 401 代表金鑰已經過期或被撤銷
+    if (statusCode === 401) {
+      Logger.log('🚨 嚴重警告：GitHub 金鑰已過期或失效 (HTTP 401)！');
+      const lastExpiredMailDate = props.getProperty('LAST_EXPIRED_MAIL_DATE');
+      if (lastExpiredMailDate !== todayStr) {
+        sendTokenWarningEmail_(
+          '🚨【緊急】鈔能戰情室 GitHub 金鑰已過期失效，請立即更新！',
+          '您的 GitHub Personal Access Token (Stock Sentinel Monitor) 已過期或失效 (HTTP 401)，目前無法自動觸發台股雲端行情大腦同步。\n\n' +
+          '👉 請立即前往更換金鑰：\nhttps://github.com/settings/tokens\n' +
+          '（建議將 Expiration 設為 No expiration 永不過期）\n\n' +
+          '👉 更新後請貼回 Google Apps Script 的 GITHUB_PAT 變數中：\nhttps://script.google.com/'
+        );
+        props.setProperty('LAST_EXPIRED_MAIL_DATE', todayStr);
+      }
+      return;
+    }
+
+    // 情況 B：從 Header 讀取到期時間 (不分大小寫查找 github-authentication-token-expiration)
+    var expHeader = null;
+    for (var k in headers) {
+      if (String(k).toLowerCase() === 'github-authentication-token-expiration') {
+        expHeader = headers[k];
+        break;
+      }
+    }
+
+    if (!expHeader) {
+      Logger.log('🔑 金鑰狀態：永不過期 (No expiration) 或未設定到期日。');
+      return;
+    }
+
+    // GitHub 格式通常為 "2027-01-07 00:00:00 UTC" 或 "2027-01-07 08:00:00 +0800"
+    const normalizedExpStr = String(expHeader).replace(' UTC', 'Z').replace(' ', 'T');
+    var expDate = new Date(normalizedExpStr);
+    if (isNaN(expDate.getTime())) {
+      expDate = new Date(String(expHeader));
+    }
+    if (isNaN(expDate.getTime())) {
+      Logger.log('🔑 金鑰到期標頭原始值：' + expHeader);
+      return;
+    }
+
+    const nowMs = new Date().getTime();
+    const diffDays = Math.ceil((expDate.getTime() - nowMs) / (1000 * 60 * 60 * 24));
+    const expDateFormatted = Utilities.formatDate(expDate, 'Asia/Taipei', 'yyyy-MM-dd');
+
+    Logger.log('🔑 金鑰有效期限至：' + expDateFormatted + '（剩餘約 ' + diffDays + ' 天）');
+
+    // 若剩餘天數 <= EXPIRY_WARN_DAYS (7天)，寄發提前提醒信 (每天最多寄 1 次)
+    if (diffDays <= EXPIRY_WARN_DAYS) {
+      const lastWarnMailDate = props.getProperty('LAST_WARN_MAIL_DATE');
+      if (lastWarnMailDate !== todayStr) {
+        sendTokenWarningEmail_(
+          '⚠️【提醒】鈔能戰情室 GitHub 金鑰將於 ' + diffDays + ' 天後 (' + expDateFormatted + ') 到期！',
+          '您好！系統自動偵測到您的 GitHub Personal Access Token 即將到期：\n\n' +
+          '• 到期日期：' + expDateFormatted + '\n' +
+          '• 剩餘天數：約 ' + diffDays + ' 天\n\n' +
+          '為了避免雲端行情大腦排程中斷，請於到期前撥空更新金鑰：\n' +
+          '1. 前往 GitHub Token 頁面點擊 Regenerate token：\n   https://github.com/settings/tokens\n' +
+          '   （💡 建議將 Expiration 改選為 No expiration 永不過期，即可一勞永逸！）\n' +
+          '2. 將新產生的 ghp_ 金鑰貼回 Google Apps Script 的 GITHUB_PAT 並按 Ctrl+S 儲存：\n   https://script.google.com/'
+        );
+        props.setProperty('LAST_WARN_MAIL_DATE', todayStr);
+      }
+    }
+  } catch (e) {
+    Logger.log('⚠️ 檢查金鑰到期日時發生非致命例外：' + e.message);
+  }
+}
+
+/**
+ * 寄送金鑰到期提醒 Email 給當前 Google 帳號信箱
+ */
+function sendTokenWarningEmail_(subject, bodyText) {
+  try {
+    const userEmail = Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail();
+    if (!userEmail) {
+      Logger.log('⚠️ 無法取得當前使用者信箱，略過寄信。');
+      return;
+    }
+    MailApp.sendEmail({
+      to: userEmail,
+      subject: subject,
+      body: bodyText
+    });
+    Logger.log('📧 已自動寄發金鑰到期提醒信至：' + userEmail);
+  } catch (e) {
+    Logger.log('⚠️ 寄發提醒信失敗 (可能尚未授權寄信權限)：' + e.message);
   }
 }
