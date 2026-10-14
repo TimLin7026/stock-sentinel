@@ -25,6 +25,7 @@ import urllib.parse
 import ssl
 import pandas as pd
 import numpy as np
+import random
 
 # 強制 UTF-8 輸出
 try:
@@ -394,6 +395,14 @@ def init_history_db(db_path):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_stock_date ON daily_kline (stock_code, trade_date ASC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_trade_date ON daily_kline (trade_date)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS stock_backfill_log (
+            stock_code TEXT PRIMARY KEY,
+            earliest_date TEXT,
+            last_backfill_time TEXT,
+            is_exhausted INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
     return conn
 
@@ -481,7 +490,7 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
                    SUM(CASE WHEN close > 0 AND volume > 0 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN ABS(foreign_buy) + ABS(sitc_buy) + ABS(dealers_buy) > 0 THEN 1 ELSE 0 END)
             FROM daily_kline
-            WHERE trade_date IN ({placeholders}) AND length(stock_code) <= 5
+            WHERE trade_date IN ({placeholders}) AND (length(stock_code) <= 5 OR stock_code LIKE '00%')
             GROUP BY trade_date
         """, target_market_days)
         existing_stats = {row[0]: (row[1], row[2] or 0, row[3] or 0) for row in cur.fetchall()}
@@ -498,7 +507,7 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
         return missing_dates
 
     # ─── 模式 B: 標準增量探測 ───
-    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
     row = cur.fetchone()
     last_db_date = row[0] if row and row[0] else None
     
@@ -512,7 +521,7 @@ def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
                    SUM(CASE WHEN ABS(foreign_buy) + ABS(sitc_buy) + ABS(dealers_buy) > 0 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN margin_balance > 0 THEN 1 ELSE 0 END)
             FROM daily_kline
-            WHERE trade_date = ? AND length(stock_code) <= 5
+            WHERE trade_date = ? AND (length(stock_code) <= 5 OR stock_code LIKE '00%')
         """, (last_db_date,))
         stat_row = cur.fetchone()
         total_cnt = (stat_row[0] or 0) if stat_row else 0
@@ -556,7 +565,7 @@ def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_m
     records = []
     
     for code in all_codes:
-        if len(code) > 5:
+        if is_warrant_code(code):
             continue
         meta = twse_map.get(code) or tpex_map.get(code) or {}
         chip = chip_map.get(code, {})
@@ -590,6 +599,108 @@ def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_m
     """, records)
     conn.commit()
     print(f"💾 [入庫成功] 成功寫入 {len(records)} 筆個股於 {target_date} 之日 K 線與籌碼紀錄。")
+
+def backfill_single_stock_history(conn, stock_code, stock_name='', max_months=3):
+    """
+    🎯 智慧單股歷史自癒引擎 (對齊電腦端 3 秒 delay 防封 IP，遇未上市即煞車並記憶)
+    功能：
+    1. 僅在手動點擊「補齊 120 日」(scan_days > 0) 時針對歷史天數不足的個股觸發。
+    2. 由近而遠推算最近 max_months 個月 (如 202610, 202609, 202608)。
+    3. 請求前強制 time.sleep(3.0) 官方冷卻防護 (對齊電腦端 Stock_Sentinel.py:950)。
+    4. 遇空資料或非 'OK' (代表該月份尚未掛牌) 即煞車中斷，並標記 is_exhausted = 1 永久防止空抓。
+    5. 解析開高低收量以 INSERT OR IGNORE 補入 daily_kline。
+    """
+    cur = conn.cursor()
+    
+    # 1. 檢查是否已被標記為已探測到極限 (is_exhausted = 1)
+    cur.execute("SELECT is_exhausted FROM stock_backfill_log WHERE stock_code = ?", (stock_code,))
+    row = cur.fetchone()
+    if row and row[0] == 1:
+        print(f"⏩ [自癒略過] {stock_code} ({stock_name}) 已達上市掛牌極限，依歷史日誌略過空抓。")
+        return 0
+
+    now = get_taipei_now().replace(tzinfo=None)
+    
+    # 產生最近 max_months 個月份的月初字串 (如: 20261001, 20260901, 20260801)
+    target_months = []
+    curr_dt = now
+    for _ in range(max_months):
+        target_months.append(curr_dt.strftime("%Y%m01"))
+        first_of_month = curr_dt.replace(day=1)
+        curr_dt = first_of_month - datetime.timedelta(days=1)
+        
+    total_added = 0
+    earliest_date = None
+    is_exhausted = 0
+    
+    print(f"\n🧬 [單股自癒啟動] 正在為 {stock_code} ({stock_name}) 執行歷史價量回補 (目標月份: {target_months})...")
+    
+    for month_str in target_months:
+        # 對齊電腦端防護冷卻延遲：強制 sleep 3 秒 + 隨機微幅抖動防 ban IP
+        delay_sec = round(3.0 + random.uniform(0.1, 0.4), 2)
+        print(f"⏳ [防封IP冷卻] 單股回補間隔保護，休眠 {delay_sec} 秒...")
+        time.sleep(delay_sec)
+        
+        url = f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date={month_str}&stockNo={stock_code}&response=json"
+        data = http_get_json(url, retries=2, delay=2)
+        
+        if not data or data.get('stat') != 'OK' or not data.get('data'):
+            print(f"🛑 [掛牌極限探測] {stock_code} 於 {month_str[:6]} 查無成交資料 (可能尚未上市)，判定已達歷史極限，停止向前回補！")
+            is_exhausted = 1
+            break
+            
+        month_rows = data.get('data', [])
+        records = []
+        for r in month_rows:
+            # fields: ["日期","成交股數","成交金額","開盤價","最高價","最低價","收盤價","漲跌價差","成交筆數"]
+            roc_date = str(r[0]).strip()
+            parts = roc_date.split('/')
+            if len(parts) != 3:
+                continue
+            ad_year = int(parts[0]) + 1911
+            t_date = f"{ad_year}{parts[1].zfill(2)}{parts[2].zfill(2)}"
+            
+            vol = safe_int(r[1])
+            o_p = safe_float(r[3])
+            h_p = safe_float(r[4])
+            l_p = safe_float(r[5])
+            c_p = safe_float(r[6])
+            
+            if c_p <= 0 and o_p > 0:
+                c_p = o_p
+            if c_p <= 0:
+                continue
+                
+            records.append((
+                t_date, stock_code, stock_name,
+                o_p, h_p, l_p, c_p, vol,
+                0, 0, 0, 0, 'TSE', 'TSE'
+            ))
+            if earliest_date is None or t_date < earliest_date:
+                earliest_date = t_date
+                
+        if records:
+            cur.executemany("""
+                INSERT OR IGNORE INTO daily_kline (
+                    trade_date, stock_code, stock_name,
+                    open, high, low, close, volume,
+                    foreign_buy, sitc_buy, dealers_buy, margin_balance,
+                    mkt, market_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, records)
+            conn.commit()
+            total_added += len(records)
+            print(f"📥 [單股入庫] {stock_code} 於 {month_str[:6]} 成功回補入庫 {len(records)} 筆歷史日 K 線。")
+            
+    # 記錄/更新至 stock_backfill_log
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute("""
+        INSERT OR REPLACE INTO stock_backfill_log (stock_code, earliest_date, last_backfill_time, is_exhausted)
+        VALUES (?, ?, ?, ?)
+    """, (stock_code, earliest_date, now_str, is_exhausted))
+    conn.commit()
+    print(f"✨ [自癒完畢] {stock_code} 累計回補入庫 {total_added} 筆歷史資料 (極限狀態: {'已達極限' if is_exhausted else '持續中'})。\n")
+    return total_added
 
 def prune_history_db(conn, max_days=120):
     """
@@ -626,7 +737,7 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
                open, high, low, close, volume,
                foreign_buy, sitc_buy, dealers_buy, margin_balance
         FROM daily_kline
-        WHERE length(stock_code) <= 5
+        WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')
           AND trade_date IN (
             SELECT DISTINCT trade_date FROM daily_kline ORDER BY trade_date DESC LIMIT {lookback_days}
         )
@@ -1276,9 +1387,40 @@ def main():
     # 3. 🧹 歷史庫容量滾動修剪 (維持最近 120 天，確保資料庫體積 < 45MB)
     prune_history_db(conn, max_days=120)
 
+    # 3.5 🧬 智慧單股歷史自癒 (僅在手動點擊「補齊 120 日」即 scan_days > 0 時啟動)
+    if scan_days > 0:
+        print(f"\n🧬 [自癒引擎] 檢測到深度維運指令 (--scan-days={scan_days})，啟動單股歷史智慧回補...")
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
+        latest_date_row = cur.fetchone()
+        latest_date_in_db = latest_date_row[0] if latest_date_row else None
+        if latest_date_in_db:
+            cur.execute("""
+                SELECT d.stock_code, d.stock_name, COUNT(*) as history_cnt
+                FROM daily_kline d
+                LEFT JOIN stock_backfill_log b ON d.stock_code = b.stock_code
+                WHERE d.trade_date = ?
+                  AND d.volume > 0
+                  AND (length(d.stock_code) <= 5 OR d.stock_code LIKE '00%')
+                  AND (b.is_exhausted IS NULL OR b.is_exhausted = 0)
+                GROUP BY d.stock_code
+                HAVING (
+                    SELECT COUNT(*) FROM daily_kline WHERE stock_code = d.stock_code
+                ) < 40
+                ORDER BY history_cnt ASC
+                LIMIT 5
+            """, (latest_date_in_db,))
+            underfilled_stocks = cur.fetchall()
+            if underfilled_stocks:
+                print(f"🔍 [自癒探測] 發現 {len(underfilled_stocks)} 檔標的歷史天數不足 40 天，啟動精準回補: {[s[0] for s in underfilled_stocks]}")
+                for sc, sn, _ in underfilled_stocks:
+                    backfill_single_stock_history(conn, sc, sn, max_months=3)
+            else:
+                print("✅ [自癒探測] 全市場有效個股歷史天數均充足或已達掛牌極限，無需額外回補。")
+
     # 4. ⚡ 針對資料庫最新交易日執行全量指標滾算
     cur = conn.cursor()
-    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE length(stock_code) <= 5")
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
     latest_trade_date = cur.fetchone()[0]
     
     if not latest_trade_date:
@@ -1287,11 +1429,11 @@ def main():
         sys.exit(1)
 
     # 補齊節點統計 (若無爬取時以最新交易日真實檔數填入，避免監控台顯示 0 檔未知)
-    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'TSE' AND length(stock_code) <= 5", (latest_trade_date,))
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'TSE' AND (length(stock_code) <= 5 OR stock_code LIKE '00%')", (latest_trade_date,))
     cnt_tse = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'OTC' AND length(stock_code) <= 5", (latest_trade_date,))
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND mkt = 'OTC' AND (length(stock_code) <= 5 OR stock_code LIKE '00%')", (latest_trade_date,))
     cnt_otc = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND length(stock_code) <= 5", (latest_trade_date,))
+    cur.execute("SELECT COUNT(*) FROM daily_kline WHERE trade_date = ? AND (length(stock_code) <= 5 OR stock_code LIKE '00%')", (latest_trade_date,))
     cnt_all = cur.fetchone()[0]
 
     if "twse" not in health_report["nodes"] or health_report["nodes"]["twse"].get("count", 0) == 0:
