@@ -1387,36 +1387,50 @@ def main():
     # 3. 🧹 歷史庫容量滾動修剪 (維持最近 120 天，確保資料庫體積 < 45MB)
     prune_history_db(conn, max_days=120)
 
-    # 3.5 🧬 智慧單股歷史自癒 (僅在手動點擊「補齊 120 日」即 scan_days > 0 時啟動)
-    if scan_days > 0:
-        print(f"\n🧬 [自癒引擎] 檢測到深度維運指令 (--scan-days={scan_days})，啟動單股歷史智慧回補...")
-        cur = conn.cursor()
-        cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
-        latest_date_row = cur.fetchone()
-        latest_date_in_db = latest_date_row[0] if latest_date_row else None
-        if latest_date_in_db:
-            cur.execute("""
-                SELECT d.stock_code, d.stock_name, COUNT(*) as history_cnt
-                FROM daily_kline d
-                LEFT JOIN stock_backfill_log b ON d.stock_code = b.stock_code
-                WHERE d.trade_date = ?
-                  AND d.volume > 0
-                  AND (length(d.stock_code) <= 5 OR d.stock_code LIKE '00%')
-                  AND (b.is_exhausted IS NULL OR b.is_exhausted = 0)
-                GROUP BY d.stock_code
-                HAVING (
-                    SELECT COUNT(*) FROM daily_kline WHERE stock_code = d.stock_code
-                ) < 40
-                ORDER BY history_cnt ASC
-                LIMIT 5
-            """, (latest_date_in_db,))
-            underfilled_stocks = cur.fetchall()
-            if underfilled_stocks:
-                print(f"🔍 [自癒探測] 發現 {len(underfilled_stocks)} 檔標的歷史天數不足 40 天，啟動精準回補: {[s[0] for s in underfilled_stocks]}")
-                for sc, sn, _ in underfilled_stocks:
-                    backfill_single_stock_history(conn, sc, sn, max_months=3)
-            else:
-                print("✅ [自癒探測] 全市場有效個股歷史天數均充足或已達掛牌極限，無需額外回補。")
+    # 3.5 🧬 全場景智慧單股歷史自癒 (無論任何按鈕或排程，遇缺失標的自動在雲端補齊)
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
+    latest_date_row = cur.fetchone()
+    latest_date_in_db = latest_date_row[0] if latest_date_row else None
+    
+    if latest_date_in_db:
+        # 1. 取得當前現存所有股票之歷史天數
+        cur.execute("SELECT stock_code, COUNT(*) FROM daily_kline GROUP BY stock_code")
+        existing_history_counts = dict(cur.fetchall())
+        
+        # 2. 取得已達掛牌極限的黑名單 (永久防空抓)
+        cur.execute("SELECT stock_code FROM stock_backfill_log WHERE is_exhausted = 1")
+        exhausted_stocks = set(r[0] for r in cur.fetchall())
+        
+        # 3. 取得市場活躍清單：優先使用當次爬取之 twse_map，若無則自 TWSE 官方輕量獲取
+        market_candidates = {}
+        if 'twse_map' in locals() and twse_map:
+            market_candidates = twse_map
+        else:
+            try:
+                market_candidates = fetch_twse_market(latest_date_in_db)
+            except Exception as e:
+                print(f"⚠️ [自癒探測] 讀取全市場名單略過: {e}")
+                
+        # 4. 精準比對：找出「非權證、在庫天數 < 40 天、且未被標記為掛牌極限」的標的
+        underfilled_candidates = []
+        for code, meta in market_candidates.items():
+            if is_warrant_code(code):
+                continue
+            history_cnt = existing_history_counts.get(code, 0)
+            if history_cnt < 40 and code not in exhausted_stocks:
+                underfilled_candidates.append((code, meta.get('name', ''), history_cnt))
+                
+        # 依照歷史天數由少到多排序 (在庫 0 筆最優先自癒)，安全上限每次最多 5 檔
+        underfilled_candidates.sort(key=lambda x: x[2])
+        underfilled_stocks = underfilled_candidates[:5]
+        
+        if underfilled_stocks:
+            print(f"\n🧬 [自癒引擎啟動] 全市場發現 {len(underfilled_candidates)} 檔標的歷史天數不足 40 天，本輪自癒優先補齊前 {len(underfilled_stocks)} 檔: {[s[0] for s in underfilled_stocks]}")
+            for sc, sn, _ in underfilled_stocks:
+                backfill_single_stock_history(conn, sc, sn, max_months=3)
+        else:
+            print("✅ [自癒探測] 全市場有效個股歷史天數均充足或已達掛牌極限，無需額外回補。")
 
     # 4. ⚡ 針對資料庫最新交易日執行全量指標滾算
     cur = conn.cursor()
