@@ -90,46 +90,9 @@
         <!-- ✅ 授權管理員專屬儀表板 -->
         <main v-else class="space-y-6">
 
-            <!-- 1. 頂部狀態概覽與刷新列 -->
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow">
-                <div>
-                    <div class="flex items-center space-x-2 flex-wrap gap-y-1.5">
-                        <span class="text-xs text-slate-400">大腦審計日期：</span>
-                        <span class="font-mono font-bold text-sky-400 text-sm">{{ healthData.target_date || '讀取中...' }}</span>
-                        <span :class="getStatusBadgeClass(healthData.status)" 
-                              class="text-[10px] px-2 py-0.5 rounded-full border font-bold flex items-center space-x-1">
-                            <span>{{ getStatusBadgeText(healthData.status) }}</span>
-                        </span>
-                        <!-- ⏰ 下次預計抓取時間 -->
-                        <span class="text-[10px] px-2.5 py-0.5 rounded-full border font-mono font-bold bg-indigo-950/80 border-indigo-700/80 text-indigo-300 flex items-center space-x-1 shadow-sm">
-                            <i class="fa-solid fa-clock text-[9px] text-amber-400"></i>
-                            <span>下次排程: {{ nextCrawlTimeInfo.label }}</span>
-                            <span v-if="nextCrawlTimeInfo.countdown" class="text-amber-300">({{ nextCrawlTimeInfo.countdown }})</span>
-                        </span>
-                    </div>
-                    <p class="text-[11px] text-slate-400 mt-1.5">
-                        <span class="text-sky-300 font-semibold">{{ healthData.progress || '大腦就緒' }}</span>
-                        <span class="text-slate-600 mx-1.5">|</span>
-                        <span>執行: {{ healthData.run_time || '---' }}</span>
-                        <span class="text-slate-600 mx-1.5">|</span>
-                        <span>耗時: {{ healthData.total_elapsed || '---' }}s</span>
-                        <span class="text-slate-600 mx-1.5">|</span>
-                        <span>快照: {{ healthData.snapshot_size_kb || 0 }} KB</span>
-                    </p>
-                </div>
-
-                <div class="flex items-center space-x-2 w-full sm:w-auto">
-                    <button @click="fetchHealthReport(); fetchWorkflowRuns();" :disabled="isLoadingReport || isLoadingWorkflow"
-                            class="flex-1 sm:flex-none text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5">
-                        <i class="fa-solid fa-rotate" :class="{ 'fa-spin': isLoadingReport || isLoadingWorkflow }"></i>
-                        <span>刷新狀態</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- 1.5. ⚙️ GitHub Actions 雲端大腦工作流即時動態與直達傳送門 -->
+            <!-- 1. ⚙️ GitHub 雲端大腦工作流動態 (一體化旗艦看板) -->
             <div class="bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 border border-indigo-900/50 rounded-3xl p-5 shadow-xl space-y-4">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-800">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-800">
                     <div class="flex items-center space-x-2.5">
                         <div class="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-700 flex items-center justify-center text-indigo-400">
                             <i class="fa-solid fa-gears text-sm"></i>
@@ -142,30 +105,50 @@
                                     <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
                                 </span>
                             </h2>
-                            <p class="text-[11px] text-slate-400">即時監控 GitHub Actions 虛擬機排程與執行狀態</p>
+                            <p class="text-[11px] text-slate-400">即時監控 GitHub Actions 虛擬機排程、數據清洗與審計發布狀態</p>
                         </div>
                     </div>
 
-                    <!-- 🔗 直達 GitHub Actions 官方頁面按鈕 -->
+                    <!-- 🔗 右側整合操作：單一刷新狀態按鈕 + 直達 GitHub Actions 官方頁面 -->
                     <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
-                        <button @click="fetchWorkflowRuns" :disabled="isLoadingWorkflow" title="手動刷新工作流狀態"
-                                class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl border border-slate-700 transition flex items-center space-x-1">
-                            <i class="fa-solid fa-arrows-rotate text-[11px]" :class="{ 'fa-spin': isLoadingWorkflow }"></i>
-                            <span class="hidden sm:inline">檢查進度</span>
+                        <button @click="refreshAllStatus" :disabled="isRefreshingAll || isLoadingReport || isLoadingWorkflow" title="連動刷新大腦健康報表與工作流狀態"
+                                class="flex-1 sm:flex-none text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-1.5 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 shadow-sm active:scale-95">
+                            <i class="fa-solid fa-arrows-rotate text-[11px]" :class="{ 'fa-spin': isRefreshingAll || isLoadingReport || isLoadingWorkflow }"></i>
+                            <span>刷新狀態</span>
                         </button>
                         <a href="https://github.com/TimLin7026/stock-sentinel/actions/workflows/market_sync.yml" target="_blank" rel="noopener noreferrer"
-                           class="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5 active:scale-95">
+                           class="flex-1 sm:flex-none text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center justify-center space-x-1.5 active:scale-95">
                             <i class="fa-brands fa-github text-sm"></i>
-                            <span>前往 GitHub Actions 頁面</span>
+                            <span class="hidden sm:inline">前往 GitHub Actions 頁面</span>
+                            <span class="sm:hidden">GitHub Actions</span>
                             <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
                         </a>
                     </div>
                 </div>
 
-                <!-- 最新執行動態指標 -->
+                <!-- 審計與排程狀態資訊條 (融合原上方不重複資訊) -->
+                <div class="bg-slate-950/60 border border-slate-800/80 rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center space-x-2 flex-wrap gap-y-1.5">
+                        <span class="text-slate-400">大腦審計日期：</span>
+                        <span class="font-mono font-bold text-sky-400 text-sm">{{ healthData.target_date || '讀取中...' }}</span>
+                        <span :class="getStatusBadgeClass(healthData.status)" 
+                              class="text-[10px] px-2 py-0.5 rounded-full border font-bold flex items-center space-x-1">
+                            <span>{{ getStatusBadgeText(healthData.status) }}</span>
+                        </span>
+                    </div>
+                    <!-- ⏰ 下次預計抓取時間 -->
+                    <div class="flex items-center space-x-1 text-[11px] font-mono font-semibold bg-indigo-950/70 border border-indigo-800/60 text-indigo-300 px-2.5 py-1 rounded-xl shadow-sm">
+                        <i class="fa-solid fa-clock text-[10px] text-amber-400 mr-0.5"></i>
+                        <span>下次排程: {{ nextCrawlTimeInfo.label }}</span>
+                        <span v-if="nextCrawlTimeInfo.countdown" class="text-amber-300 font-bold ml-1">({{ nextCrawlTimeInfo.countdown }})</span>
+                    </div>
+                </div>
+
+                <!-- 最新執行動態指標 (4-Grid Matrix) -->
                 <div v-if="latestWorkflowRun" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <!-- 1. 最新狀態 -->
                     <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
-                        <span class="text-slate-400 text-[11px] mb-1">最新狀態</span>
+                        <span class="text-slate-400 text-[11px] mb-1">工作流狀態</span>
                         <div class="flex items-center space-x-1.5">
                             <span :class="getWorkflowStatusBadge(latestWorkflowRun).class" class="text-xs px-2.5 py-1 rounded-lg border font-bold font-mono">
                                 {{ getWorkflowStatusBadge(latestWorkflowRun).text }}
@@ -173,6 +156,7 @@
                         </div>
                     </div>
 
+                    <!-- 2. 觸發模式 -->
                     <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
                         <span class="text-slate-400 text-[11px] mb-1">觸發模式</span>
                         <div class="font-bold text-slate-200">
@@ -180,23 +164,44 @@
                         </div>
                     </div>
 
+                    <!-- 3. 執行時間對照與總耗時 (清晰標註啟動與發布完成) -->
                     <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
-                        <span class="text-slate-400 text-[11px] mb-1">啟動時間 / 耗時</span>
-                        <div>
-                            <div class="font-mono text-slate-200 font-semibold">{{ formatIsoToTaipei(latestWorkflowRun.run_started_at || latestWorkflowRun.created_at) }}</div>
-                            <div class="text-[10px] text-sky-400 mt-0.5">總耗時: {{ formatRunDuration(latestWorkflowRun) }}</div>
+                        <span class="text-slate-400 text-[11px] mb-1">執行時間與耗時</span>
+                        <div class="space-y-0.5 font-mono text-[11px]">
+                            <div class="text-slate-300 flex items-center justify-between">
+                                <span class="text-slate-500">啟動:</span>
+                                <span>{{ formatIsoToTaipei(latestWorkflowRun.run_started_at || latestWorkflowRun.created_at) }}</span>
+                            </div>
+                            <div v-if="healthData.run_time" class="text-slate-300 flex items-center justify-between">
+                                <span class="text-slate-500">發布:</span>
+                                <span class="text-sky-300">{{ healthData.run_time }}</span>
+                            </div>
+                            <div class="text-[10px] text-amber-400 flex items-center justify-between pt-0.5 border-t border-slate-800/60">
+                                <span class="text-slate-500">總耗時:</span>
+                                <span class="font-bold">{{ formatRunDuration(latestWorkflowRun) }}</span>
+                            </div>
                         </div>
                     </div>
 
+                    <!-- 4. 快照與審計數據產出 -->
                     <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between">
-                        <span class="text-slate-400 text-[11px] mb-1">本次執行紀錄</span>
+                        <span class="text-slate-400 text-[11px] mb-1">快照與審計進度</span>
                         <div>
-                            <a :href="latestWorkflowRun.html_url" target="_blank" rel="noopener noreferrer"
-                               class="inline-flex items-center space-x-1 text-sky-400 hover:text-sky-300 font-bold transition">
-                                <span>#{{ latestWorkflowRun.id.toString().slice(-6) }} 查看詳細 Log</span>
-                                <i class="fa-solid fa-angle-right text-[10px]"></i>
-                            </a>
-                            <div class="text-[10px] text-slate-500 mt-0.5">分支: {{ latestWorkflowRun.head_branch }}</div>
+                            <div class="flex items-center justify-between text-[11px] font-mono text-slate-200">
+                                <span class="text-slate-500">快照大小:</span>
+                                <span class="font-bold text-emerald-400">{{ healthData.snapshot_size_kb || 0 }} KB</span>
+                            </div>
+                            <div class="text-[10px] text-sky-400 truncate mt-0.5" :title="healthData.progress || '大腦就緒'">
+                                {{ healthData.progress || '大腦就緒 (全流程清洗合格)' }}
+                            </div>
+                            <div class="mt-1 pt-1 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
+                                <a :href="latestWorkflowRun.html_url" target="_blank" rel="noopener noreferrer"
+                                   class="inline-flex items-center space-x-1 text-indigo-400 hover:text-indigo-300 font-bold transition">
+                                    <span>#{{ latestWorkflowRun.id.toString().slice(-6) }} 查看詳細 Log</span>
+                                    <i class="fa-solid fa-angle-right text-[9px]"></i>
+                                </a>
+                                <span class="text-slate-500 font-mono">{{ latestWorkflowRun.head_branch }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -359,9 +364,12 @@
                             <p class="text-[11px] text-slate-400 leading-relaxed mb-2">
                                 輸入指定開市日爬取全市場盤後數據並重算指標。預設為最近開市日。
                             </p>
-                            <div class="relative">
+                            <div class="relative flex items-center">
                                 <input v-model="customTargetDate" @input="isUserModifiedDate = true" type="text" placeholder="例: 20261008" maxlength="8"
-                                       class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500">
+                                       class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-20 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500">
+                                <button v-if="customTargetDate" @click="resetCustomDateToLatest" class="absolute right-14 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-800 transition text-xs" title="清空並重設為最近開市日">
+                                    <i class="fa-solid fa-circle-xmark"></i>
+                                </button>
                                 <span class="absolute right-3 top-2 text-[10px] text-slate-500 font-mono pointer-events-none">YYYYMMDD</span>
                             </div>
                         </div>
@@ -406,10 +414,13 @@
                 </div>
 
                 <!-- 搜尋過濾器 -->
-                <div class="relative">
-                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                <div class="relative flex items-center">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 text-xs text-slate-400 pointer-events-none"></i>
                     <input v-model="searchQuery" type="text" placeholder="搜尋排查個股代號或名稱..." 
-                           class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500">
+                           class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-8 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500">
+                    <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-2.5 text-slate-400 hover:text-slate-200 p-0.5 rounded-full hover:bg-slate-800 transition text-xs" title="清空關鍵字">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </button>
                 </div>
 
                 <!-- 排查清單列表 -->
@@ -453,6 +464,6 @@
     </div>
 
     <!-- 載入監控邏輯腳本 -->
-    <script src="monitor.js?v=20261012.01"></script>
+    <script src="monitor.js?v=20261014.02"></script>
 </body>
 </html>

@@ -216,6 +216,22 @@ createApp({
             }
         };
 
+        // ─── 2.6. 一體化同步刷新 (健康報表與 GitHub Actions 連動) ───
+        const isRefreshingAll = ref(false);
+        const refreshAllStatus = async () => {
+            isRefreshingAll.value = true;
+            try {
+                await Promise.allSettled([
+                    fetchHealthReport(),
+                    fetchWorkflowRuns()
+                ]);
+            } catch (e) {
+                console.error("一體化刷新發生異常:", e);
+            } finally {
+                isRefreshingAll.value = false;
+            }
+        };
+
         const latestWorkflowRun = computed(() => {
             return workflowRuns.value && workflowRuns.value.length > 0 ? workflowRuns.value[0] : null;
         });
@@ -272,7 +288,7 @@ createApp({
             try {
                 const d = new Date(isoStr);
                 const pad = (n) => String(n).padStart(2, '0');
-                return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
             } catch (e) {
                 return isoStr;
             }
@@ -536,6 +552,8 @@ createApp({
             isWorkflowRunning,
             showWorkflowHistory,
             fetchWorkflowRuns,
+            isRefreshingAll,
+            refreshAllStatus,
             getWorkflowStatusBadge,
             getWorkflowEventLabel,
             formatIsoToTaipei,
