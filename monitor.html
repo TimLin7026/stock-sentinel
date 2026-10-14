@@ -32,9 +32,15 @@
                     <i class="fa-solid fa-tower-broadcast"></i>
                 </div>
                 <div>
-                    <h1 class="font-black text-lg sm:text-xl tracking-tight bg-gradient-to-r from-sky-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-                        數據大腦運維監控台
-                    </h1>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="font-black text-lg sm:text-xl tracking-tight bg-gradient-to-r from-sky-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+                            數據大腦運維監控台
+                        </h1>
+                        <span class="text-[10px] sm:text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-950/90 border border-indigo-700/60 text-indigo-300 shadow-sm flex items-center space-x-1" title="大腦系統版本">
+                            <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
+                            <span>{{ appVersion }}</span>
+                        </span>
+                    </div>
                     <p class="text-[11px] text-slate-400">專屬雲端盤後大數據品質與遠端控制中心</p>
                 </div>
             </div>

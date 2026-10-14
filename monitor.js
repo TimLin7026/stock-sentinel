@@ -17,6 +17,22 @@ createApp({
         const authErrorMsg = ref('');
         const isLoggingIn = ref(false);
 
+        // ─── 系統版本資訊 ───
+        const appVersion = ref('v2.20261013.09');
+        const fetchAppVersion = async () => {
+            try {
+                const res = await fetch(`./version_v2.txt?_t=${Date.now()}`, { cache: 'no-store' });
+                if (res.ok) {
+                    const text = await res.text();
+                    if (text && text.trim()) {
+                        appVersion.value = text.trim();
+                    }
+                }
+            } catch (e) {
+                console.warn("無法取得 version_v2.txt，使用預設版本號:", e);
+            }
+        };
+
         // ─── 數據大腦健康報表 ───
         const isLoadingReport = ref(false);
         const healthData = ref({
@@ -493,6 +509,7 @@ createApp({
 
         // ─── 初始化生命週期 ───
         onMounted(() => {
+            fetchAppVersion();
             // 一載入頁面即背景拉取健康報表以獲取官方驗證過的真實 target_date
             fetchHealthReport();
             fetchWorkflowRuns();
@@ -503,6 +520,7 @@ createApp({
         });
 
         return {
+            appVersion,
             isAuthorized,
             userEmail,
             authErrorMsg,
