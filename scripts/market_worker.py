@@ -117,6 +117,31 @@ def safe_float(v, default=0.0):
 def safe_int(v, default=0):
     return clean_int(v, default)
 
+def is_warrant_code(code):
+    """
+    精準過濾權證，同時確保放行 6 碼主動型/雙幣 ETF (如 00406A, 00407A, 0050K)
+    台股代碼規則：
+    1. <= 5 碼：普通股票、特別股 (2887A)、5 碼 ETF (00878) -> 絕非權證，放行 (False)
+    2. 6 碼且以 00 開頭 (如 00406A, 0050K 等 ETF) -> 放行 (False)
+    3. 6 碼純數字 (03xxxx-08xxxx, 70xxxx-73xxxx)：標準上市櫃權證 -> 過濾 (True)
+    4. 6 碼且尾碼為權證特徵碼 (P/F/Q/X/Y，如認售權證、牛熊證)：過濾 (True)
+    5. > 6 碼：衍生商品/展延權證 -> 過濾 (True)
+    """
+    if not code:
+        return True
+    c = str(code).strip()
+    if len(c) <= 5:
+        return False
+    if len(c) == 6:
+        if c.startswith("00"):
+            return False
+        if c.isdigit():
+            return True
+        if c[-1].upper() in ('P', 'F', 'Q', 'X', 'Y', 'C', 'B'):
+            return True
+        return False
+    return True
+
 def get_taipei_now():
     tz_tw = datetime.timezone(datetime.timedelta(hours=8))
     return datetime.datetime.now(tz_tw)
@@ -224,7 +249,7 @@ def fetch_twse_market(target_date):
         
     for row in stock_rows:
         code = str(row[0]).strip()
-        if not code or len(code) > 5:  # 過濾 >5 碼權證
+        if not code or is_warrant_code(code):  # 精準過濾權證，放行 6 碼主動型/雙幣 ETF
             continue
         name = str(row[1]).strip()
         vol = safe_int(row[2])
@@ -253,7 +278,7 @@ def fetch_tpex_market(target_date):
     stock_rows = data.get('tables', [{}])[0].get('data', []) if 'tables' in data else data.get('aaData', [])
     for row in stock_rows:
         code = str(row[0]).strip()
-        if not code or len(code) > 5:  # 過濾 >5 碼權證
+        if not code or is_warrant_code(code):  # 精準過濾權證，放行 6 碼主動型/雙幣 ETF
             continue
         name = str(row[1]).strip()
         close_p = safe_float(row[2])
@@ -280,7 +305,7 @@ def fetch_institutional_investors(target_date):
         rows = twse_data.get('data', []) if 'data' in twse_data else twse_data.get('tables', [{}])[0].get('data', [])
         for r in rows:
             code = str(r[0]).strip()
-            if len(code) > 5: continue
+            if is_warrant_code(code): continue
             fb = safe_int(r[4]) if len(r) > 4 else 0
             sb = safe_int(r[7]) if len(r) > 7 else 0
             db = safe_int(r[11]) if len(r) > 11 else (safe_int(r[10]) if len(r) > 10 else 0)
@@ -296,7 +321,7 @@ def fetch_institutional_investors(target_date):
         for r in rows:
             if len(r) >= 23:
                 code = str(r[0]).strip()
-                if len(code) > 5: continue
+                if is_warrant_code(code): continue
                 fb = safe_int(r[10])
                 sb = safe_int(r[13])
                 db = safe_int(r[22])
@@ -321,7 +346,7 @@ def fetch_margin_trading(target_date):
             target_data = twse_data.get('data7') if twse_data.get('data7') else twse_data.get('data', [])
         for r in target_data:
             code = str(r[0]).strip()
-            if len(code) > 5: continue
+            if is_warrant_code(code): continue
             if len(r) > 5:
                 margin_map[code] = {'margin_balance': safe_int(r[5])}
                 
@@ -334,7 +359,7 @@ def fetch_margin_trading(target_date):
         rows = tpex_data.get('tables', [{}])[0].get('data', []) if 'tables' in tpex_data else tpex_data.get('aaData', [])
         for r in rows:
             code = str(r[0]).strip()
-            if len(code) > 5: continue
+            if is_warrant_code(code): continue
             if len(r) > 6:
                 margin_map[code] = {'margin_balance': safe_int(r[6])}
                 
