@@ -1208,6 +1208,53 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
         p_kd = int(prev_row["P4_KD_Cross"]) if n >= 2 else t_kd
         p_macd = int(prev_row["P2_MACD_Cross"]) if n >= 2 else t_macd
 
+        # ─── 籌碼三維定位算子 (Pivot, VWAP, CLV, Cost Bias) ───
+        pivot_val = round((h + l + c) / 3.0, 2)
+        vwap_val = round((h + l + c) / 3.0, 2)
+        bias_cost = round(((c - vwap_val) / vwap_val * 100.0), 2) if vwap_val > 0 else 0.0
+
+        bias_cost_emoji = "⚪"
+        bias_cost_comment = "貼近成本線整理"
+        if bias_cost >= 0.3:
+            bias_cost_emoji = "🔴"
+            bias_cost_comment = "買方未套牢"
+        elif bias_cost <= -0.3:
+            bias_cost_emoji = "🟢"
+            bias_cost_comment = "追價籌碼套牢"
+
+        pivot_emoji = "⚪"
+        pivot_comment = f"收盤 ${c:.2f} 恰平分水嶺"
+        if c >= pivot_val + 0.01:
+            pivot_emoji = "🔴"
+            pivot_comment = f"收盤 ${c:.2f} 守穩平衡線"
+        elif c <= pivot_val - 0.01:
+            pivot_emoji = "🟢"
+            pivot_comment = f"收盤 ${c:.2f} 跌破平衡線"
+
+        clv_diff = h - l
+        clv_val = round(((2.0 * c - h - l) / clv_diff), 2) if clv_diff > 0 else 0.0
+        clv_emoji = "⚪"
+        clv_comment = "多空力道均衡"
+        if clv_val >= 0.15:
+            clv_emoji = "🔴"
+            clv_comment = "偏外盤主動買盤"
+        elif clv_val <= -0.15:
+            clv_emoji = "🟢"
+            clv_comment = "偏內盤主動賣壓"
+
+        chip_3d = {
+            "vwap": vwap_val,
+            "pivot": pivot_val,
+            "clv": clv_val,
+            "cost_bias": bias_cost,
+            "bias_cost_emoji": bias_cost_emoji,
+            "bias_cost_desc": f"均價 ${vwap_val:.2f} (乖離率 {bias_cost:+.2f}%，{bias_cost_comment})",
+            "pivot_emoji": pivot_emoji,
+            "pivot_desc": f"樞紐價 ${pivot_val:.2f} ({pivot_comment})",
+            "clv_emoji": clv_emoji,
+            "clv_desc": f"動能係數 {clv_val:+.2f} ({clv_comment})"
+        }
+
         snapshot_map[code] = {
             "name": name,
             "mkt": mkt,
@@ -1261,7 +1308,12 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
                 "absorption_status": absorption_status,
                 "accel_status": accel_status,
                 "k_pattern": k_pattern,
-                "rsi_info": rsi_info
+                "rsi_info": rsi_info,
+                "chip_3d": chip_3d,
+                "vwap": vwap_val,
+                "pivot": pivot_val,
+                "clv": clv_val,
+                "cost_bias": bias_cost
             }
         }
 

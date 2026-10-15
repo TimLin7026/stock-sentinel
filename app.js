@@ -854,6 +854,9 @@ createApp({
                     }
 
                     if (snap.strat) {
+                        s.vwap = snap.strat.vwap;
+                        s.pivot = snap.strat.pivot;
+                        s.clv = snap.strat.clv;
                         s.strategyFeatures = buildStrategyFeaturesFromDict(snap.strat, s.price, s.code);
                     }
                 }
@@ -1164,9 +1167,16 @@ createApp({
             if (clvRounded >= 0.15) clvStatus = '主動買盤';
             else if (clvRounded <= -0.15) clvStatus = '主動賣壓';
 
-            const pivotVal = (h + l + c) / 3;
+            let pivotVal = (h + l + c) / 3;
+            let vwapVal = (h + l + c) / 3;
+            if (activeChartStock.value && activeChartStock.value.vwap && String(r[0]).replace(/\D/g, '') === String(activeChartStock.value.priceDate || '').replace(/\D/g, '')) {
+                vwapVal = Number(activeChartStock.value.vwap) || vwapVal;
+            }
+            if (activeChartStock.value && activeChartStock.value.pivot && String(r[0]).replace(/\D/g, '') === String(activeChartStock.value.priceDate || '').replace(/\D/g, '')) {
+                pivotVal = Number(activeChartStock.value.pivot) || pivotVal;
+            }
             const pivotStr = pivotVal.toFixed(2);
-            const vwapStr = pivotVal.toFixed(2);
+            const vwapStr = vwapVal.toFixed(2);
 
             crosshairData.value = {
                 date: String(r[0]),
@@ -2037,88 +2047,113 @@ createApp({
             else if (bearishK.some(w => kp.includes(w))) kpEmoji = '🟢';
             features.push({ name: 'K線型態', desc: kp || '無明顯型態', emoji: kpEmoji });
 
-            // ─── 籌碼三維定位特徵 (成本乖離率、多空平衡點、資金動能) ───
-            let oVal = 0, hVal = 0, lVal = 0, cVal = Number(curPrice) || 0;
-            if (code && stockHistoryCache) {
-                const rawCode = String(code).trim();
-                const rows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
-                if (rows && rows.length > 0) {
-                    const rLast = rows[rows.length - 1];
-                    oVal = Number(rLast[1]) || 0;
-                    hVal = Number(rLast[2]) || 0;
-                    lVal = Number(rLast[3]) || 0;
-                    if (!cVal) cVal = Number(rLast[4]) || 0;
+            // ─── 籌碼三維定位特徵 (優先讀取雲端大腦 chip_3d，若無則平滑 fallback 前端自算) ───
+            if (stratDict.chip_3d && typeof stratDict.chip_3d === 'object') {
+                const c3 = stratDict.chip_3d;
+                if (c3.bias_cost_desc) {
+                    features.push({
+                        name: '成本乖離率',
+                        desc: c3.bias_cost_desc,
+                        emoji: c3.bias_cost_emoji || '⚪'
+                    });
                 }
-            }
-            if ((!hVal || !lVal) && window.currentMarketSnapshotData && code) {
-                const rawCode = String(code).trim();
-                const snap = currentMarketSnapshotData[rawCode] || currentMarketSnapshotData[rawCode.padStart(4, '0')];
-                if (snap) {
-                    oVal = snap.o || oVal;
-                    hVal = snap.h || hVal;
-                    lVal = snap.l || lVal;
-                    if (!cVal) cVal = snap.p || 0;
+                if (c3.pivot_desc) {
+                    features.push({
+                        name: '多空平衡點',
+                        desc: c3.pivot_desc,
+                        emoji: c3.pivot_emoji || '⚪'
+                    });
                 }
-            }
-            if (!hVal && cVal) hVal = cVal;
-            if (!lVal && cVal) lVal = cVal;
+                if (c3.clv_desc) {
+                    features.push({
+                        name: '資金動能',
+                        desc: c3.clv_desc,
+                        emoji: c3.clv_emoji || '⚪'
+                    });
+                }
+            } else {
+                let oVal = 0, hVal = 0, lVal = 0, cVal = Number(curPrice) || 0;
+                if (code && stockHistoryCache) {
+                    const rawCode = String(code).trim();
+                    const rows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
+                    if (rows && rows.length > 0) {
+                        const rLast = rows[rows.length - 1];
+                        oVal = Number(rLast[1]) || 0;
+                        hVal = Number(rLast[2]) || 0;
+                        lVal = Number(rLast[3]) || 0;
+                        if (!cVal) cVal = Number(rLast[4]) || 0;
+                    }
+                }
+                if ((!hVal || !lVal) && window.currentMarketSnapshotData && code) {
+                    const rawCode = String(code).trim();
+                    const snap = currentMarketSnapshotData[rawCode] || currentMarketSnapshotData[rawCode.padStart(4, '0')];
+                    if (snap) {
+                        oVal = snap.o || oVal;
+                        hVal = snap.h || hVal;
+                        lVal = snap.l || lVal;
+                        if (!cVal) cVal = snap.p || 0;
+                    }
+                }
+                if (!hVal && cVal) hVal = cVal;
+                if (!lVal && cVal) lVal = cVal;
 
-            if (cVal > 0 && hVal > 0 && lVal > 0) {
-                // 11. 成本乖離率 (均價 vwap: (H+L+C)/3)
-                const vwap = (hVal + lVal + cVal) / 3;
-                const biasCost = ((cVal - vwap) / vwap) * 100;
-                const biasSign = biasCost > 0 ? '+' : '';
-                let biasCostEmoji = '⚪';
-                let biasCostComment = '貼近成本線整理';
-                if (biasCost >= 0.3) {
-                    biasCostEmoji = '🔴';
-                    biasCostComment = '買方未套牢';
-                } else if (biasCost <= -0.3) {
-                    biasCostEmoji = '🟢';
-                    biasCostComment = '追價籌碼套牢';
-                }
-                features.push({
-                    name: '成本乖離率',
-                    desc: `均價 $${vwap.toFixed(2)} (乖離率 ${biasSign}${biasCost.toFixed(2)}%，${biasCostComment})`,
-                    emoji: biasCostEmoji
-                });
+                if (cVal > 0 && hVal > 0 && lVal > 0) {
+                    // 11. 成本乖離率 (均價 vwap: (H+L+C)/3)
+                    const vwap = (hVal + lVal + cVal) / 3;
+                    const biasCost = ((cVal - vwap) / vwap) * 100;
+                    const biasSign = biasCost > 0 ? '+' : '';
+                    let biasCostEmoji = '⚪';
+                    let biasCostComment = '貼近成本線整理';
+                    if (biasCost >= 0.3) {
+                        biasCostEmoji = '🔴';
+                        biasCostComment = '買方未套牢';
+                    } else if (biasCost <= -0.3) {
+                        biasCostEmoji = '🟢';
+                        biasCostComment = '追價籌碼套牢';
+                    }
+                    features.push({
+                        name: '成本乖離率',
+                        desc: `均價 $${vwap.toFixed(2)} (乖離率 ${biasSign}${biasCost.toFixed(2)}%，${biasCostComment})`,
+                        emoji: biasCostEmoji
+                    });
 
-                // 12. 多空平衡點 (Pivot: (H+L+C)/3)
-                const pivot = (hVal + lVal + cVal) / 3;
-                let pivotEmoji = '⚪';
-                let pivotComment = `收盤 $${cVal.toFixed(2)} 恰平分水嶺`;
-                if (cVal >= pivot + 0.01) {
-                    pivotEmoji = '🔴';
-                    pivotComment = `收盤 $${cVal.toFixed(2)} 守穩平衡線`;
-                } else if (cVal <= pivot - 0.01) {
-                    pivotEmoji = '🟢';
-                    pivotComment = `收盤 $${cVal.toFixed(2)} 跌破平衡線`;
-                }
-                features.push({
-                    name: '多空平衡點',
-                    desc: `樞紐價 $${pivot.toFixed(2)} (${pivotComment})`,
-                    emoji: pivotEmoji
-                });
+                    // 12. 多空平衡點 (Pivot: (H+L+C)/3)
+                    const pivot = (hVal + lVal + cVal) / 3;
+                    let pivotEmoji = '⚪';
+                    let pivotComment = `收盤 $${cVal.toFixed(2)} 恰平分水嶺`;
+                    if (cVal >= pivot + 0.01) {
+                        pivotEmoji = '🔴';
+                        pivotComment = `收盤 $${cVal.toFixed(2)} 守穩平衡線`;
+                    } else if (cVal <= pivot - 0.01) {
+                        pivotEmoji = '🟢';
+                        pivotComment = `收盤 $${cVal.toFixed(2)} 跌破平衡線`;
+                    }
+                    features.push({
+                        name: '多空平衡點',
+                        desc: `樞紐價 $${pivot.toFixed(2)} (${pivotComment})`,
+                        emoji: pivotEmoji
+                    });
 
-                // 13. 資金動能係數 (CLV: (2C - H - L) / (H - L))
-                const clvDiff = hVal - lVal;
-                const clvVal = clvDiff > 0 ? ((2 * cVal - hVal - lVal) / clvDiff) : 0;
-                const clvRounded = Math.round(clvVal * 100) / 100;
-                const clvSign = clvRounded > 0 ? '+' : '';
-                let clvEmoji = '⚪';
-                let clvComment = '多空力道均衡';
-                if (clvRounded >= 0.15) {
-                    clvEmoji = '🔴';
-                    clvComment = '偏外盤主動買盤';
-                } else if (clvRounded <= -0.15) {
-                    clvEmoji = '🟢';
-                    clvComment = '偏內盤主動賣壓';
+                    // 13. 資金動能係數 (CLV: (2C - H - L) / (H - L))
+                    const clvDiff = hVal - lVal;
+                    const clvVal = clvDiff > 0 ? ((2 * cVal - hVal - lVal) / clvDiff) : 0;
+                    const clvRounded = Math.round(clvVal * 100) / 100;
+                    const clvSign = clvRounded > 0 ? '+' : '';
+                    let clvEmoji = '⚪';
+                    let clvComment = '多空力道均衡';
+                    if (clvRounded >= 0.15) {
+                        clvEmoji = '🔴';
+                        clvComment = '偏外盤主動買盤';
+                    } else if (clvRounded <= -0.15) {
+                        clvEmoji = '🟢';
+                        clvComment = '偏內盤主動賣壓';
+                    }
+                    features.push({
+                        name: '資金動能',
+                        desc: `動能係數 ${clvSign}${clvRounded.toFixed(2)} (${clvComment})`,
+                        emoji: clvEmoji
+                    });
                 }
-                features.push({
-                    name: '資金動能',
-                    desc: `動能係數 ${clvSign}${clvRounded.toFixed(2)} (${clvComment})`,
-                    emoji: clvEmoji
-                });
             }
 
             // 14. 🎯 RSI12搶反彈與預估 (100% 完全對齊地端截圖與規則，直接採用真實計算之 rsi_info)
