@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-15 16:19:54",
+  "run_time": "2026-10-15 16:51:25",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261015] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,7 +15,7 @@
       "status": "OK"
     },
     "chip": {
-      "count": 895,
+      "count": 2222,
       "status": "OK"
     },
     "margin": {
@@ -25,7 +25,7 @@
     },
     "indicators": {
       "count": 2374,
-      "elapsed": 58.15,
+      "elapsed": 58.21,
       "status": "OK"
     }
   },
@@ -136,90 +136,90 @@
     "zero_chip_count": 20,
     "zero_chip_samples": [
       {
-        "code": "00400A",
-        "name": "主動國泰動能高息"
+        "code": "00625K",
+        "name": "富邦上証+R"
       },
       {
-        "code": "00401A",
-        "name": "主動摩根台灣鑫收"
+        "code": "00636K",
+        "name": "國泰中國A50+U"
       },
       {
-        "code": "00402A",
-        "name": "主動安聯美國科技"
+        "code": "00643K",
+        "name": "群益深証中小+R"
       },
       {
-        "code": "00403A",
-        "name": "主動統一升級50"
+        "code": "00657K",
+        "name": "國泰日經225+U"
       },
       {
-        "code": "00404A",
-        "name": "主動聯博動能50"
+        "code": "00668K",
+        "name": "國泰美國道瓊+U"
       },
       {
-        "code": "00405A",
-        "name": "主動富邦台灣龍耀"
+        "code": "00687C",
+        "name": "國泰20年美債+櫃U"
       },
       {
-        "code": "00406A",
-        "name": "主動中信台灣收益"
+        "code": "00707R",
+        "name": "期元大S&P日圓反1"
       },
       {
-        "code": "00407A",
-        "name": "主動凱基台灣"
+        "code": "00840B",
+        "name": "凱基IG精選15+"
       },
       {
-        "code": "00408A",
-        "name": "主動第一金優股息"
+        "code": "1101B",
+        "name": "台泥乙特"
       },
       {
-        "code": "00409A",
-        "name": "主動復華全球50"
+        "code": "1213",
+        "name": "大飲"
       },
       {
-        "code": "00410A",
-        "name": "主動永豐科技趨勢"
+        "code": "1259",
+        "name": "安心"
       },
       {
-        "code": "00412A",
-        "name": "主動安聯亞半導體"
+        "code": "1312A",
+        "name": "國喬特"
       },
       {
-        "code": "0050",
-        "name": "元大台灣50"
+        "code": "1522A",
+        "name": "堤維西甲特"
       },
       {
-        "code": "0051",
-        "name": "元大中型100"
+        "code": "1538",
+        "name": "正峰"
       },
       {
-        "code": "0052",
-        "name": "富邦科技"
+        "code": "2002A",
+        "name": "中鋼特"
       },
       {
-        "code": "0053",
-        "name": "元大科技市值"
+        "code": "2035",
+        "name": "唐榮"
       },
       {
-        "code": "0055",
-        "name": "元大MSCI金融"
+        "code": "2073",
+        "name": "雄順"
       },
       {
-        "code": "0056",
-        "name": "元大高股息"
+        "code": "2102",
+        "name": "泰豐"
       },
       {
-        "code": "0057",
-        "name": "富邦摩台"
+        "code": "2321",
+        "name": "東訊"
       },
       {
-        "code": "0061",
-        "name": "元大寶滬深"
+        "code": "2348A",
+        "name": "海悅甲特"
       }
     ]
   },
   "target_date": "20261015",
-  "total_elapsed": 160.71,
-  "snapshot_size_kb": 431.7,
+  "total_elapsed": 156.94,
+  "snapshot_size_kb": 445.8,
   "next_scheduled_run": "2026/10/15 (週四) 21:00",
   "next_scheduled_iso": "2026-10-15T21:00:00",
   "schedule_times": [
