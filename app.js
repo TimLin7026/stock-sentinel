@@ -1168,7 +1168,7 @@ createApp({
             else if (clvRounded <= -0.15) clvStatus = '主動賣壓';
 
             let pivotVal = (h + l + c) / 3;
-            let vwapVal = (h + l + c) / 3;
+            let vwapVal = (r[29] !== undefined && r[29] !== null) ? Number(r[29]) : (h + l + c) / 3;
             if (activeChartStock.value && activeChartStock.value.vwap && String(r[0]).replace(/\D/g, '') === String(activeChartStock.value.priceDate || '').replace(/\D/g, '')) {
                 vwapVal = Number(activeChartStock.value.vwap) || vwapVal;
             }
@@ -1452,11 +1452,18 @@ createApp({
                         const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
                         return Number(((h + l + c) / 3).toFixed(2));
                     });
-                    const vwapData = rows.map(r => {
+                    const vwapData = rows.map((r, idx) => {
+                        if (r[29] !== undefined && r[29] !== null) {
+                            return Number(r[29]);
+                        }
+                        if (idx === rows.length - 1 && activeChartStock.value && activeChartStock.value.vwap) {
+                            return Number(activeChartStock.value.vwap);
+                        }
                         const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
                         return Number(((h + l + c) / 3).toFixed(2));
                     });
                     const latestPivot = pivotData.length > 0 ? pivotData[pivotData.length - 1] : null;
+                    const latestVwap = vwapData.length > 0 ? vwapData[vwapData.length - 1] : null;
 
                     klineSeries.push({
                         name: '樞紐線',
@@ -1493,7 +1500,27 @@ createApp({
                         data: vwapData,
                         smooth: true,
                         showSymbol: false,
-                        lineStyle: { color: '#c084fc', width: 1.2, type: 'dotted' }
+                        lineStyle: { color: '#c084fc', width: 1.2, type: 'dotted' },
+                        markLine: latestVwap !== null ? {
+                            symbol: 'none',
+                            silent: true,
+                            data: [
+                                {
+                                    yAxis: latestVwap,
+                                    lineStyle: { color: '#c084fc', type: 'dotted', width: 1 },
+                                    label: {
+                                        show: true,
+                                        position: 'end',
+                                        formatter: `均價:${latestVwap}`,
+                                        fontSize: 9,
+                                        color: '#c084fc',
+                                        backgroundColor: '#0f172a',
+                                        padding: [1, 3],
+                                        borderRadius: 2
+                                    }
+                                }
+                            ]
+                        } : undefined
                     });
                 }
 
@@ -2098,8 +2125,14 @@ createApp({
                 if (!lVal && cVal) lVal = cVal;
 
                 if (cVal > 0 && hVal > 0 && lVal > 0) {
-                    // 11. 成本乖離率 (均價 vwap: (H+L+C)/3)
-                    const vwap = (hVal + lVal + cVal) / 3;
+                    // 11. 成本乖離率 (均價 vwap)
+                    let vwap = (hVal + lVal + cVal) / 3;
+                    const snapVwap = (window.currentMarketSnapshotData && code && window.currentMarketSnapshotData[code]) ? window.currentMarketSnapshotData[code].strat?.vwap : null;
+                    if (snapVwap) {
+                        vwap = Number(snapVwap);
+                    } else if (activeChartStock.value && activeChartStock.value.vwap) {
+                        vwap = Number(activeChartStock.value.vwap);
+                    }
                     const biasCost = ((cVal - vwap) / vwap) * 100;
                     const biasSign = biasCost > 0 ? '+' : '';
                     let biasCostEmoji = '⚪';

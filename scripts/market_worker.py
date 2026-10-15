@@ -254,6 +254,7 @@ def fetch_twse_market(target_date):
             continue
         name = str(row[1]).strip()
         vol = safe_int(row[2])
+        amount = safe_float(row[4])  # TWSE row[4] 為成交金額 (元)
         open_p = safe_float(row[5])
         high_p = safe_float(row[6])
         low_p = safe_float(row[7])
@@ -261,7 +262,7 @@ def fetch_twse_market(target_date):
         
         result[code] = {
             'name': name, 'open': open_p, 'high': high_p,
-            'low': low_p, 'close': close_p, 'volume': vol, 'mkt': 'TSE'
+            'low': low_p, 'close': close_p, 'volume': vol, 'amount': amount, 'mkt': 'TSE'
         }
     print(f"✅ [上市] 成功獲取 {len(result)} 檔上市股票數據。")
     return result
@@ -287,10 +288,11 @@ def fetch_tpex_market(target_date):
         high_p = safe_float(row[5])
         low_p = safe_float(row[6])
         vol = safe_int(row[7])
+        amount = safe_float(row[8])  # TPEx row[8] 為成交金額 (元)
         
         result[code] = {
             'name': name, 'open': open_p, 'high': high_p,
-            'low': low_p, 'close': close_p, 'volume': vol, 'mkt': 'OTC'
+            'low': low_p, 'close': close_p, 'volume': vol, 'amount': amount, 'mkt': 'OTC'
         }
     print(f"✅ [上櫃] 成功獲取 {len(result)} 檔上櫃股票數據。")
     return result
@@ -388,11 +390,22 @@ def init_history_db(db_path):
             sitc_buy INTEGER DEFAULT 0,
             dealers_buy INTEGER DEFAULT 0,
             margin_balance INTEGER DEFAULT 0,
+            amount REAL DEFAULT 0,
             mkt TEXT,
             market_type TEXT,
             PRIMARY KEY (stock_code, trade_date)
         )
     """)
+    # 智慧資料庫自動遷移：檢測並自動補齊 amount 欄位
+    cur.execute("PRAGMA table_info(daily_kline)")
+    existing_cols = [c[1] for c in cur.fetchall()]
+    if "amount" not in existing_cols:
+        try:
+            cur.execute("ALTER TABLE daily_kline ADD COLUMN amount REAL DEFAULT 0")
+            print("✨ [資料庫升級] 成功為 daily_kline 自動新增 amount (成交金額) 欄位！")
+        except Exception as e_alt:
+            print(f"⚠️ [資料庫升級提醒] ALTER TABLE amount 異常: {e_alt}")
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_stock_date ON daily_kline (stock_code, trade_date ASC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_trade_date ON daily_kline (trade_date)")
     cur.execute("""
@@ -578,6 +591,7 @@ def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_m
         l_p = meta.get('low', 0.0)
         c_p = meta.get('close', 0.0)
         vol = meta.get('volume', 0)
+        amt = meta.get('amount', 0.0)
         
         fb = chip.get('foreign_buy', 0)
         sb = chip.get('sitc_buy', 0)
@@ -585,17 +599,17 @@ def save_daily_snapshot_to_history(conn, target_date, twse_map, tpex_map, chip_m
         mb = margin.get('margin_balance', 0)
         
         records.append((
-            target_date, code, name, o_p, h_p, l_p, c_p, vol,
+            target_date, code, name, o_p, h_p, l_p, c_p, vol, amt,
             fb, sb, db, mb, mkt, mkt
         ))
         
     cur.executemany("""
         INSERT OR REPLACE INTO daily_kline (
             trade_date, stock_code, stock_name,
-            open, high, low, close, volume,
+            open, high, low, close, volume, amount,
             foreign_buy, sitc_buy, dealers_buy, margin_balance,
             mkt, market_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, records)
     conn.commit()
     print(f"💾 [入庫成功] 成功寫入 {len(records)} 筆個股於 {target_date} 之日 K 線與籌碼紀錄。")
@@ -661,6 +675,7 @@ def backfill_single_stock_history(conn, stock_code, stock_name='', max_months=3)
             t_date = f"{ad_year}{parts[1].zfill(2)}{parts[2].zfill(2)}"
             
             vol = safe_int(r[1])
+            amt = safe_float(r[2])  # 成交金額 (元)
             o_p = safe_float(r[3])
             h_p = safe_float(r[4])
             l_p = safe_float(r[5])
@@ -673,7 +688,7 @@ def backfill_single_stock_history(conn, stock_code, stock_name='', max_months=3)
                 
             records.append((
                 t_date, stock_code, stock_name,
-                o_p, h_p, l_p, c_p, vol,
+                o_p, h_p, l_p, c_p, vol, amt,
                 0, 0, 0, 0, 'TSE', 'TSE'
             ))
             if earliest_date is None or t_date < earliest_date:
@@ -683,10 +698,10 @@ def backfill_single_stock_history(conn, stock_code, stock_name='', max_months=3)
             cur.executemany("""
                 INSERT OR IGNORE INTO daily_kline (
                     trade_date, stock_code, stock_name,
-                    open, high, low, close, volume,
+                    open, high, low, close, volume, amount,
                     foreign_buy, sitc_buy, dealers_buy, margin_balance,
                     mkt, market_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, records)
             conn.commit()
             total_added += len(records)
@@ -734,7 +749,7 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
     
     query = f"""
         SELECT trade_date, stock_code, stock_name, mkt,
-               open, high, low, close, volume,
+               open, high, low, close, volume, amount,
                foreign_buy, sitc_buy, dealers_buy, margin_balance
         FROM daily_kline
         WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')
@@ -833,6 +848,7 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
         h = float(latest_row['high'])
         l = float(latest_row['low'])
         v = int(latest_row['volume'])
+        amt = float(latest_row['amount']) if ('amount' in latest_row and pd.notnull(latest_row['amount'])) else 0.0
         
         fb = int(latest_row['foreign_buy'])
         sb = int(latest_row['sitc_buy'])
@@ -1210,7 +1226,10 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
 
         # ─── 籌碼三維定位算子 (Pivot, VWAP, CLV, Cost Bias) ───
         pivot_val = round((h + l + c) / 3.0, 2)
-        vwap_val = round((h + l + c) / 3.0, 2)
+        if v > 0 and amt > 0:
+            vwap_val = round(amt / v, 2)
+        else:
+            vwap_val = round((h + l + c) / 3.0, 2)
         bias_cost = round(((c - vwap_val) / vwap_val * 100.0), 2) if vwap_val > 0 else 0.0
 
         bias_cost_emoji = "⚪"
@@ -1321,6 +1340,18 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
         df_60 = df_raw.tail(60).reset_index(drop=True)
         hist_rows = []
         for _, r in df_60.iterrows():
+            r_v = clean_int(r.get("volume"))
+            r_amt = clean_num(r.get("amount"))
+            r_h = clean_num(r.get("high"))
+            r_l = clean_num(r.get("low"))
+            r_c = clean_num(r.get("close"))
+            if r_v and r_v > 0 and r_amt and r_amt > 0:
+                day_vwap = round(r_amt / r_v, 2)
+            elif r_h is not None and r_l is not None and r_c is not None:
+                day_vwap = round((r_h + r_l + r_c) / 3.0, 2)
+            else:
+                day_vwap = r_c
+
             hist_rows.append([
                 str(r["trade_date"]),                               # 0: 日期
                 clean_num(r.get("open"), 2),                       # 1: 開
@@ -1350,7 +1381,8 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
                 clean_num(r.get("WR3"), 1),                        # 25: WR3
                 clean_num(r.get("WR50"), 1),                       # 26: WR50
                 clean_num(r.get("Margin_Cost"), 2),                # 27: 融資成本 (綠色虛線)
-                clean_num(r.get("Foreign_Cost"), 2)                # 28: 外資成本 (酒紅色虛線)
+                clean_num(r.get("Foreign_Cost"), 2),               # 28: 外資成本 (酒紅色虛線)
+                clean_num(day_vwap, 2)                             # 29: 當日真實均價 (VWAP)
             ])
         history_map[code] = hist_rows
         
