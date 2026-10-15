@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-15 17:12:07",
+  "run_time": "2026-10-15 17:50:05",
   "status": "READY",
   "target_date": "20261015",
   "progress": "歷史 60 日真實成交金額與 VWAP 全量校準合格！最新 [20261015] 就緒。",
@@ -17,8 +17,8 @@
       "status": "OK"
     },
     "indicators": {
-      "count": 2374,
-      "elapsed": 119.66,
+      "count": 2375,
+      "elapsed": 159.88,
       "status": "OK"
     }
   },
@@ -28,6 +28,6 @@
     "zero_chip_count": 0,
     "zero_chip_samples": []
   },
-  "snapshot_size_kb": 431.7,
-  "total_elapsed": 139.02
+  "snapshot_size_kb": 431.9,
+  "total_elapsed": 198.25
 }

@@ -1446,12 +1446,8 @@ createApp({
                     klineSeries.push({ name: '外資成本', type: 'line', data: foreignCost, smooth: true, showSymbol: false, lineStyle: { color: '#be123c', width: 1.2, type: 'dashed' } });
                 }
 
-                // 多空樞紐層：樞紐線 (Pivot)、均價線 (VWAP)
+                // 當日均價層：均價線 (VWAP)
                 if (klineLayers.value.pivot) {
-                    const pivotData = rows.map(r => {
-                        const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
-                        return Number(((h + l + c) / 3).toFixed(2));
-                    });
                     const vwapData = rows.map((r, idx) => {
                         if (r[29] !== undefined && r[29] !== null) {
                             return Number(r[29]);
@@ -1461,17 +1457,6 @@ createApp({
                         }
                         const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
                         return Number(((h + l + c) / 3).toFixed(2));
-                    });
-                    const latestPivot = pivotData.length > 0 ? pivotData[pivotData.length - 1] : null;
-                    const latestVwap = vwapData.length > 0 ? vwapData[vwapData.length - 1] : null;
-
-                    klineSeries.push({
-                        name: '樞紐線',
-                        type: 'line',
-                        data: pivotData,
-                        smooth: true,
-                        showSymbol: false,
-                        lineStyle: { color: '#fbbf24', width: 1.4, type: 'dashed' }
                     });
 
                     klineSeries.push({

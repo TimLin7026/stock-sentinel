@@ -743,7 +743,7 @@ def prune_history_db(conn, max_days=120):
 # 3. 🎯 全市場 2,400+ 檔 6 大青紅燈 + 10 項策略特徵 100% 電腦端對齊滾算引擎
 # ==========================================
 
-def calculate_all_stock_indicators(conn, lookback_days=100):
+def calculate_all_stock_indicators(conn, lookback_days=160):
     print("⚡ [運算] 正在啟動全市場 6 大青紅燈指標與策略特徵矩陣全量滾算 (100% 對齊電腦端)...")
     start_time = time.time()
     
@@ -1336,10 +1336,10 @@ def calculate_all_stock_indicators(conn, lookback_days=100):
             }
         }
 
-        # 🎯 3. 提取該股近 60 日完整技術指標時序 (100% 電腦版參數純數值陣列，嚴格無 NaN)
-        df_60 = df_raw.tail(60).reset_index(drop=True)
+        # 🎯 3. 提取該股近 120 日完整技術指標時序 (支援手機端 20/40/60/90/120 日動態週期切換)
+        df_120 = df_raw.tail(120).reset_index(drop=True)
         hist_rows = []
-        for _, r in df_60.iterrows():
+        for _, r in df_120.iterrows():
             r_v = clean_int(r.get("volume"))
             r_amt = clean_num(r.get("amount"))
             r_h = clean_num(r.get("high"))

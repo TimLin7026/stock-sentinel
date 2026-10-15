@@ -97,7 +97,7 @@ def main():
     # 2. 全量重新滾算 60 日技術指標時序與快照
     print("\n⚡ [全量滾算] 正在以全新成交金額重新滾算全市場 2,400+ 檔真實 VWAP 與時序包...")
     start_calc = time.time()
-    snapshot_map, history_map, calc_elapsed = calculate_all_stock_indicators(conn, lookback_days=100)
+    snapshot_map, history_map, calc_elapsed = calculate_all_stock_indicators(conn, lookback_days=160)
     
     cur.execute("SELECT MAX(trade_date) FROM daily_kline WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')")
     latest_trade_date = cur.fetchone()[0]
