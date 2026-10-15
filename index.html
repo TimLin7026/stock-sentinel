@@ -1973,7 +1973,7 @@
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
                             <span class="flex items-center whitespace-nowrap"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖</span>
                             
-                            <!-- 藥丸切換鈕 (MA | 布林 | 成本) -->
+                            <!-- 藥丸切換鈕 (MA | 布林 | 成本 | 樞紐) -->
                             <div class="flex bg-slate-800/90 p-0.5 rounded-lg text-[9px] font-mono border border-slate-700/80 space-x-0.5 shrink-0">
                                 <button @click="toggleKlineLayer('ma')" 
                                         :class="klineLayers.ma ? 'bg-amber-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
@@ -1989,6 +1989,11 @@
                                         :class="klineLayers.cost ? 'bg-emerald-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
                                         class="px-2 py-0.5 rounded transition whitespace-nowrap" title="開關 融資/外資成本線">
                                     成本
+                                </button>
+                                <button @click="toggleKlineLayer('pivot')" 
+                                        :class="klineLayers.pivot ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-2 py-0.5 rounded transition whitespace-nowrap" title="開關 多空樞紐線 / 當日均價線">
+                                    樞紐
                                 </button>
                             </div>
                         </div>
@@ -2014,11 +2019,19 @@
                             </template>
                         </div>
 
-                        <!-- Row 3：籌碼成本線數值行 (靠右對齊，僅在勾選成本時呈現) -->
-                        <div v-if="klineLayers.cost" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40">
-                            <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}</span>
-                            <span>·</span>
-                            <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
+                        <!-- Row 3：籌碼成本線與多空樞紐數值行 (與成本一同呈現，靠右對齊，僅在勾選成本或樞紐時呈現) -->
+                        <div v-if="klineLayers.cost || klineLayers.pivot" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40 overflow-x-auto no-scrollbar">
+                            <template v-if="klineLayers.cost">
+                                <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}</span>
+                                <span>·</span>
+                                <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
+                            </template>
+                            <template v-if="klineLayers.pivot">
+                                <span v-if="klineLayers.cost">│</span>
+                                <span class="text-amber-400 font-bold">樞紐:{{ crosshairData.pivot }}</span>
+                                <span>·</span>
+                                <span class="text-purple-400 font-bold">均價:{{ crosshairData.vwap }}</span>
+                            </template>
                         </div>
 
                         <div id="chart-kline" class="w-full" style="height: 21rem;"></div>
@@ -2094,9 +2107,9 @@
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <div class="flex items-center space-x-1.5">
                                 <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪</span>
-                                <!-- 子切換 Tab (青紅燈 / MTM / RSI / WR) -->
+                                <!-- 子切換 Tab (青紅燈 / MTM / RSI / WR / CLV) -->
                                 <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
-                                    <button v-for="t in ['青紅燈', 'MTM', 'RSI', 'WR']" :key="t" @click="changeSubOscTab(t)"
+                                    <button v-for="t in ['青紅燈', 'MTM', 'RSI', 'WR', 'CLV']" :key="t" @click="changeSubOscTab(t)"
                                             :class="subOscTab === t ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
                                             class="px-1.5 py-0.2 rounded transition">
                                         {{ t }}
@@ -2131,6 +2144,11 @@
                                 <span class="text-amber-400 font-bold">WR3:{{ crosshairData.wr3 }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">WR50:{{ crosshairData.wr50 }}</span>
+                            </span>
+                            <span v-else-if="subOscTab === 'CLV'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                                <span :class="parseFloat(crosshairData.clv) > 0 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">CLV:{{ crosshairData.clv }}</span>
+                                <span>·</span>
+                                <span :class="parseFloat(crosshairData.clv) >= 0.15 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) <= -0.15 ? 'text-emerald-400 font-bold' : 'text-slate-400')">{{ crosshairData.clvStatus }}</span>
                             </span>
                         </div>
                         <div id="chart-mtm" class="w-full h-36"></div>
