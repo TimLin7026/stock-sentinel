@@ -1,32 +1,32 @@
 {
-  "run_time": "2026-10-15 01:46:22",
+  "run_time": "2026-10-15 14:03:08",
   "status": "READY",
-  "progress": "全流程清洗審計合格，最新 [20261014] 快照已就緒提供更新！",
+  "progress": "全流程清洗審計合格，最新 [20261015] 快照已就緒提供更新！",
   "missing_dates": [],
   "nodes": {
     "twse": {
-      "count": 1354,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "tpex": {
-      "count": 1006,
+      "count": 0,
       "elapsed": 0.0,
       "status": "OK"
     },
     "chip": {
-      "count": 2360,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "margin": {
-      "count": 2360,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "indicators": {
       "count": 2373,
-      "elapsed": 31.86,
+      "elapsed": 36.52,
       "status": "OK"
     }
   },
@@ -141,6 +141,26 @@
         "name": "富邦上証+R"
       },
       {
+        "code": "00637L",
+        "name": "元大滬深300正2"
+      },
+      {
+        "code": "00638R",
+        "name": "元大滬深300反1"
+      },
+      {
+        "code": "00640L",
+        "name": "富邦日本正2"
+      },
+      {
+        "code": "00641R",
+        "name": "富邦日本反1"
+      },
+      {
+        "code": "00642U",
+        "name": "期元大S&P石油"
+      },
+      {
         "code": "00643K",
         "name": "群益深証中小+R"
       },
@@ -195,32 +215,12 @@
       {
         "code": "00791B",
         "name": "復華信用債1-5"
-      },
-      {
-        "code": "00834B",
-        "name": "第一金金融債10+"
-      },
-      {
-        "code": "00840B",
-        "name": "凱基IG精選15+"
-      },
-      {
-        "code": "00845B",
-        "name": "富邦新興投等債"
-      },
-      {
-        "code": "00846B",
-        "name": "富邦歐洲銀行債"
-      },
-      {
-        "code": "1101B",
-        "name": "台泥乙特"
       }
     ]
   },
-  "target_date": "20261014",
-  "total_elapsed": 95.54,
-  "snapshot_size_kb": 330.7,
+  "target_date": "20261015",
+  "total_elapsed": 106.29,
+  "snapshot_size_kb": 331.2,
   "next_scheduled_run": "2026/10/15 (週四) 14:30",
   "next_scheduled_iso": "2026-10-15T14:30:00",
   "schedule_times": [
