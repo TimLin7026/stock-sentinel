@@ -1471,27 +1471,7 @@ createApp({
                         data: pivotData,
                         smooth: true,
                         showSymbol: false,
-                        lineStyle: { color: '#fbbf24', width: 1.2, type: 'dashed' },
-                        markLine: latestPivot !== null ? {
-                            symbol: 'none',
-                            silent: true,
-                            data: [
-                                {
-                                    yAxis: latestPivot,
-                                    lineStyle: { color: '#fbbf24', type: 'dashed', width: 1 },
-                                    label: {
-                                        show: true,
-                                        position: 'start',
-                                        formatter: `樞紐:${latestPivot}`,
-                                        fontSize: 9,
-                                        color: '#fbbf24',
-                                        backgroundColor: '#0f172a',
-                                        padding: [1, 3],
-                                        borderRadius: 2
-                                    }
-                                }
-                            ]
-                        } : undefined
+                        lineStyle: { color: '#fbbf24', width: 1.4, type: 'dashed' }
                     });
 
                     klineSeries.push({
@@ -1500,27 +1480,7 @@ createApp({
                         data: vwapData,
                         smooth: true,
                         showSymbol: false,
-                        lineStyle: { color: '#c084fc', width: 1.2, type: 'dotted' },
-                        markLine: latestVwap !== null ? {
-                            symbol: 'none',
-                            silent: true,
-                            data: [
-                                {
-                                    yAxis: latestVwap,
-                                    lineStyle: { color: '#c084fc', type: 'dotted', width: 1 },
-                                    label: {
-                                        show: true,
-                                        position: 'end',
-                                        formatter: `均價:${latestVwap}`,
-                                        fontSize: 9,
-                                        color: '#c084fc',
-                                        backgroundColor: '#0f172a',
-                                        padding: [1, 3],
-                                        borderRadius: 2
-                                    }
-                                }
-                            ]
-                        } : undefined
+                        lineStyle: { color: '#d946ef', width: 1.6, type: 'solid' }
                     });
                 }
 

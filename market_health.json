@@ -1,229 +1,33 @@
 {
-  "run_time": "2026-10-15 16:51:25",
+  "run_time": "2026-10-15 17:12:07",
   "status": "READY",
-  "progress": "全流程清洗審計合格，最新 [20261015] 快照已就緒提供更新！",
-  "missing_dates": [
-    "20261015"
-  ],
-  "nodes": {
-    "twse": {
-      "count": 1360,
-      "status": "OK"
-    },
-    "tpex": {
-      "count": 1382,
-      "status": "OK"
-    },
-    "chip": {
-      "count": 2222,
-      "status": "OK"
-    },
-    "margin": {
-      "count": 2358,
-      "elapsed": 0.0,
-      "status": "OK"
-    },
-    "indicators": {
-      "count": 2374,
-      "elapsed": 58.21,
-      "status": "OK"
-    }
-  },
-  "audit": {
-    "zero_volume_count": 20,
-    "zero_volume_samples": [
-      {
-        "code": "00625K",
-        "name": "富邦上証+R",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "00707R",
-        "name": "期元大S&P日圓反1",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "2035",
-        "name": "唐榮",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "2321",
-        "name": "東訊",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "2724",
-        "name": "藝舍-KY",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "2949",
-        "name": "欣新網",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "3064",
-        "name": "泰偉",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "3629",
-        "name": "地心引力",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "4154",
-        "name": "樂威科-KY",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "5520",
-        "name": "力泰",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "5523",
-        "name": "豐謙",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "5703",
-        "name": "亞都",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "5906",
-        "name": "台南-KY",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "6228",
-        "name": "全譜",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "6496",
-        "name": "科懋",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "6592A",
-        "name": "和潤企業甲特",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "6597",
-        "name": "立誠",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "7713",
-        "name": "威力德生醫",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "8455",
-        "name": "大拓-KY",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      },
-      {
-        "code": "8923",
-        "name": "時報",
-        "reason": "收盤價或成交量為0 (可能停牌/無交易)"
-      }
-    ],
-    "zero_chip_count": 20,
-    "zero_chip_samples": [
-      {
-        "code": "00625K",
-        "name": "富邦上証+R"
-      },
-      {
-        "code": "00636K",
-        "name": "國泰中國A50+U"
-      },
-      {
-        "code": "00643K",
-        "name": "群益深証中小+R"
-      },
-      {
-        "code": "00657K",
-        "name": "國泰日經225+U"
-      },
-      {
-        "code": "00668K",
-        "name": "國泰美國道瓊+U"
-      },
-      {
-        "code": "00687C",
-        "name": "國泰20年美債+櫃U"
-      },
-      {
-        "code": "00707R",
-        "name": "期元大S&P日圓反1"
-      },
-      {
-        "code": "00840B",
-        "name": "凱基IG精選15+"
-      },
-      {
-        "code": "1101B",
-        "name": "台泥乙特"
-      },
-      {
-        "code": "1213",
-        "name": "大飲"
-      },
-      {
-        "code": "1259",
-        "name": "安心"
-      },
-      {
-        "code": "1312A",
-        "name": "國喬特"
-      },
-      {
-        "code": "1522A",
-        "name": "堤維西甲特"
-      },
-      {
-        "code": "1538",
-        "name": "正峰"
-      },
-      {
-        "code": "2002A",
-        "name": "中鋼特"
-      },
-      {
-        "code": "2035",
-        "name": "唐榮"
-      },
-      {
-        "code": "2073",
-        "name": "雄順"
-      },
-      {
-        "code": "2102",
-        "name": "泰豐"
-      },
-      {
-        "code": "2321",
-        "name": "東訊"
-      },
-      {
-        "code": "2348A",
-        "name": "海悅甲特"
-      }
-    ]
-  },
   "target_date": "20261015",
-  "total_elapsed": 156.94,
-  "snapshot_size_kb": 445.8,
+  "progress": "歷史 60 日真實成交金額與 VWAP 全量校準合格！最新 [20261015] 就緒。",
   "next_scheduled_run": "2026/10/15 (週四) 21:00",
   "next_scheduled_iso": "2026-10-15T21:00:00",
   "schedule_times": [
     "14:30",
     "21:00"
-  ]
+  ],
+  "nodes": {
+    "twse": {
+      "status": "OK"
+    },
+    "tpex": {
+      "status": "OK"
+    },
+    "indicators": {
+      "count": 2374,
+      "elapsed": 119.66,
+      "status": "OK"
+    }
+  },
+  "audit": {
+    "zero_volume_count": 0,
+    "zero_volume_samples": [],
+    "zero_chip_count": 0,
+    "zero_chip_samples": []
+  },
+  "snapshot_size_kb": 431.7,
+  "total_elapsed": 139.02
 }

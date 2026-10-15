@@ -47,7 +47,7 @@ HEADERS = {
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "mobile_web") if os.path.exists(os.path.join(PROJECT_ROOT, "mobile_web")) else PROJECT_ROOT
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "mobile_web") if os.path.isdir(os.path.join(PROJECT_ROOT, "mobile_web")) else PROJECT_ROOT
 HISTORY_DB_PATH = os.path.join(BASE_DIR, "market_history.db")
 
 # ==========================================
