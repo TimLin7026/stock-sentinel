@@ -192,7 +192,7 @@
                                 <span class="font-bold text-emerald-400">{{ healthData.snapshot_size_kb || 0 }} KB</span>
                             </div>
                             <div class="text-[10px] text-sky-400 truncate mt-0.5" :title="healthData.progress || '大腦就緒'">
-                                {{ healthData.progress || '大腦就緒 (全流程清洗合格)' }}
+                                {{ shortProgress }}
                             </div>
                             <div class="mt-1 pt-1 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
                                 <a :href="latestWorkflowRun.html_url" target="_blank" rel="noopener noreferrer"
@@ -458,12 +458,12 @@
 
         <!-- 頁尾宣告 -->
         <footer class="text-center text-slate-600 text-xs mt-12 mb-4">
-            <p>© 2026 鈔能戰情室 · 專屬雲端運維控制中心 · Version v2.20261012.01</p>
+            <p>© 2026 鈔能戰情室 · 專屬雲端運維控制中心 · Version v2.20261015.01</p>
         </footer>
 
     </div>
 
     <!-- 載入監控邏輯腳本 -->
-    <script src="monitor.js?v=20261014.02"></script>
+    <script src="monitor.js?v=20261015.01"></script>
 </body>
 </html>

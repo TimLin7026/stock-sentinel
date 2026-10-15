@@ -1256,6 +1256,13 @@
                                     <span v-if="calendarMarketStatus.isNeedsSync" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse">
                                         {{ calendarMarketStatus.statusTag }}
                                     </span>
+                                    <button @click="refreshBrainStatusOnly" :disabled="isRefreshingBrainStatus" 
+                                            title="僅刷新雲端大腦產出資訊，不下載覆蓋本地快照"
+                                            :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300'"
+                                            class="text-[10px] font-bold flex items-center space-x-1 px-2.5 py-1 rounded-lg border transition active:scale-95 disabled:opacity-50">
+                                        <i class="fa-solid fa-arrows-rotate text-[9px]" :class="isRefreshingBrainStatus ? 'fa-spin' : ''"></i>
+                                        <span>刷新狀態</span>
+                                    </button>
                                     <button @click="handleOneClickSync" :disabled="syncStatus.loading" 
                                             :class="calendarMarketStatus.isNeedsSync ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-md' : 'text-sky-400 hover:text-sky-300 border border-sky-500/30'"
                                             class="text-[10px] font-bold flex items-center space-x-1 px-2.5 py-1 rounded-lg transition active:scale-95 disabled:opacity-50">
@@ -2205,6 +2212,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261013.09"></script>
+    <script src="app.js?v=2.20261015.01"></script>
 </body>
 </html>

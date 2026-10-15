@@ -18,7 +18,7 @@ createApp({
         const isLoggingIn = ref(false);
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.09');
+        const appVersion = ref('v2.20261015.01');
         const fetchAppVersion = async () => {
             try {
                 const res = await fetch(`./version_v2.txt?_t=${Date.now()}`, { cache: 'no-store' });
@@ -48,6 +48,15 @@ createApp({
                 zero_chip_samples: []
             },
             snapshot_size_kb: 0
+        });
+
+        const shortProgress = computed(() => {
+            const p = healthData.value.progress || '';
+            if (!p) return '大腦就緒 (審計合格)';
+            if (p.includes('全流程清洗審計合格') || p.includes('合格') || p.includes('就緒')) {
+                return '審計合格 (快照就緒)';
+            }
+            return p;
         });
 
         // ─── GitHub Actions 工作流即時動態 ───
@@ -554,6 +563,7 @@ createApp({
             fetchWorkflowRuns,
             isRefreshingAll,
             refreshAllStatus,
+            shortProgress,
             getWorkflowStatusBadge,
             getWorkflowEventLabel,
             formatIsoToTaipei,

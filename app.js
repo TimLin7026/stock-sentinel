@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261013.09');
+        const appVersion = ref('v2.20261015.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -861,6 +861,55 @@ createApp({
 
             renderAssetChart();
             return matchedCount;
+        };
+
+        // ─── 🔄 僅刷新雲端大腦運維狀態 (不下載覆蓋本地快照) ───
+        const isRefreshingBrainStatus = ref(false);
+        const refreshBrainStatusOnly = async () => {
+            isRefreshingBrainStatus.value = true;
+            const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
+            const fallbackBaseUrl = '.';
+
+            try {
+                let healthData = null;
+                try {
+                    const hRes = await fetch(`${rawBaseUrl}/market_health.json?_nocache=${Date.now()}`, { cache: 'no-store' });
+                    if (hRes.ok) healthData = await hRes.json();
+                } catch (e) {
+                    console.warn("Raw 健康報表拉取失敗，嘗試備用路徑...", e);
+                }
+
+                if (!healthData) {
+                    try {
+                        const hRes = await fetch(`${fallbackBaseUrl}/market_health.json?_nocache=${Date.now()}`, { cache: 'no-store' });
+                        if (hRes.ok) healthData = await hRes.json();
+                    } catch (e) {}
+                }
+
+                if (!healthData) {
+                    alert("⚠️ 無法連線至雲端大腦健康報表，請確認網路連線。");
+                    return;
+                }
+
+                const cloudTimeStr = healthData.run_time || healthData.timestamp || '---';
+                const nextRunStr = healthData.next_scheduled_run || '';
+
+                marketSyncMeta.value.cloudGeneratedAt = cloudTimeStr;
+                marketSyncMeta.value.status = healthData.status || 'READY';
+                if (nextRunStr) marketSyncMeta.value.nextScheduledRun = nextRunStr;
+
+                localStorage.setItem('sentinel_market_cloud_time', cloudTimeStr);
+                localStorage.setItem('sentinel_market_status', healthData.status || 'READY');
+                if (nextRunStr) localStorage.setItem('sentinel_market_next_run', nextRunStr);
+
+                const indCount = healthData.nodes && healthData.nodes.indicators ? healthData.nodes.indicators.count : '---';
+                alert(`📡【雲端大腦最新狀態已更新】\n\n• 大腦狀態：${healthData.status || '就緒'}\n• 審計開市日：${healthData.target_date || '最新'}\n• 大腦產出時間：${cloudTimeStr}\n• 審計合格檔數：${indCount} 檔\n\n💡 提示：本操作僅更新大腦運維狀態。若要將最新行情下載套用到手機，請點擊「立即同步」。`);
+            } catch (err) {
+                console.error("刷新大腦狀態異常:", err);
+                alert("刷新大腦狀態失敗: " + err.message);
+            } finally {
+                isRefreshingBrainStatus.value = false;
+            }
         };
 
         // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取)
@@ -3373,7 +3422,30 @@ createApp({
 
             if (dbInstance) {
                 try {
+                    let oldBroker = '';
+                    let oldCode = '';
+
                     if (isEditingTrade.value && editingTradeId.value) {
+                        // 0. 查詢修改前的舊記錄，防範雙向同步時舊記錄在雲端被遺留成為孤兒重複記錄
+                        try {
+                            const oldRowRes = dbInstance.exec("SELECT 股票代號, 證券商, 交易時間, 動作, 成交股數, 成交價 FROM trade_log WHERE id = ?", [editingTradeId.value]);
+                            if (oldRowRes.length > 0 && oldRowRes[0].values.length > 0) {
+                                const [oCode, oBroker, oDate, oAction, oShares, oPrice] = oldRowRes[0].values[0];
+                                oldCode = oCode;
+                                oldBroker = oBroker;
+                                const oldUk = makeTradeUniqueKey(oCode, oBroker, oDate, oAction, oShares, oPrice);
+                                const newUk = makeTradeUniqueKey(codeVal, brokerName, dateVal, actionName, sharesVal, priceVal);
+                                if (oldUk !== newUk) {
+                                    // 唯一鍵已變動：必須將舊唯一鍵寫入刪除墓碑，以確保雙向同步時能清算雲端舊記錄
+                                    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                                    dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                                    dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('trade_log', ?, ?)", [oldUk, nowStr]);
+                                }
+                            }
+                        } catch (eOld) {
+                            console.warn("記錄修改前墓碑警告:", eOld);
+                        }
+
                         // 1. 編輯修改現有記錄
                         dbInstance.run(
                             "UPDATE trade_log SET 股票代號 = ?, 股票名稱 = ?, 動作 = ?, 成交股數 = ?, 成交價 = ?, 證券商 = ?, 交易時間 = ? WHERE id = ?",
@@ -3387,47 +3459,62 @@ createApp({
                         );
                     }
 
-                    // 重新滾算該股持股總數與成本
-                    const holdRes = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [codeVal, brokerName]);
-                    let curShares = 0;
-                    let curCost = priceVal;
-                    if (holdRes.length > 0) {
-                        let totalCost = 0;
-                        holdRes[0].values.forEach(r => {
-                            const act = r[0];
-                            const sh = Number(r[1]) || 0;
-                            const pr = Number(r[2]) || 0;
-                            if (act === '買進') {
-                                totalCost += sh * pr;
-                                curShares += sh;
-                            } else if (act === '賣出') {
-                                curShares = Math.max(0, curShares - sh);
-                                if (curShares === 0) totalCost = 0;
-                            }
-                        });
-                        curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : priceVal;
-                    }
-
-                    // 查詢原有的 created_at
-                    let existingCreated = '';
-                    try {
-                        const cRes = dbInstance.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [codeVal, brokerName]);
-                        if (cRes.length > 0 && cRes[0].values && cRes[0].values[0] && cRes[0].values[0][0]) {
-                            existingCreated = String(cRes[0].values[0][0]).trim();
+                    // 重新滾算該股持股總數與成本 (支援多券商分別銷帳)
+                    const recalcBrokerHoldings = (targetCode, targetBroker, fallbackName = '') => {
+                        const holdRes = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [targetCode, targetBroker]);
+                        let curShares = 0;
+                        let curCost = priceVal;
+                        if (holdRes.length > 0) {
+                            let totalCost = 0;
+                            holdRes[0].values.forEach(r => {
+                                const act = r[0];
+                                const sh = Number(r[1]) || 0;
+                                const pr = Number(r[2]) || 0;
+                                if (act === '買進') {
+                                    totalCost += sh * pr;
+                                    curShares += sh;
+                                } else if (act === '賣出') {
+                                    curShares = Math.max(0, curShares - sh);
+                                    if (curShares === 0) totalCost = 0;
+                                }
+                            });
+                            curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
                         }
-                    } catch (ec) {}
-                    if (!existingCreated) {
-                        existingCreated = getNowDateTimeStr() + ':00';
-                    }
 
-                    dbInstance.run(
-                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        [codeVal, nameVal, curShares, curCost, brokerName, '否', existingCreated]
-                    );
-                    // 🎯【核心自癒】：銷除該股墓碑
-                    try {
-                        dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [makeStockUniqueKey(codeVal, brokerName)]);
-                    } catch (e_tomb) {}
+                        let existingCreated = '';
+                        let existingFocus = '否';
+                        try {
+                            const cRes = dbInstance.exec("SELECT created_at, 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [targetCode, targetBroker]);
+                            if (cRes.length > 0 && cRes[0].values && cRes[0].values[0]) {
+                                existingCreated = String(cRes[0].values[0][0] || '').trim();
+                                existingFocus = String(cRes[0].values[0][1] || '否').trim();
+                            }
+                        } catch (ec) {}
+                        if (!existingCreated) {
+                            existingCreated = getNowDateTimeStr() + ':00';
+                        }
+
+                        if (curShares === 0 && targetBroker !== '關注' && existingFocus !== '是') {
+                            // 該券商若無持股且非關注，從名冊中清除，並補寫除名墓碑
+                            dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [targetCode, targetBroker]);
+                        } else {
+                            dbInstance.run(
+                                "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                [targetCode, fallbackName || targetCode, curShares, curCost, targetBroker, existingFocus, existingCreated]
+                            );
+                            try {
+                                dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [makeStockUniqueKey(targetCode, targetBroker)]);
+                            } catch (e_tomb) {}
+                        }
+                    };
+
+                    // 重新滾算新券商
+                    recalcBrokerHoldings(codeVal, brokerName, nameVal);
+
+                    // 若編輯時更換了券商或代號，也對舊券商/舊代號進行重新滾算銷帳
+                    if (oldBroker && (oldBroker !== brokerName || (oldCode && oldCode !== codeVal))) {
+                        recalcBrokerHoldings(oldCode || codeVal, oldBroker);
+                    }
 
                     await saveDbToIndexedDb();
                     // 重新全盤載入更新後的 DB
@@ -6610,6 +6697,8 @@ createApp({
             hasUnsyncedChanges,
             handleHeaderSyncClick,
             handleOneClickSync,
+            isRefreshingBrainStatus,
+            refreshBrainStatusOnly,
             syncMarketSnapshot,
             marketSyncMeta,
             calendarMarketStatus,
