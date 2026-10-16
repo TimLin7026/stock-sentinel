@@ -1099,7 +1099,23 @@ createApp({
 
         const toggleKlineLayer = (layerKey) => {
             if (klineLayers.value[layerKey] !== undefined) {
-                klineLayers.value[layerKey] = !klineLayers.value[layerKey];
+                if (layerKey === 'pivot') {
+                    const nextVal = !klineLayers.value.pivot;
+                    klineLayers.value.pivot = nextVal;
+                    if (nextVal) {
+                        // 開啟均價模式：互斥關閉 MA、布林通道、成本線
+                        klineLayers.value.ma = false;
+                        klineLayers.value.bollinger = false;
+                        klineLayers.value.cost = false;
+                    } else {
+                        // 關閉均價模式：預設還原 MA 線
+                        klineLayers.value.ma = true;
+                    }
+                } else {
+                    // 點選 MA、布林、成本：自動退出均價模式
+                    klineLayers.value[layerKey] = !klineLayers.value[layerKey];
+                    klineLayers.value.pivot = false;
+                }
                 localStorage.setItem('sentinel_kline_layers', JSON.stringify(klineLayers.value));
                 if (activeChartStock.value && activeChartStock.value.code) {
                     renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
@@ -1122,6 +1138,11 @@ createApp({
             foreignCost: '--',
             pivot: '--',
             vwap: '--',
+            vma5: '--',
+            vma10: '--',
+            vma20: '--',
+            vma60: '--',
+            vma120: '--',
             clv: '--',
             clvStatus: '--',
             dif: '--',
@@ -1146,8 +1167,8 @@ createApp({
         let stockHistoryCache = null; // 記憶體歷史快取字典
         const chartInstances = {}; // ECharts 實例字典
 
-        // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算)
-        const updateCrosshairValuesFromRow = (r, prevR) => {
+        // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA)
+        const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
             // 計算 6 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平)
             const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
@@ -1177,6 +1198,7 @@ createApp({
             }
             const pivotStr = pivotVal.toFixed(2);
             const vwapStr = vwapVal.toFixed(2);
+            const actualVma = vmaObj || r._vma || null;
 
             crosshairData.value = {
                 date: String(r[0]),
@@ -1194,6 +1216,11 @@ createApp({
                 foreignCost: r[28] !== undefined ? r[28] : '--',
                 pivot: pivotStr,
                 vwap: vwapStr,
+                vma5: actualVma && actualVma.vma5 != null ? actualVma.vma5 : '--',
+                vma10: actualVma && actualVma.vma10 != null ? actualVma.vma10 : '--',
+                vma20: actualVma && actualVma.vma20 != null ? actualVma.vma20 : '--',
+                vma60: actualVma && actualVma.vma60 != null ? actualVma.vma60 : '--',
+                vma120: actualVma && actualVma.vma120 != null ? actualVma.vma120 : '--',
                 clv: clvStr,
                 clvStatus: clvStatus,
                 dif: r[11],
@@ -1223,29 +1250,29 @@ createApp({
             };
         };
 
-        // 下載並解壓 60 日技術指標時序數據包 (具備自動長度檢驗與舊快取自癒機制)
+        // 下載並解壓 120 日技術指標時序數據包 (具備自動長度檢驗與舊快取自癒機制)
         const loadAllStockHistory = async (forceRefresh = false) => {
             if (!forceRefresh && stockHistoryCache) {
                 const keys = Object.keys(stockHistoryCache);
                 const sample = keys.length > 0 ? stockHistoryCache[keys[0]] : null;
-                if (sample && sample.length > 0 && sample[sample.length - 1].length >= 29) {
+                if (sample && sample.length >= 100 && sample[sample.length - 1].length >= 29) {
                     return stockHistoryCache;
                 }
                 stockHistoryCache = null;
             }
             
-            // 優先讀取 IndexedDB 快取 (需驗證欄位長度 >= 29 確保具備成本線數據)
+            // 優先讀取 IndexedDB 快取 (需驗證欄位長度 >= 29 且開市天數 >= 100 確保具備 120 天數據)
             if (!forceRefresh && window.localforage) {
                 try {
                     const cached = await localforage.getItem('sentinel_market_history_60d');
                     if (cached && typeof cached === 'object') {
                         const keys = Object.keys(cached);
                         const sample = keys.length > 0 ? cached[keys[0]] : null;
-                        if (sample && sample.length > 0 && sample[sample.length - 1].length >= 29) {
+                        if (sample && sample.length >= 100 && sample[sample.length - 1].length >= 29) {
                             stockHistoryCache = cached;
                             return stockHistoryCache;
                         } else {
-                            console.log("⚠️ 檢測到舊版走勢時序數據快取 (欄位數不足 29)，自動清除並重新由雲端下載最新時序包...");
+                            console.log("⚠️ 檢測到舊版走勢時序數據快取 (天數不足 100 或欄位數不足 29)，自動清除並重新由雲端下載最新時序包...");
                             await localforage.removeItem('sentinel_market_history_60d');
                             stockHistoryCache = null;
                         }
@@ -1365,6 +1392,57 @@ createApp({
             const marginCost = rows.map(r => r[27]);
             const foreignCost = rows.map(r => r[28]);
 
+            // 滾動均線計算工具 (輸入全量陣列，輸出滾動平均，若長度不足則補 null)
+            const calcRollingMA = (arr, windowSize) => {
+                const res = [];
+                for (let i = 0; i < arr.length; i++) {
+                    if (i < windowSize - 1) {
+                        res.push(null);
+                    } else {
+                        let sum = 0;
+                        for (let j = i - windowSize + 1; j <= i; j++) {
+                            sum += arr[j];
+                        }
+                        res.push(Number((sum / windowSize).toFixed(2)));
+                    }
+                }
+                return res;
+            };
+
+            // 計算全量歷史的當日均價 VWAP，以提供各週期 5V, 10V, 20V, 60V, 120V 均線滾動計算
+            const rawVwaps = rawRows.map((r, idx) => {
+                let v = (r[29] !== undefined && r[29] !== null) ? Number(r[29]) : Number(((Number(r[2]) + Number(r[3]) + Number(r[4])) / 3).toFixed(2));
+                if (idx === rawRows.length - 1 && activeChartStock.value && activeChartStock.value.vwap) {
+                    v = Number(activeChartStock.value.vwap) || v;
+                }
+                return v;
+            });
+
+            const fullVma5 = calcRollingMA(rawVwaps, 5);
+            const fullVma10 = calcRollingMA(rawVwaps, 10);
+            const fullVma20 = calcRollingMA(rawVwaps, 20);
+            const fullVma60 = calcRollingMA(rawVwaps, 60);
+            const fullVma120 = calcRollingMA(rawVwaps, 120);
+
+            // 截取當前顯示區間的均價與均價 MA
+            const vwapData = rawVwaps.slice(-days);
+            const vma5Data = fullVma5.slice(-days);
+            const vma10Data = fullVma10.slice(-days);
+            const vma20Data = fullVma20.slice(-days);
+            const vma60Data = fullVma60.slice(-days);
+            const vma120Data = fullVma120.slice(-days);
+
+            // 為當前視圖的每根 Bar 綁定對應的均價 MA 物件
+            for (let i = 0; i < rows.length; i++) {
+                rows[i]._vma = {
+                    vma5: vma5Data[i] != null ? vma5Data[i].toFixed(2) : '--',
+                    vma10: vma10Data[i] != null ? vma10Data[i].toFixed(2) : '--',
+                    vma20: vma20Data[i] != null ? vma20Data[i].toFixed(2) : '--',
+                    vma60: vma60Data[i] != null ? vma60Data[i].toFixed(2) : '--',
+                    vma120: vma120Data[i] != null ? vma120Data[i].toFixed(2) : '--'
+                };
+            }
+
             // 初始化看板最後一筆（最新一日）數值
             if (rows.length > 0) {
                 updateCrosshairValuesFromRow(rows[rows.length - 1], rows.length > 1 ? rows[rows.length - 2] : null);
@@ -1446,26 +1524,55 @@ createApp({
                     klineSeries.push({ name: '外資成本', type: 'line', data: foreignCost, smooth: true, showSymbol: false, lineStyle: { color: '#be123c', width: 1.2, type: 'dashed' } });
                 }
 
-                // 當日均價層：均價線 (VWAP)
+                // 當日均價與 5/10/20/60/120 均價 MA 專屬模式
                 if (klineLayers.value.pivot) {
-                    const vwapData = rows.map((r, idx) => {
-                        if (r[29] !== undefined && r[29] !== null) {
-                            return Number(r[29]);
-                        }
-                        if (idx === rows.length - 1 && activeChartStock.value && activeChartStock.value.vwap) {
-                            return Number(activeChartStock.value.vwap);
-                        }
-                        const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
-                        return Number(((h + l + c) / 3).toFixed(2));
-                    });
-
                     klineSeries.push({
                         name: '均價線',
                         type: 'line',
                         data: vwapData,
                         smooth: true,
                         showSymbol: false,
-                        lineStyle: { color: '#d946ef', width: 1.6, type: 'solid' }
+                        lineStyle: { color: '#d946ef', width: 1.8, type: 'solid' }
+                    });
+                    klineSeries.push({
+                        name: '5V',
+                        type: 'line',
+                        data: vma5Data,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { color: '#facc15', width: 1.2, type: 'solid' }
+                    });
+                    klineSeries.push({
+                        name: '10V',
+                        type: 'line',
+                        data: vma10Data,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { color: '#38bdf8', width: 1.2, type: 'solid' }
+                    });
+                    klineSeries.push({
+                        name: '20V',
+                        type: 'line',
+                        data: vma20Data,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { color: '#34d399', width: 1.2, type: 'solid' }
+                    });
+                    klineSeries.push({
+                        name: '60V',
+                        type: 'line',
+                        data: vma60Data,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { color: '#fb923c', width: 1.2, type: 'solid' }
+                    });
+                    klineSeries.push({
+                        name: '120V',
+                        type: 'line',
+                        data: vma120Data,
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { color: '#818cf8', width: 1.2, type: 'solid' }
                     });
                 }
 

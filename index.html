@@ -1937,7 +1937,7 @@
 
                         <!-- Row 2: 週期按鈕組 (均勻整齊展開) -->
                         <div class="flex bg-slate-800/80 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700 w-full justify-between space-x-1">
-                            <button v-for="d in [20, 40, 60, 90, 120]" :key="d" @click="changeChartDays(d)"
+                            <button v-for="d in [10, 20, 60, 120]" :key="d" @click="changeChartDays(d)"
                                     :class="chartDaysCount === d ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
                                     class="flex-1 py-1 rounded text-center transition">
                                 {{ d }}日
@@ -1965,9 +1965,9 @@
                                     <i class="fa-solid fa-desktop text-emerald-400"></i>
                                 </button>
 
-                                <!-- 期間選擇 (20 / 40 / 60 / 90 / 120) -->
+                                <!-- 期間選擇 (10 / 20 / 60 / 120) -->
                                 <div class="flex bg-slate-800/80 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700 space-x-0.5">
-                                    <button v-for="d in [20, 40, 60, 90, 120]" :key="d" @click="changeChartDays(d)"
+                                    <button v-for="d in [10, 20, 60, 120]" :key="d" @click="changeChartDays(d)"
                                             :class="chartDaysCount === d ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
                                             class="px-2 py-0.5 rounded transition">
                                         {{ d }}日
@@ -2057,17 +2057,26 @@
                             </template>
                         </div>
 
-                        <!-- Row 3：籌碼成本線與均價數值行 (與成本一同呈現，靠右對齊，僅在勾選成本或均價時呈現) -->
-                        <div v-if="klineLayers.cost || klineLayers.pivot" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40 overflow-x-auto no-scrollbar">
-                            <template v-if="klineLayers.cost">
-                                <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}</span>
-                                <span>·</span>
-                                <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
-                            </template>
-                            <template v-if="klineLayers.pivot">
-                                <span v-if="klineLayers.cost">│</span>
-                                <span class="text-purple-400 font-bold">均價:{{ crosshairData.vwap }}</span>
-                            </template>
+                        <!-- Row 均價專屬數值行 (僅在點擊「均價」時呈現，動態展示當日均價與 5/10/20/60/120 均價 MA) -->
+                        <div v-if="klineLayers.pivot" class="flex justify-end items-center text-[10px] font-mono space-x-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
+                            <span class="text-fuchsia-400 font-bold">均價:{{ crosshairData.vwap }}</span>
+                            <span>·</span>
+                            <span class="text-amber-400 font-bold">5V:{{ crosshairData.vma5 }}</span>
+                            <span>·</span>
+                            <span class="text-sky-400 font-bold">10V:{{ crosshairData.vma10 }}</span>
+                            <span>·</span>
+                            <span class="text-emerald-400 font-bold">20V:{{ crosshairData.vma20 }}</span>
+                            <span>·</span>
+                            <span class="text-orange-400 font-bold">60V:{{ crosshairData.vma60 }}</span>
+                            <span>·</span>
+                            <span class="text-indigo-400 font-bold">120V:{{ crosshairData.vma120 }}</span>
+                        </div>
+
+                        <!-- Row 3：籌碼成本線數值行 (僅在勾選成本時呈現) -->
+                        <div v-if="klineLayers.cost" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40 overflow-x-auto no-scrollbar">
+                            <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}</span>
+                            <span>·</span>
+                            <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
                         </div>
 
                         <div id="chart-kline" class="w-full" style="height: 21rem;"></div>
