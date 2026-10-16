@@ -2170,21 +2170,26 @@
                     </div>
 
                     <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (支援 Tab 切換，預設青紅燈) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
-                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <div class="flex items-center space-x-1.5">
-                                <span class="flex items-center"><i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪</span>
-                                <!-- 子切換 Tab (青紅燈 / MTM / RSI / WR / CLV) -->
-                                <div class="flex bg-slate-800 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700">
-                                    <button v-for="t in ['青紅燈', 'MTM', 'RSI', 'WR', 'CLV']" :key="t" @click="changeSubOscTab(t)"
-                                            :class="subOscTab === t ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
-                                            class="px-1.5 py-0.2 rounded transition">
-                                        {{ t }}
-                                    </button>
-                                </div>
+                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative space-y-1.5">
+                        <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 (比照圖 1) -->
+                        <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center whitespace-nowrap">
+                                <i class="fa-solid fa-gauge-high text-emerald-400 mr-1.5"></i>6. 動能與擺盪
+                            </span>
+
+                            <!-- 右側：子切換 Tab 藥丸按鈕組 (青紅燈 / MTM / RSI / WR / CLV) -->
+                            <div class="flex bg-slate-800/90 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700/80 space-x-0.5 shrink-0">
+                                <button v-for="t in ['青紅燈', 'MTM', 'RSI', 'WR', 'CLV']" :key="t" @click="changeSubOscTab(t)"
+                                        :class="subOscTab === t ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-1.5 py-0.5 rounded transition">
+                                    {{ t }}
+                                </button>
                             </div>
-                            <!-- 動態數值顯示 -->
-                            <span v-if="subOscTab === '青紅燈'" class="text-[9px] font-mono flex items-center space-x-0.5 text-slate-400">
+                        </div>
+
+                        <!-- Row 2：動態指標數值與 6 大青紅燈看板 (比照圖 1 右對齊整齊展開) -->
+                        <div class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-1.5 whitespace-nowrap pt-0.5 overflow-x-auto no-scrollbar">
+                            <template v-if="subOscTab === '青紅燈'">
                                 <span :class="crosshairData.heatLights?.mtm === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.mtm === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MTM{{ crosshairData.heatLights?.mtm === 1 ? '🔴' : (crosshairData.heatLights?.mtm === -1 ? '🟢' : '⚪') }}</span>
                                 <span>·</span>
                                 <span :class="crosshairData.heatLights?.osc === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.osc === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">OSC{{ crosshairData.heatLights?.osc === 1 ? '🔴' : (crosshairData.heatLights?.osc === -1 ? '🟢' : '⚪') }}</span>
@@ -2196,27 +2201,27 @@
                                 <span :class="crosshairData.heatLights?.kd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.kd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">KD{{ crosshairData.heatLights?.kd === 1 ? '🔴' : (crosshairData.heatLights?.kd === -1 ? '🟢' : '⚪') }}</span>
                                 <span>·</span>
                                 <span :class="crosshairData.heatLights?.macd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.macd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MACD{{ crosshairData.heatLights?.macd === 1 ? '🔴' : (crosshairData.heatLights?.macd === -1 ? '🟢' : '⚪') }}</span>
-                            </span>
-                            <span v-else-if="subOscTab === 'MTM'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            </template>
+                            <template v-else-if="subOscTab === 'MTM'">
                                 <span class="text-amber-400 font-bold">MTM3:{{ crosshairData.mtm }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">MA2:{{ crosshairData.mtmMa }}</span>
-                            </span>
-                            <span v-else-if="subOscTab === 'RSI'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            </template>
+                            <template v-else-if="subOscTab === 'RSI'">
                                 <span class="text-amber-400 font-bold">RSI4:{{ crosshairData.rsi4 }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">RSI12:{{ crosshairData.rsi12 }}</span>
-                            </span>
-                            <span v-else-if="subOscTab === 'WR'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            </template>
+                            <template v-else-if="subOscTab === 'WR'">
                                 <span class="text-amber-400 font-bold">WR3:{{ crosshairData.wr3 }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">WR50:{{ crosshairData.wr50 }}</span>
-                            </span>
-                            <span v-else-if="subOscTab === 'CLV'" class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            </template>
+                            <template v-else-if="subOscTab === 'CLV'">
                                 <span :class="parseFloat(crosshairData.clv) > 0 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">CLV:{{ crosshairData.clv }}</span>
                                 <span>·</span>
                                 <span :class="parseFloat(crosshairData.clv) >= 0.15 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) <= -0.15 ? 'text-emerald-400 font-bold' : 'text-slate-400')">{{ crosshairData.clvStatus }}</span>
-                            </span>
+                            </template>
                         </div>
                         <div id="chart-mtm" class="w-full h-36"></div>
                     </div>
@@ -2297,6 +2302,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261016.06"></script>
+    <script src="app.js?v=2.20261016.07"></script>
 </body>
 </html>
