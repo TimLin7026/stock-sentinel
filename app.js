@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.09');
+        const appVersion = ref('v2.20261016.10');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3213,7 +3213,7 @@ createApp({
 
         const currentFilteredStocks = computed(() => {
             let baseList = [];
-            if (stockSubTab.value === 'holding') baseList = holdingStocks.value;
+            if (stockSubTab.value === 'holding') baseList = filteredHoldingStocks.value;
             else if (stockSubTab.value === 'starred') baseList = starredStocks.value;
             else if (stockSubTab.value === 'watchlist') baseList = watchlistStocks.value;
 

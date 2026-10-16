@@ -660,7 +660,7 @@
                     <button @click="stockSubTab = 'holding'" 
                             :class="stockSubTab === 'holding' ? 'bg-sky-600 text-white shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-800')"
                             class="flex-1 py-1.5 rounded-lg transition text-center">
-                        💼 現役持股區 ({{ holdingStocks.length }})
+                        💼 現役持股區 ({{ filteredHoldingStocks.length }})
                     </button>
                     <button @click="stockSubTab = 'starred'" 
                             :class="stockSubTab === 'starred' ? 'bg-sky-600 text-white shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-800')"
@@ -699,6 +699,18 @@
                         <span class="text-xs">💎</span>
                         <span class="whitespace-nowrap font-medium">富貴 Gem</span>
                     </a>
+                </div>
+
+                <!-- 現役持股區 證券商過濾標籤列 (參考資產總覽：全部 / 玉山證券 / 中信證券 ...) -->
+                <div v-if="stockSubTab === 'holding' && availableBrokers.length > 2" 
+                     :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" 
+                     class="flex items-center space-x-1.5 p-1.5 rounded-xl border overflow-x-auto no-scrollbar text-xs">
+                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold px-1 whitespace-nowrap">券商：</span>
+                    <button v-for="b in availableBrokers" :key="b" @click="selectedBrokerFilter = b"
+                            :class="selectedBrokerFilter === b ? 'bg-sky-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1 rounded-lg text-xs transition whitespace-nowrap">
+                        {{ b }}
+                    </button>
                 </div>
 
                 <!-- 特別關注分頁的子過濾器 (對齊地端：全部 / ▲ 關注買 / ▼ 關注賣) -->
@@ -2302,6 +2314,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261016.09"></script>
+    <script src="app.js?v=2.20261016.10"></script>
 </body>
 </html>
