@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.07');
+        const appVersion = ref('v2.20261016.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1926,6 +1926,10 @@ createApp({
             if (!showStockChartModal.value) {
                 isKlinePinned.value = false;
                 localStorage.setItem('sentinel_pin_kline', 'false');
+
+                // 🌟 走勢打開，圖 1 預設顯示 MA + 布林
+                klineLayers.value = { ma: true, bollinger: true, cost: false, pivot: false };
+                localStorage.setItem('sentinel_kline_layers', JSON.stringify(klineLayers.value));
             }
 
             activeChartStock.value = { ...stock };
@@ -3601,11 +3605,17 @@ createApp({
             newBrokerInput.value = '';
             const existingRealBrokers = activeBrokers.value.filter(b => b && b !== '關注');
 
+            // 🌟 檢索交易流水帳 (recentTradeLogs 依時間降序)，找到最新一筆實質交易的證券商
+            const latestRealTrade = (recentTradeLogs.value || []).find(t => t.broker && t.broker !== '關注');
+            const defaultBrokerFromLatest = (latestRealTrade && latestRealTrade.broker) 
+                ? latestRealTrade.broker 
+                : (existingRealBrokers[0] || '關注');
+
             if (editingLog) {
                 isEditingTrade.value = true;
                 editingTradeId.value = editingLog.id;
                 tradeForm.value.action = editingLog.action || '買進';
-                tradeForm.value.broker = editingLog.broker || (existingRealBrokers[0] || '關注');
+                tradeForm.value.broker = editingLog.broker || defaultBrokerFromLatest;
                 tradeForm.value.code = editingLog.code;
                 tradeForm.value.name = editingLog.name;
                 tradeForm.value.price = editingLog.price;
@@ -3619,11 +3629,16 @@ createApp({
                 tradeForm.value.name = targetStock.name;
 
                 if (targetStock.broker && targetStock.broker !== '關注') {
+                    // 若是從持股清單點進來，維持該股票的原持有券商
                     tradeForm.value.broker = targetStock.broker;
                     tradeForm.value.price = targetStock.price;
                     tradeForm.value.shares = null;
+                } else if (defaultBrokerFromLatest && defaultBrokerFromLatest !== '關注') {
+                    // 🌟 從自選池點選「錄入交易」：優先預設帶入最後一筆交易的證券商
+                    tradeForm.value.broker = defaultBrokerFromLatest;
+                    tradeForm.value.price = targetStock.price;
+                    tradeForm.value.shares = null;
                 } else if (existingRealBrokers.length > 0) {
-                    // 從自選觀察池點選「錄入交易」且已有常用券商：預設帶入第一個真實券商準備買進
                     tradeForm.value.broker = existingRealBrokers[0];
                     tradeForm.value.price = targetStock.price;
                     tradeForm.value.shares = null;
@@ -3639,8 +3654,11 @@ createApp({
                 isEditingTrade.value = false;
                 editingTradeId.value = null;
                 tradeForm.value.action = '買進';
-                if (selectedBrokerFilter.value !== '全部') {
+                if (selectedBrokerFilter.value !== '全部' && selectedBrokerFilter.value !== '關注') {
                     tradeForm.value.broker = selectedBrokerFilter.value;
+                } else if (defaultBrokerFromLatest && defaultBrokerFromLatest !== '關注') {
+                    // 🌟 新增交易記錄：預設選取最後一筆交易的證券商！
+                    tradeForm.value.broker = defaultBrokerFromLatest;
                 } else if (existingRealBrokers.length > 0) {
                     tradeForm.value.broker = existingRealBrokers[0];
                 } else {
