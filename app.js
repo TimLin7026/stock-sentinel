@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.03');
+        const appVersion = ref('v2.20261016.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1106,11 +1106,20 @@ createApp({
         const togglePinKline = () => {
             isKlinePinned.value = !isKlinePinned.value;
             localStorage.setItem('sentinel_pin_kline', isKlinePinned.value);
+            
+            const targetHeight = isKlinePinned.value ? 184 : 336;
+            const el = document.getElementById('chart-kline');
+            if (el) {
+                el.style.height = targetHeight + 'px';
+            }
+            if (chartInstances.kline) {
+                chartInstances.kline.resize({ height: targetHeight });
+            }
+            
             Vue.nextTick(() => {
                 resizeAllStockCharts();
-                setTimeout(() => {
-                    resizeAllStockCharts();
-                }, 120);
+                setTimeout(() => { resizeAllStockCharts(); }, 60);
+                setTimeout(() => { resizeAllStockCharts(); }, 200);
             });
         };
 
@@ -1469,7 +1478,7 @@ createApp({
                 left: 10,
                 right: 48,
                 top: 25,
-                bottom: 20,
+                bottom: 25,
                 containLabel: false
             };
 
@@ -1502,6 +1511,8 @@ createApp({
             // 1. 主圖：K線 + 均線 + 布林通道 + 籌碼成本線 (依 klineLayers 動態組裝)
             const elKline = document.getElementById('chart-kline');
             if (elKline) {
+                const curKlineHeight = isKlinePinned.value ? 184 : 336;
+                elKline.style.height = curKlineHeight + 'px';
                 const chart = echarts.init(elKline);
                 
                 const klineSeries = [
@@ -2024,10 +2035,20 @@ createApp({
         const chartOrientation = ref(localStorage.getItem('sentinel_chart_orientation') || 'portrait');
 
         const resizeAllStockCharts = () => {
-            Object.values(chartInstances).forEach(chart => {
+            const klineTargetHeight = isKlinePinned.value ? 184 : 336;
+            const elKline = document.getElementById('chart-kline');
+            if (elKline) {
+                elKline.style.height = klineTargetHeight + 'px';
+            }
+            Object.keys(chartInstances).forEach(k => {
+                const chart = chartInstances[k];
                 if (chart && typeof chart.resize === 'function') {
                     try {
-                        chart.resize();
+                        if (k === 'kline') {
+                            chart.resize({ height: klineTargetHeight });
+                        } else {
+                            chart.resize();
+                        }
                     } catch(e) {}
                 }
             });

@@ -2008,7 +2008,7 @@
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
                         isKlinePinned ? (theme === 'dark' ? 'sticky top-0 z-20 shadow-xl shadow-black/60 border-indigo-500/50 backdrop-blur-md' : 'sticky top-0 z-20 shadow-xl shadow-slate-400/50 border-indigo-500 backdrop-blur-md') : ''
-                    ]" class="p-2.5 rounded-2xl border relative space-y-1.5 transition-all duration-200">
+                    ]" class="p-2.5 rounded-2xl border relative space-y-1.5 transition-all duration-200 overflow-hidden">
                         
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 -->
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
@@ -2096,7 +2096,7 @@
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
                         </div>
 
-                        <div id="chart-kline" class="w-full transition-all duration-200" :style="{ height: isKlinePinned ? '10.5rem' : '21rem' }"></div>
+                        <div id="chart-kline" class="w-full" :style="{ height: isKlinePinned ? '11.5rem' : '21rem' }"></div>
                     </div>
 
                     <!-- 圖 2 (原 3)：MACD / OSC (DIF 亮黃, MACD_S 亮藍) -->
@@ -2292,6 +2292,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261016.03"></script>
+    <script src="app.js?v=2.20261016.04"></script>
 </body>
 </html>
