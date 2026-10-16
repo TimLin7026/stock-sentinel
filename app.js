@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.05');
+        const appVersion = ref('v2.20261016.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1101,8 +1101,8 @@ createApp({
         }
         const klineLayers = ref(initialLayers);
 
-        // 📌 圖 1 (主 K 線) LINE 風格置頂開關 (開啟時高度減半吸頂，方便對照圖 2~6)
-        const isKlinePinned = ref(localStorage.getItem('sentinel_pin_kline') === 'true');
+        // 📌 圖 1 (主 K 線) LINE 風格置頂開關 (開啟時高度減半吸頂，方便對照圖 2~6，預設未釘選)
+        const isKlinePinned = ref(false);
         const togglePinKline = () => {
             isKlinePinned.value = !isKlinePinned.value;
             localStorage.setItem('sentinel_pin_kline', isKlinePinned.value);
@@ -1919,6 +1919,15 @@ createApp({
         // 打開技術指標彈窗
         const openStockChartModal = (stock) => {
             if (!stock) return;
+
+            // 📌 走勢打開時的釘選狀態判斷：
+            // 若彈窗原本是關閉狀態 (外部首次點開)，預設為未釘選
+            // 若彈窗原本已處於開啟狀態 (在走勢內點上一檔/下一檔或手勢切換)，則維持 user 最後的樣子不動！
+            if (!showStockChartModal.value) {
+                isKlinePinned.value = false;
+                localStorage.setItem('sentinel_pin_kline', 'false');
+            }
+
             activeChartStock.value = { ...stock };
             chartOrientation.value = appLayout.value === 'wide' ? 'landscape' : 'portrait';
             // 直 預設顯示 20 日圖，橫 預設顯示 60 日圖
