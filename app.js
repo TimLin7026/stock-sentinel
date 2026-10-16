@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.10');
+        const appVersion = ref('v2.20261016.11');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1027,24 +1027,34 @@ createApp({
             };
         };
 
+        // ─── 🔄 強制重整網頁（帶時間戳穿透快取，方案 B 核心） ───
+        const forceReloadApp = (reason = 'Google 觸發重連') => {
+            console.log(`🔄 因【${reason}】，執行網頁強制重整...`);
+            showToast('🔄 Google 連線重新整理中，正在為您同步載入最新網頁...', 3000);
+            setTimeout(() => {
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.location.replace(`${cleanUrl}?_t=${Date.now()}`);
+            }, 600);
+        };
+
         // ─── 🚀 遠端版本自動檢測與智慧熱更新模組 ───
         let lastVersionCheckTs = 0;
         const checkRemoteVersionUpdate = async (isExplicitSync = false) => {
             const now = Date.now();
-            // 若非手動主動點擊一鍵同步，設定 5 分鐘冷卻保護防頻繁請求
-            if (!isExplicitSync && now - lastVersionCheckTs < 5 * 60 * 1000) {
+            // 手動同步無冷卻；其他檢查設 15 秒防抖保護
+            if (!isExplicitSync && now - lastVersionCheckTs < 15 * 1000) {
                 return false;
             }
             lastVersionCheckTs = now;
 
             try {
-                const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
                 let remoteVersion = null;
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000);
+                const timeoutId = setTimeout(() => controller.abort(), 3500);
 
+                // 優先查詢同源站點最新版本（零延遲無跨域）
                 try {
-                    const res = await fetch(`${rawBaseUrl}/version_v2.txt?_t=${now}`, { 
+                    const res = await fetch(`./version_v2.txt?_t=${now}`, { 
                         cache: 'no-store',
                         signal: controller.signal 
                     });
@@ -1054,9 +1064,11 @@ createApp({
                     }
                 } catch (e) {}
 
+                // 備援查詢 GitHub Raw
                 if (!remoteVersion) {
                     try {
-                        const res = await fetch(`./version_v2.txt?_t=${now}`, { 
+                        const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
+                        const res = await fetch(`${rawBaseUrl}/version_v2.txt?_t=${now}`, { 
                             cache: 'no-store',
                             signal: controller.signal 
                         });
@@ -6083,6 +6095,9 @@ createApp({
 
                     // 重新查詢雲端最新狀態
                     await fetchCloudDbStats();
+
+                    // 🌟 方案 B 核心：Google 觸發重連完成時，一併強制 refresh 網頁！
+                    forceReloadApp('Google 帳號重連完成');
                 }
             });
 
@@ -6295,20 +6310,18 @@ createApp({
             }
         };
 
-        // 智慧心跳監控與喚醒監聽 (同時兼顧版本熱更新檢測)
+        // 智慧心跳監控與喚醒監聽 (偵測 Token 逾期自動觸發重連)
         const initGoogleHeartbeat = () => {
             // 每 5 分鐘心跳檢查
             setInterval(() => {
                 checkGoogleTokenFreshness();
-                checkRemoteVersionUpdate(false);
             }, 5 * 60 * 1000);
 
             // 頁面待機切回前台時自動檢查
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
-                    console.log("📱 頁面切回前台，自動檢查 Google 連線與系統版本狀態...");
+                    console.log("📱 頁面切回前台，自動檢查 Google 連線狀態...");
                     checkGoogleTokenFreshness();
-                    checkRemoteVersionUpdate(false);
                 }
             });
         };
