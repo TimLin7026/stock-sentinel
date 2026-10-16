@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-16 19:42:35",
+  "run_time": "2026-10-16 21:16:17",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261016] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,17 +15,16 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2203,
+      "count": 2208,
       "status": "OK"
     },
     "margin": {
-      "count": 2358,
-      "elapsed": 0.0,
+      "count": 2215,
       "status": "OK"
     },
     "indicators": {
       "count": 2375,
-      "elapsed": 75.89,
+      "elapsed": 76.68,
       "status": "OK"
     }
   },
@@ -144,10 +143,6 @@
         "name": "富邦上証+R"
       },
       {
-        "code": "00636K",
-        "name": "國泰中國A50+U"
-      },
-      {
         "code": "00643K",
         "name": "群益深証中小+R"
       },
@@ -214,14 +209,18 @@
       {
         "code": "1312A",
         "name": "國喬特"
+      },
+      {
+        "code": "1341",
+        "name": "富林-KY"
       }
     ]
   },
   "target_date": "20261016",
-  "total_elapsed": 169.49,
-  "snapshot_size_kb": 445.8,
-  "next_scheduled_run": "2026/10/16 (週五) 21:00",
-  "next_scheduled_iso": "2026-10-16T21:00:00",
+  "total_elapsed": 159.74,
+  "snapshot_size_kb": 455.7,
+  "next_scheduled_run": "2026/10/19 (週一) 14:30",
+  "next_scheduled_iso": "2026-10-19T14:30:00",
   "schedule_times": [
     "14:30",
     "21:00"
