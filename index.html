@@ -2005,11 +2005,28 @@
 
                 <template v-else>
                     <!-- 圖 1 (主圖)：K線蠟燭圖 + MA/布林/成本 篩選開關與 3 Rows 動態看板 -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative space-y-1.5">
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        isKlinePinned ? (theme === 'dark' ? 'sticky top-0 z-20 shadow-xl shadow-black/60 border-indigo-500/50 backdrop-blur-md' : 'sticky top-0 z-20 shadow-xl shadow-slate-400/50 border-indigo-500 backdrop-blur-md') : ''
+                    ]" class="p-2.5 rounded-2xl border relative space-y-1.5 transition-all duration-200">
                         
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 -->
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center whitespace-nowrap"><i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖</span>
+                            <span class="flex items-center whitespace-nowrap">
+                                <!-- 📌 LINE 原版風格圖釘按鈕 (風格一：LINE 綠色圓底) -->
+                                <button @click="togglePinKline" 
+                                        :class="isKlinePinned ? 'bg-[#22c55e] text-white shadow-md shadow-emerald-500/40 border-none' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-white'"
+                                        class="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 mr-1.5 active:scale-90"
+                                        :title="isKlinePinned ? '點擊解除置頂 (恢復全尺寸整體滾動)' : '點擊釘選置頂 (高度減半，對照圖2~6)'">
+                                    <svg class="w-3.5 h-3.5 transition-all duration-200" viewBox="0 0 24 24" fill="currentColor">
+                                        <!-- 釘選中：LINE 經典純白直立圖釘 (如截圖 2) -->
+                                        <path v-if="isKlinePinned" d="M12 2C10.62 2 9.5 3.12 9.5 4.5V6.2C7.45 6.9 6 8.87 6 11.2V13.5C6 14.88 7.12 16 8.5 16H11V20.5C11 21.05 11.45 21.5 12 21.5C12.55 21.5 13 21.05 13 20.5V16H15.5C16.88 16 18 14.88 18 13.5V11.2C18 8.87 16.55 6.9 14.5 6.2V4.5C14.5 3.12 13.38 2 12 2ZM11 4.5C11 3.95 11.45 3.5 12 3.5C12.55 3.5 13 3.95 13 4.5V6H11V4.5ZM7.5 11.2C7.5 9.68 8.55 8.38 10 7.82V14.5H8.5C7.95 14.5 7.5 14.05 7.5 13.5V11.2ZM14 7.82C15.45 8.38 16.5 9.68 16.5 11.2V13.5C16.5 14.05 16.05 14.5 15.5 14.5H14V7.82Z" />
+                                        <!-- 未釘選：LINE 經典帶斜線圖釘 (如截圖 1) -->
+                                        <path v-else d="M3.27 2L2 3.27L6.84 8.11C6.34 8.85 6 9.88 6 11.2V13.5C6 14.88 7.12 16 8.5 16H11V20.5C11 21.05 11.45 21.5 12 21.5C12.55 21.5 13 21.05 13 20.5V16H14.73L19.73 21L21 19.73L3.27 2ZM9.5 4.5C9.5 3.12 10.62 2 12 2C13.38 2 14.5 3.12 14.5 4.5V6.2C16.55 6.9 18 8.87 18 11.2V13.5C18 13.74 17.96 13.97 17.9 14.2L16.27 12.57C16.42 12.18 16.5 11.72 16.5 11.2C16.5 9.68 15.45 8.38 14 7.82V4.5C14 3.95 13.55 3.5 13 3.5C12.45 3.5 12 3.95 12 4.5V6H11V5.3L9.5 3.8V4.5ZM8.5 14.5C7.95 14.5 7.5 14.05 7.5 13.5V11.2C7.5 10.38 7.85 9.65 8.42 9.17L13.75 14.5H8.5Z" />
+                                    </svg>
+                                </button>
+                                <i class="fa-solid fa-chart-candlestick text-rose-400 mr-1.5"></i>1. K線主圖
+                            </span>
                             
                             <!-- 藥丸切換鈕 (MA | 布林 | 成本 | 樞紐) -->
                             <div class="flex bg-slate-800/90 p-0.5 rounded-lg text-[9px] font-mono border border-slate-700/80 space-x-0.5 shrink-0">
@@ -2079,7 +2096,7 @@
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}</span>
                         </div>
 
-                        <div id="chart-kline" class="w-full" style="height: 21rem;"></div>
+                        <div id="chart-kline" class="w-full transition-all duration-200" :style="{ height: isKlinePinned ? '10.5rem' : '21rem' }"></div>
                     </div>
 
                     <!-- 圖 2 (原 3)：MACD / OSC (DIF 亮黃, MACD_S 亮藍) -->
@@ -2275,6 +2292,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261016.02"></script>
+    <script src="app.js?v=2.20261016.03"></script>
 </body>
 </html>

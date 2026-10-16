@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.02');
+        const appVersion = ref('v2.20261016.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1100,6 +1100,19 @@ createApp({
             try { initialLayers = { ...defaultKlineLayers, ...JSON.parse(savedLayersStr) }; } catch(e) {}
         }
         const klineLayers = ref(initialLayers);
+
+        // 📌 圖 1 (主 K 線) LINE 風格置頂開關 (開啟時高度減半吸頂，方便對照圖 2~6)
+        const isKlinePinned = ref(localStorage.getItem('sentinel_pin_kline') === 'true');
+        const togglePinKline = () => {
+            isKlinePinned.value = !isKlinePinned.value;
+            localStorage.setItem('sentinel_pin_kline', isKlinePinned.value);
+            Vue.nextTick(() => {
+                resizeAllStockCharts();
+                setTimeout(() => {
+                    resizeAllStockCharts();
+                }, 120);
+            });
+        };
 
         const toggleKlineLayer = (layerKey) => {
             if (klineLayers.value[layerKey] !== undefined) {
@@ -7080,6 +7093,8 @@ createApp({
             isChartLoading,
             klineLayers,
             toggleKlineLayer,
+            isKlinePinned,
+            togglePinKline,
             crosshairData,
             openStockChartModal,
             closeStockChartModal,
