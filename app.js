@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.08');
+        const appVersion = ref('v2.20261016.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1027,7 +1027,78 @@ createApp({
             };
         };
 
-        // 🔄 一鍵同步入口 (支援全市場行情秒級同步 + 個人雲端帳本雙向同步)
+        // ─── 🚀 遠端版本自動檢測與智慧熱更新模組 ───
+        let lastVersionCheckTs = 0;
+        const checkRemoteVersionUpdate = async (isExplicitSync = false) => {
+            const now = Date.now();
+            // 若非手動主動點擊一鍵同步，設定 5 分鐘冷卻保護防頻繁請求
+            if (!isExplicitSync && now - lastVersionCheckTs < 5 * 60 * 1000) {
+                return false;
+            }
+            lastVersionCheckTs = now;
+
+            try {
+                const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
+                let remoteVersion = null;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+                try {
+                    const res = await fetch(`${rawBaseUrl}/version_v2.txt?_t=${now}`, { 
+                        cache: 'no-store',
+                        signal: controller.signal 
+                    });
+                    if (res.ok) {
+                        const txt = await res.text();
+                        if (txt) remoteVersion = txt.trim();
+                    }
+                } catch (e) {}
+
+                if (!remoteVersion) {
+                    try {
+                        const res = await fetch(`./version_v2.txt?_t=${now}`, { 
+                            cache: 'no-store',
+                            signal: controller.signal 
+                        });
+                        if (res.ok) {
+                            const txt = await res.text();
+                            if (txt) remoteVersion = txt.trim();
+                        }
+                    } catch (e) {}
+                }
+                clearTimeout(timeoutId);
+
+                if (remoteVersion && remoteVersion !== appVersion.value) {
+                    console.log(`🚀 檢測到新版本: 當前=${appVersion.value}, 遠端=${remoteVersion}`);
+                    
+                    // 防打斷：若正開啟記帳表單且非強制手動同步，先暫緩自動重載以保護正在輸入的交易
+                    if (showTradeModal.value && !isExplicitSync) {
+                        console.log("ℹ️ 使用者正開啟記帳視窗，暫緩背景自動重載。");
+                        return true;
+                    }
+
+                    if (isExplicitSync) {
+                        // 🌟 點擊一鍵同步時：先標記待續同步旗標，重載後以最新代碼自動接續同步！
+                        sessionStorage.setItem('sentinel_auto_sync_after_reload', 'true');
+                        showToast(`🚀 發現新版程式碼 (${remoteVersion})，正在載入最新版後自動接續同步...`, 4000);
+                    } else {
+                        showToast(`🚀 戰情室已發布新版本 (${remoteVersion})，正在為您自動重載載入最新功能...`, 3000);
+                    }
+
+                    setTimeout(() => {
+                        const cleanUrl = window.location.origin + window.location.pathname;
+                        window.location.href = `${cleanUrl}?_v=${remoteVersion}&_t=${Date.now()}`;
+                    }, 1000);
+
+                    return true;
+                }
+            } catch (err) {
+                console.warn("檢查遠端版本失敗:", err);
+            }
+            return false;
+        };
+
+        // 🔄 一鍵同步入口 (支援先檢查版本、全市場行情秒級同步 + 個人雲端帳本雙向同步)
         const handleOneClickSync = async () => {
             if (!isAppUnlocked.value) {
                 if (confirm("🔒 需先綁定 Google 帳號以啟用戰情室完整功能，是否立即進行 Google 授權登入？")) {
@@ -1037,7 +1108,18 @@ createApp({
             }
 
             if (syncStatus.value.loading) return;
+
+            // 🌟 核心流程：先檢查並更新網頁，若有新版會先重整，重整後自動接續同步 DB
             syncStatus.value.loading = true;
+            syncStatus.value.message = '正在檢查系統版本...';
+            try {
+                const hasNewVersion = await checkRemoteVersionUpdate(true);
+                if (hasNewVersion) {
+                    syncStatus.value.message = '已發現新版本，即將載入...';
+                    return; // 終止本次同步，等待重載後以最新代碼自動接續執行
+                }
+            } catch (eVer) {}
+
             syncStatus.value.message = '正在同步全市場行情...';
 
             let snapInfo = null;
@@ -6213,16 +6295,20 @@ createApp({
             }
         };
 
-        // 智慧心跳監控與喚醒監聽
+        // 智慧心跳監控與喚醒監聽 (同時兼顧版本熱更新檢測)
         const initGoogleHeartbeat = () => {
             // 每 5 分鐘心跳檢查
-            setInterval(checkGoogleTokenFreshness, 5 * 60 * 1000);
+            setInterval(() => {
+                checkGoogleTokenFreshness();
+                checkRemoteVersionUpdate(false);
+            }, 5 * 60 * 1000);
 
             // 頁面待機切回前台時自動檢查
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
-                    console.log("📱 頁面切回前台，自動檢查 Google 連線狀態...");
+                    console.log("📱 頁面切回前台，自動檢查 Google 連線與系統版本狀態...");
                     checkGoogleTokenFreshness();
+                    checkRemoteVersionUpdate(false);
                 }
             });
         };
@@ -7019,6 +7105,17 @@ createApp({
             // 啟動開市日 15:00 / 21:30 雲端大腦同步主動提醒
             checkScheduledSyncReminders();
             setInterval(checkScheduledSyncReminders, 30000);
+
+            // 🌟 檢查重載前是否有待續的一鍵同步任務 (先更新網頁再接續同步 DB)
+            try {
+                if (sessionStorage.getItem('sentinel_auto_sync_after_reload') === 'true') {
+                    sessionStorage.removeItem('sentinel_auto_sync_after_reload');
+                    console.log("🔄 檢測到系統升級重載前的一鍵同步請求，以最新程式碼自動接續執行...");
+                    setTimeout(() => {
+                        handleOneClickSync();
+                    }, 1200);
+                }
+            } catch(e) {}
         });
 
         return {
