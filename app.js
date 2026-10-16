@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.01');
+        const appVersion = ref('v2.20261016.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -62,9 +62,11 @@ createApp({
             appLayout.value = isLandscape ? 'wide' : 'mobile';
             localStorage.setItem('sentinel_app_layout', appLayout.value);
 
-            // 2. 自動同步走勢圖版面
+            // 2. 自動同步走勢圖版面與預設天數 (直 預設顯示 20 日圖，橫 預設顯示 60 日圖)
             chartOrientation.value = isLandscape ? 'landscape' : 'portrait';
+            chartDaysCount.value = isLandscape ? 60 : 20;
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
+            localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
 
             // 3. 雙重延遲平滑重繪 (等待手機旋轉與 CSS transition 動畫完成)
             Vue.nextTick(() => {
@@ -72,7 +74,9 @@ createApp({
                     if (chartInstance && typeof chartInstance.resize === 'function') {
                         chartInstance.resize();
                     }
-                    if (showStockChartModal && showStockChartModal.value) {
+                    if (showStockChartModal && showStockChartModal.value && activeChartStock.value && activeChartStock.value.code) {
+                        renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
+                    } else if (showStockChartModal && showStockChartModal.value) {
                         resizeAllStockCharts();
                     }
                 };
@@ -1084,14 +1088,14 @@ createApp({
         // ==========================================
         const showStockChartModal = ref(false);
         const activeChartStock = ref({});
-        const chartDaysCount = ref(Number(localStorage.getItem('sentinel_chart_days')) || 40);
+        const chartDaysCount = ref(20);
         const subOscTab = ref('青紅燈'); // '青紅燈' | 'MTM' | 'RSI' | 'WR' | 'CLV'
         const isChartLoading = ref(false);
         
-        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 樞紐)，預設前三者開、樞紐可自主切換並支援本機記憶
-        const defaultKlineLayers = { ma: true, bollinger: true, cost: true, pivot: false };
+        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 均價)，預設 MA+布林開啟
+        const defaultKlineLayers = { ma: true, bollinger: true, cost: false, pivot: false };
         const savedLayersStr = localStorage.getItem('sentinel_kline_layers');
-        let initialLayers = defaultKlineLayers;
+        let initialLayers = { ...defaultKlineLayers };
         if (savedLayersStr) {
             try { initialLayers = { ...defaultKlineLayers, ...JSON.parse(savedLayersStr) }; } catch(e) {}
         }
@@ -1893,6 +1897,9 @@ createApp({
             if (!stock) return;
             activeChartStock.value = { ...stock };
             chartOrientation.value = appLayout.value === 'wide' ? 'landscape' : 'portrait';
+            // 直 預設顯示 20 日圖，橫 預設顯示 60 日圖
+            chartDaysCount.value = (chartOrientation.value === 'landscape') ? 60 : 20;
+            localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
             showStockChartModal.value = true;
             renderAllStockCharts(stock.code, chartDaysCount.value);
             // 雙重校準保險
@@ -2015,7 +2022,13 @@ createApp({
 
         const toggleChartOrientation = () => {
             chartOrientation.value = chartOrientation.value === 'portrait' ? 'landscape' : 'portrait';
+            // 直 預設顯示 20 日圖，橫 預設顯示 60 日圖
+            chartDaysCount.value = (chartOrientation.value === 'landscape') ? 60 : 20;
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
+            localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
+            if (activeChartStock.value && activeChartStock.value.code) {
+                renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
+            }
             Vue.nextTick(() => {
                 setTimeout(() => {
                     resizeAllStockCharts();
