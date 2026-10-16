@@ -1,32 +1,32 @@
 {
-  "run_time": "2026-10-16 01:35:35",
+  "run_time": "2026-10-16 14:03:12",
   "status": "READY",
-  "progress": "全流程清洗審計合格，最新 [20261015] 快照已就緒提供更新！",
+  "progress": "全流程清洗審計合格，最新 [20261016] 快照已就緒提供更新！",
   "missing_dates": [],
   "nodes": {
     "twse": {
-      "count": 1352,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "tpex": {
-      "count": 1006,
+      "count": 0,
       "elapsed": 0.0,
       "status": "OK"
     },
     "chip": {
-      "count": 2358,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "margin": {
-      "count": 2358,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "indicators": {
       "count": 2375,
-      "elapsed": 73.15,
+      "elapsed": 61.17,
       "status": "OK"
     }
   },
@@ -153,8 +153,28 @@
         "name": "國泰美國道瓊+U"
       },
       {
+        "code": "00683L",
+        "name": "期元大美元指正2"
+      },
+      {
+        "code": "00684R",
+        "name": "期元大美元指反1"
+      },
+      {
+        "code": "00685L",
+        "name": "群益臺灣加權正2"
+      },
+      {
+        "code": "00686R",
+        "name": "群益臺灣加權反1"
+      },
+      {
         "code": "00687C",
         "name": "國泰20年美債+櫃U"
+      },
+      {
+        "code": "00688L",
+        "name": "國泰20年美債正2"
       },
       {
         "code": "00707R",
@@ -195,31 +215,11 @@
       {
         "code": "2035",
         "name": "唐榮"
-      },
-      {
-        "code": "2073",
-        "name": "雄順"
-      },
-      {
-        "code": "2102",
-        "name": "泰豐"
-      },
-      {
-        "code": "2321",
-        "name": "東訊"
-      },
-      {
-        "code": "2348A",
-        "name": "海悅甲特"
-      },
-      {
-        "code": "2496",
-        "name": "卓越"
       }
     ]
   },
-  "target_date": "20261015",
-  "total_elapsed": 138.7,
+  "target_date": "20261016",
+  "total_elapsed": 136.71,
   "snapshot_size_kb": 455.8,
   "next_scheduled_run": "2026/10/16 (週五) 14:30",
   "next_scheduled_iso": "2026-10-16T14:30:00",
