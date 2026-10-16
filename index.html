@@ -2006,8 +2006,10 @@
                 <template v-else>
                     <!-- 圖 1 (主圖)：K線蠟燭圖 + MA/布林/成本 篩選開關與 3 Rows 動態看板 -->
                     <div :class="[
-                        theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        isKlinePinned ? (theme === 'dark' ? 'sticky top-0 z-20 shadow-xl shadow-black/60 border-indigo-500/50 backdrop-blur-md' : 'sticky top-0 z-20 shadow-xl shadow-slate-400/50 border-indigo-500 backdrop-blur-md') : ''
+                        theme === 'dark' ? 'bg-slate-900' : 'bg-white',
+                        isKlinePinned 
+                            ? (theme === 'dark' ? 'sticky top-0 z-20 border-indigo-500/60 backdrop-blur-md shadow-none' : 'sticky top-0 z-20 border-indigo-500 backdrop-blur-md shadow-none') 
+                            : (theme === 'dark' ? 'border-slate-800' : 'border-slate-200 shadow-sm')
                     ]" class="p-2.5 rounded-2xl border relative space-y-1.5 transition-all duration-200 overflow-hidden">
                         
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 -->
@@ -2292,6 +2294,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261016.04"></script>
+    <script src="app.js?v=2.20261016.05"></script>
 </body>
 </html>
