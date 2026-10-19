@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261016.11');
+        const appVersion = ref('v2.20261019.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1142,6 +1142,14 @@ createApp({
             } catch (err) {
                 console.error("行情快照同步失敗:", err);
                 showToast(`⚠️ 行情同步提醒: ${err.message}`, 4000);
+            }
+
+            try {
+                // 1.1 同步最新 60D 歷史技術指標時序包 (確保一鍵複製與走勢圖同步推移至最新開市日)
+                syncStatus.value.message = '正在同步歷史技術指標時序...';
+                await loadAllStockHistory(true);
+            } catch (errHist) {
+                console.warn("歷史時序同步提醒:", errHist);
             }
 
             // 2. 若有 Google 登入，同時執行個人帳本雙向同步
@@ -5192,21 +5200,157 @@ createApp({
             }, duration);
         };
 
-        const buildStock10DayReport = (stock) => {
+        const buildStock10DayReport = async (stock) => {
             if (!stock) return '';
             const sc = String(stock.code || '').trim().padStart(4, '0');
             const stock_name = stock.name || sc;
             const sh = Number(stock.shares) || 0;
             const cp = Number(stock.costPrice) || 0;
-            const cur_p = Number(stock.price) || 0;
+            let cur_p = Number(stock.price) || 0;
             const bk = stock.broker || '玉山證券';
-            const cur_d = String(stock.priceDate || '').replace(/\D/g, '') || '最新';
+            let cur_d = String(stock.priceDate || '').replace(/\D/g, '') || '最新';
+
+            let rows = [];
+            let isFromCloudHist = false;
+
+            // 🌟 1. 優先介接雲端 120 日全量歷史技術指標時序包 (由 GitHub Actions 每日自動維護)
+            try {
+                const histMap = await loadAllStockHistory();
+                const rawRows = (histMap && (histMap[sc] || histMap[sc.replace(/^0+/, '')] || histMap[stock.code])) || [];
+                if (rawRows && rawRows.length >= 10) {
+                    isFromCloudHist = true;
+                    rows = rawRows.map((r, i) => {
+                        const fb = Number(r[16]) || 0;
+                        const sb = Number(r[17]) || 0;
+                        const db = Number(r[18]) || 0;
+                        const mb = Number(r[19]) || 0;
+                        const prev_mb = i >= 1 ? (Number(rawRows[i - 1][19]) || 0) : mb;
+                        const m_inc = (r[20] !== undefined && r[20] !== null) ? Number(r[20]) : (mb - prev_mb);
+
+                        const mtm = Number(r[21]) || 0;
+                        const mtm_ma = Number(r[22]) || 0;
+                        const osc = Number(r[13]) || 0;
+                        const prev_osc = i >= 1 ? (Number(rawRows[i - 1][13]) || 0) : osc;
+                        const k = Number(r[14]) || 0;
+                        const prev_k = i >= 1 ? (Number(rawRows[i - 1][14]) || 0) : k;
+                        const d = Number(r[15]) || 0;
+                        const dif = Number(r[11]) || 0;
+                        const prev_dif = i >= 1 ? (Number(rawRows[i - 1][11]) || 0) : dif;
+                        const macd_s = Number(r[12]) || 0;
+
+                        return {
+                            date: String(r[0]),
+                            open: Number(r[1]) || 0,
+                            high: Number(r[2]) || 0,
+                            low: Number(r[3]) || 0,
+                            close: Number(r[4]) || 0,
+                            volume: Number(r[5]) || 0,
+                            MA5: Number(r[6]) || 0,
+                            MA10: Number(r[7]) || 0,
+                            BB_Mid: Number(r[8]) || 0,
+                            BB_U: Number(r[9]) || 0,
+                            BB_L: Number(r[10]) || 0,
+                            DIF: dif,
+                            MACD_S: macd_s,
+                            OSC: osc,
+                            K: k,
+                            D: d,
+                            foreign: fb,
+                            sitc: sb,
+                            dealers: db,
+                            margin_balance: mb,
+                            margin_increase: m_inc,
+                            MTM: mtm,
+                            MTM_MA: mtm_ma,
+                            RSI4: Number(r[23]) || 0,
+                            RSI12: Number(r[24]) || 0,
+                            WR3: Number(r[25]) || 0,
+                            WR50: Number(r[26]) || 0,
+                            Margin_Cost: Number(r[27]) || 0,
+                            Foreign_Cost: Number(r[28]) || 0,
+                            day_vwap: Number(r[29]) || 0,
+
+                            // 格式化輸出所需別名
+                            法人合計: fb + sb + db,
+                            融資增減: m_inc,
+                            融資餘額: mb,
+                            外資買賣超: fb,
+                            投信買賣超: sb,
+                            自營買賣超: db,
+                            成交量: Number(r[5]) || 0,
+                            開盤價: Number(r[1]) || 0,
+                            最高價: Number(r[2]) || 0,
+                            最低價: Number(r[3]) || 0,
+                            收盤價: Number(r[4]) || 0,
+                            交易日期: String(r[0]),
+
+                            // 6 燈
+                            P10_MTM_Cross: mtm > mtm_ma ? 1 : -1,
+                            P1_MACD_OSC: osc > prev_osc ? 1 : -1,
+                            P5_K_Trend: k > prev_k ? 1 : -1,
+                            P3_DIF_Trend: dif > prev_dif ? 1 : -1,
+                            P4_KD_Cross: k > d ? 1 : -1,
+                            P2_MACD_Cross: dif > macd_s ? 1 : -1
+                        };
+                    });
+                }
+            } catch (eHist) {
+                console.warn("載入雲端時序歷史失敗，嘗試本地降級:", eHist);
+            }
+
+            // 🛡️ 2. 降級備援：若無雲端歷史時序，降級查詢 SQLite 本地 stock_analysis 表
+            if (!isFromCloudHist && dbInstance) {
+                try {
+                    const aRes = dbInstance.exec("SELECT cache_data FROM stock_analysis WHERE stock_code = ?", [sc]);
+                    if (aRes.length > 0 && aRes[0].values.length > 0) {
+                        const analysisRaw = JSON.parse(aRes[0].values[0][0]);
+                        if (analysisRaw && typeof analysisRaw === 'object') {
+                            const sortedDates = Object.keys(analysisRaw).sort();
+                            rows = sortedDates.map(dStr => {
+                                const val = analysisRaw[dStr] || {};
+                                const p = val.price || {};
+                                const c = val.chip || {};
+                                const m = val.margin || {};
+                                return {
+                                    date: String(dStr).replace(/[-/]/g, ''),
+                                    open: Number(p.open) || 0,
+                                    high: Number(p.high) || 0,
+                                    low: Number(p.low) || 0,
+                                    close: Number(p.close) || 0,
+                                    volume: Math.floor(Number(val.volume) || 0),
+                                    foreign: Math.floor(Number(c.foreign_buy) || 0),
+                                    sitc: Math.floor(Number(c.sitc_buy) || 0),
+                                    dealers: Math.floor(Number(c.dealers_buy) || 0),
+                                    margin_balance: Math.floor(Number(m.margin_balance) || 0),
+                                    margin_increase: Math.floor(Number(m.margin_increase) || 0)
+                                };
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn("讀取 stock_analysis 失敗:", e);
+                }
+            }
+
+            // 若依然無足夠歷史數據，回傳等待提示
+            if (!rows || rows.length === 0) {
+                return `📋 【格式A】${sc} ${stock_name} (證券商: ${sh > 0 ? bk : '關注'})\n⏳ 歷史數據載入中或數據真空，無法計算軌跡。`;
+            }
+
+            // 🌟 3. 自動校準最新收盤價與最新交易日
+            const latest_p = rows[rows.length - 1];
+            if (cur_p <= 0 && latest_p.close > 0) {
+                cur_p = latest_p.close;
+            }
+            if (latest_p && latest_p.date) {
+                cur_d = latest_p.date;
+            }
 
             const profit = (cur_p - cp) * sh;
             const roi_pct = cp > 0 ? ((cur_p - cp) / cp) * 100 : 0.0;
             const roi_sign = roi_pct > 0 ? '+' : '';
 
-            // 1. 標頭庫存資訊區塊
+            // 標頭庫存資訊區塊
             const cur_d_clean = String(cur_d).replace(/[-/]/g, '');
             let header_text = `📋 【格式A】${sc} ${stock_name} (證券商: ${sh > 0 ? bk : '關注'})\n`;
             header_text += `📦 當前庫存與現況：\n`;
@@ -5219,165 +5363,141 @@ createApp({
             }
             header_text += `─────────────────────────────────────────────\n`;
 
-            let analysisRaw = null;
-            if (dbInstance) {
-                try {
-                    const aRes = dbInstance.exec("SELECT cache_data FROM stock_analysis WHERE stock_code = ?", [sc]);
-                    if (aRes.length > 0 && aRes[0].values.length > 0) {
-                        analysisRaw = JSON.parse(aRes[0].values[0][0]);
+            // 🌟 4. 若來自本地降級，才需重新在前端滾算各項技術指標
+            if (!isFromCloudHist) {
+                for (let i = 0; i < rows.length; i++) {
+                    // MA5
+                    const s5 = rows.slice(Math.max(0, i - 4), i + 1);
+                    const sum5 = s5.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                    rows[i].MA5 = sum5 / s5.length;
+
+                    // MA10
+                    const s10 = rows.slice(Math.max(0, i - 9), i + 1);
+                    const sum10 = s10.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                    rows[i].MA10 = sum10 / s10.length;
+
+                    // BB_Mid & BB_Std
+                    const s20 = rows.slice(Math.max(0, i - 19), i + 1);
+                    const sum20 = s20.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
+                    const mean20 = sum20 / s20.length;
+                    rows[i].BB_Mid = mean20;
+                    if (s20.length >= 2) {
+                        const variance = s20.reduce((acc, r) => acc + Math.pow(r.close - mean20, 2), 0) / (s20.length - 1);
+                        const std = Math.sqrt(variance);
+                        rows[i].BB_Std = std;
+                        rows[i].BB_U = mean20 + 2 * std;
+                        rows[i].BB_L = mean20 - 2 * std;
+                    } else {
+                        rows[i].BB_Std = 0;
+                        rows[i].BB_U = mean20;
+                        rows[i].BB_L = mean20;
                     }
-                } catch (e) {
-                    console.warn("讀取 stock_analysis 失敗:", e);
+                }
+
+                // KD (7日 RSV)
+                let kCur = 50.0, dCur = 50.0;
+                for (let i = 0; i < rows.length; i++) {
+                    const s7 = rows.slice(Math.max(0, i - 6), i + 1);
+                    const l7 = Math.min(...s7.map(r => r.low));
+                    const h7 = Math.max(...s7.map(r => r.high));
+                    const rsv = 100 * ((rows[i].close - l7) / ((h7 - l7) + 1e-5));
+                    kCur = (2/3) * kCur + (1/3) * rsv;
+                    dCur = (2/3) * dCur + (1/3) * kCur;
+                    rows[i].K = kCur;
+                    rows[i].D = dCur;
+                }
+
+                // MACD (EMA6, EMA9, DIF, MACD_S, OSC)
+                let ema6 = rows[0].close, ema9 = rows[0].close;
+                let macdS = 0;
+                for (let i = 0; i < rows.length; i++) {
+                    const c = rows[i].close;
+                    ema6 = i === 0 ? c : (c * (2/7) + ema6 * (5/7));
+                    ema9 = i === 0 ? c : (c * (2/10) + ema9 * (8/10));
+                    const dif = ema6 - ema9;
+                    macdS = i === 0 ? dif : (dif * (2/7) + macdS * (5/7));
+                    rows[i].DIF = dif;
+                    rows[i].MACD_S = macdS;
+                    rows[i].OSC = dif - macdS;
+                }
+
+                // MTM (3日 diff, MA2)
+                for (let i = 0; i < rows.length; i++) {
+                    rows[i].MTM = i >= 3 ? rows[i].close - rows[i - 3].close : 0;
+                    const sMtm = rows.slice(Math.max(0, i - 1), i + 1);
+                    rows[i].MTM_MA = sMtm.reduce((acc, r) => acc + r.MTM, 0) / sMtm.length;
+                }
+
+                // RSI4 & RSI12
+                let gain4 = 0, loss4 = 0, gain12 = 0, loss12 = 0;
+                for (let i = 0; i < rows.length; i++) {
+                    if (i === 0) {
+                        rows[i].RSI4 = 50.0;
+                        rows[i].RSI12 = 50.0;
+                    } else {
+                        const diff = rows[i].close - rows[i - 1].close;
+                        const u = Math.max(0, diff);
+                        const d = Math.abs(Math.min(0, diff));
+                        gain4 = u * (1/4) + gain4 * (3/4);
+                        loss4 = d * (1/4) + loss4 * (3/4);
+                        rows[i].RSI4 = (gain4 / (gain4 + loss4 + 1e-5)) * 100;
+
+                        gain12 = u * (1/12) + gain12 * (11/12);
+                        loss12 = d * (1/12) + loss12 * (11/12);
+                        rows[i].RSI12 = (gain12 / (gain12 + loss12 + 1e-5)) * 100;
+                    }
+                }
+
+                // WR3 & WR50 & 法人融資熱力燈
+                for (let i = 0; i < rows.length; i++) {
+                    const s3 = rows.slice(Math.max(0, i - 2), i + 1);
+                    const h3 = Math.max(...s3.map(r => r.high));
+                    const l3 = Math.min(...s3.map(r => r.low));
+                    rows[i].WR3 = -100 * ((h3 - rows[i].close) / ((h3 - l3) + 1e-5));
+
+                    const s50 = rows.slice(Math.max(0, i - 49), i + 1);
+                    const h50 = Math.max(...s50.map(r => r.high));
+                    const l50 = Math.min(...s50.map(r => r.low));
+                    rows[i].WR50 = -100 * ((h50 - rows[i].close) / ((h50 - l50) + 1e-5));
+
+                    rows[i].法人合計 = rows[i].foreign + rows[i].sitc + rows[i].dealers;
+                    rows[i].融資增減 = i >= 1 ? rows[i].margin_balance - rows[i - 1].margin_balance : 0;
+                    rows[i].融資餘額 = rows[i].margin_balance;
+                    rows[i].外資買賣超 = rows[i].foreign;
+                    rows[i].投信買賣超 = rows[i].sitc;
+                    rows[i].自營買賣超 = rows[i].dealers;
+                    rows[i].成交量 = rows[i].volume;
+                    rows[i].開盤價 = rows[i].open;
+                    rows[i].最高價 = rows[i].high;
+                    rows[i].最低價 = rows[i].low;
+                    rows[i].收盤價 = rows[i].close;
+                    rows[i].交易日期 = rows[i].date;
+
+                    // 6 燈
+                    rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
+                    rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
+                    rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
+                    rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
+                    rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
+                    rows[i].P2_MACD_Cross = rows[i].DIF > rows[i].MACD_S ? 1 : -1;
                 }
             }
 
-            if (!analysisRaw || typeof analysisRaw !== 'object' || Object.keys(analysisRaw).length === 0) {
-                const fallback_msg = header_text + "⏳ 歷史數據載入中或數據真空，無法計算軌跡。";
-                return fallback_msg;
-            }
-
-            const sortedDates = Object.keys(analysisRaw).sort();
-            const rows = sortedDates.map(dStr => {
-                const val = analysisRaw[dStr] || {};
-                const p = val.price || {};
-                const c = val.chip || {};
-                const m = val.margin || {};
-                return {
-                    date: String(dStr).replace(/[-/]/g, ''),
-                    open: Number(p.open) || 0,
-                    high: Number(p.high) || 0,
-                    low: Number(p.low) || 0,
-                    close: Number(p.close) || 0,
-                    volume: Math.floor(Number(val.volume) || 0),
-                    foreign: Math.floor(Number(c.foreign_buy) || 0),
-                    sitc: Math.floor(Number(c.sitc_buy) || 0),
-                    dealers: Math.floor(Number(c.dealers_buy) || 0),
-                    margin_balance: Math.floor(Number(m.margin_balance) || 0),
-                    margin_increase: Math.floor(Number(m.margin_increase) || 0)
-                };
-            });
-
-            if (rows.length === 0) {
-                const fallback_msg = header_text + "⏳ 無足夠歷史 K 線數據。";
-                return fallback_msg;
-            }
-
-            // 滾算技術指標
-            for (let i = 0; i < rows.length; i++) {
-                // MA5
-                const s5 = rows.slice(Math.max(0, i - 4), i + 1);
-                const sum5 = s5.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
-                rows[i].MA5 = sum5 / s5.length;
-
-                // MA10
-                const s10 = rows.slice(Math.max(0, i - 9), i + 1);
-                const sum10 = s10.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
-                rows[i].MA10 = sum10 / s10.length;
-
-                // BB_Mid & BB_Std (Sample standard deviation with N-1 when N>=2)
-                const s20 = rows.slice(Math.max(0, i - 19), i + 1);
-                const sum20 = s20.reduce((acc, r) => acc + Math.round(r.close * 100), 0) / 100;
-                const mean20 = sum20 / s20.length;
-                rows[i].BB_Mid = mean20;
-                if (s20.length >= 2) {
-                    const variance = s20.reduce((acc, r) => acc + Math.pow(r.close - mean20, 2), 0) / (s20.length - 1);
-                    const std = Math.sqrt(variance);
-                    rows[i].BB_Std = std;
-                    rows[i].BB_U = mean20 + 2 * std;
-                    rows[i].BB_L = mean20 - 2 * std;
-                } else {
-                    rows[i].BB_Std = 0;
-                    rows[i].BB_U = mean20;
-                    rows[i].BB_L = mean20;
-                }
-            }
-
-            // KD (7日 RSV)
-            let kCur = 50.0, dCur = 50.0;
-            for (let i = 0; i < rows.length; i++) {
-                const s7 = rows.slice(Math.max(0, i - 6), i + 1);
-                const l7 = Math.min(...s7.map(r => r.low));
-                const h7 = Math.max(...s7.map(r => r.high));
-                const rsv = 100 * ((rows[i].close - l7) / ((h7 - l7) + 1e-5));
-                kCur = (2/3) * kCur + (1/3) * rsv;
-                dCur = (2/3) * dCur + (1/3) * kCur;
-                rows[i].K = kCur;
-                rows[i].D = dCur;
-            }
-
-            // MACD (EMA6, EMA9, DIF, MACD_S, OSC)
-            let ema6 = rows[0].close, ema9 = rows[0].close;
-            let macdS = 0;
-            for (let i = 0; i < rows.length; i++) {
-                const c = rows[i].close;
-                ema6 = i === 0 ? c : (c * (2/7) + ema6 * (5/7));
-                ema9 = i === 0 ? c : (c * (2/10) + ema9 * (8/10));
-                const dif = ema6 - ema9;
-                macdS = i === 0 ? dif : (dif * (2/7) + macdS * (5/7));
-                rows[i].DIF = dif;
-                rows[i].MACD_S = macdS;
-                rows[i].OSC = dif - macdS;
-            }
-
-            // MTM (3日 diff, MA2)
-            for (let i = 0; i < rows.length; i++) {
-                rows[i].MTM = i >= 3 ? rows[i].close - rows[i - 3].close : 0;
-                const sMtm = rows.slice(Math.max(0, i - 1), i + 1);
-                rows[i].MTM_MA = sMtm.reduce((acc, r) => acc + r.MTM, 0) / sMtm.length;
-            }
-
-            // RSI4 & RSI12
-            let gain4 = 0, loss4 = 0, gain12 = 0, loss12 = 0;
-            for (let i = 0; i < rows.length; i++) {
-                if (i === 0) {
-                    rows[i].RSI4 = 50.0;
-                    rows[i].RSI12 = 50.0;
-                } else {
-                    const diff = rows[i].close - rows[i - 1].close;
-                    const u = Math.max(0, diff);
-                    const d = Math.abs(Math.min(0, diff));
-                    gain4 = u * (1/4) + gain4 * (3/4);
-                    loss4 = d * (1/4) + loss4 * (3/4);
-                    rows[i].RSI4 = (gain4 / (gain4 + loss4 + 1e-5)) * 100;
-
-                    gain12 = u * (1/12) + gain12 * (11/12);
-                    loss12 = d * (1/12) + loss12 * (11/12);
-                    rows[i].RSI12 = (gain12 / (gain12 + loss12 + 1e-5)) * 100;
-                }
-            }
-
-            // WR3 & WR50 & 法人融資熱力燈
-            for (let i = 0; i < rows.length; i++) {
-                const s3 = rows.slice(Math.max(0, i - 2), i + 1);
-                const h3 = Math.max(...s3.map(r => r.high));
-                const l3 = Math.min(...s3.map(r => r.low));
-                rows[i].WR3 = -100 * ((h3 - rows[i].close) / ((h3 - l3) + 1e-5));
-
-                const s50 = rows.slice(Math.max(0, i - 49), i + 1);
-                const h50 = Math.max(...s50.map(r => r.high));
-                const l50 = Math.min(...s50.map(r => r.low));
-                rows[i].WR50 = -100 * ((h50 - rows[i].close) / ((h50 - l50) + 1e-5));
-
-                rows[i].法人合計 = rows[i].foreign + rows[i].sitc + rows[i].dealers;
-                rows[i].融資增減 = i >= 1 ? rows[i].margin_balance - rows[i - 1].margin_balance : 0;
-                rows[i].融資餘額 = rows[i].margin_balance;
-                rows[i].外資買賣超 = rows[i].foreign;
-                rows[i].投信買賣超 = rows[i].sitc;
-                rows[i].自營買賣超 = rows[i].dealers;
-                rows[i].成交量 = rows[i].volume;
-                rows[i].開盤價 = rows[i].open;
-                rows[i].最高價 = rows[i].high;
-                rows[i].最低價 = rows[i].low;
-                rows[i].收盤價 = rows[i].close;
-                rows[i].交易日期 = rows[i].date;
-
-                // 6 燈
-                rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
-                rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
-                rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
-                rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
-                rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
-                rows[i].P2_MACD_Cross = rows[i].DIF > rows[i].MACD_S ? 1 : -1;
+            // 🌟 5. 同步將雲端重組的最新分析結構回填至本地 SQLite stock_analysis，實現持久化保鮮
+            if (isFromCloudHist && dbInstance) {
+                try {
+                    const cacheObj = {};
+                    rows.forEach(r => {
+                        cacheObj[r.date] = {
+                            price: { open: r.open, high: r.high, low: r.low, close: r.close },
+                            volume: r.volume,
+                            chip: { foreign_buy: r.foreign, sitc_buy: r.sitc, dealers_buy: r.dealers },
+                            margin: { margin_balance: r.margin_balance, margin_increase: r.margin_increase }
+                        };
+                    });
+                    dbInstance.run("INSERT OR REPLACE INTO stock_analysis (stock_code, cache_data) VALUES (?, ?)", [sc, JSON.stringify(cacheObj)]);
+                    saveDbToIndexedDb().catch(() => {});
+                } catch (eSave) {}
             }
 
             // 2. 策略特徵指標計算 (即時算 - 100% 精確對齊電腦端)
@@ -6049,7 +6169,8 @@ createApp({
         const copyStock10DayReport = async (stock) => {
             if (!stock) return;
             try {
-                const reportText = buildStock10DayReport(stock);
+                showToast(`⏳ 正在為【${stock.code} ${stock.name || ''}】重組最新戰報...`, 1500);
+                const reportText = await buildStock10DayReport(stock);
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(reportText);
                 } else {
