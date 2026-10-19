@@ -2310,10 +2310,27 @@
             </button>
         </nav>
 
+        <!-- 🛡️ 全域同步中防呆遮罩 (阻絕所有背景誤觸，展示即時同步動態) -->
+        <div v-if="syncStatus.loading" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950/75 backdrop-blur-sm select-none transition-all">
+            <div class="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-6 max-w-xs w-[85%] flex flex-col items-center space-y-4 shadow-2xl text-center">
+                <div class="relative w-14 h-14 flex items-center justify-center">
+                    <div class="absolute inset-0 rounded-full border-4 border-sky-500/20 border-t-sky-500 animate-spin"></div>
+                    <i class="fa-solid fa-arrows-rotate text-sky-400 text-xl animate-pulse"></i>
+                </div>
+                <div class="space-y-1.5">
+                    <h3 class="text-white font-bold text-sm tracking-wide">戰情室資料同步中</h3>
+                    <p class="text-sky-300 text-xs font-medium animate-pulse">{{ syncStatus.message || '正在處理同步任務，請稍候...' }}</p>
+                </div>
+                <div class="text-[10px] text-slate-400 border-t border-slate-800 pt-3 w-full">
+                    🛡️ 為維護資料完整性，同步期間暫停介面操作
+                </div>
+            </div>
+        </div>
+
         </div> <!-- 結束自適配主內容容器 Wrapper -->
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261019.01"></script>
+    <script src="app.js?v=2.20261019.02"></script>
 </body>
 </html>

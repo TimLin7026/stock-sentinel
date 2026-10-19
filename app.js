@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261019.01');
+        const appVersion = ref('v2.20261019.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6168,25 +6168,50 @@ createApp({
 
         const copyStock10DayReport = async (stock) => {
             if (!stock) return;
+            if (syncStatus.value && syncStatus.value.loading) {
+                showToast("⏳ 系統正在同步最新行情與帳本中，請稍候同步完成！", 2500);
+                return;
+            }
             try {
                 showToast(`⏳ 正在為【${stock.code} ${stock.name || ''}】重組最新戰報...`, 1500);
                 const reportText = await buildStock10DayReport(stock);
+                
+                let copied = false;
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(reportText);
-                } else {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = reportText;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
+                    try {
+                        await navigator.clipboard.writeText(reportText);
+                        copied = true;
+                    } catch (eClip) {
+                        console.warn("Clipboard API 受瀏覽器安全焦點限制，自動切換至相容備援機制:", eClip);
+                    }
                 }
-                showToast(`📋 已成功複製【${stock.code} ${stock.name}】近 10 日戰報至剪貼簿！`);
+                
+                if (!copied) {
+                    try {
+                        const textarea = document.createElement('textarea');
+                        textarea.value = reportText;
+                        textarea.style.position = 'fixed';
+                        textarea.style.left = '-9999px';
+                        textarea.style.top = '0';
+                        textarea.style.opacity = '0';
+                        document.body.appendChild(textarea);
+                        textarea.focus();
+                        textarea.select();
+                        copied = document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                    } catch (eExec) {
+                        console.warn("execCommand 備援亦受限:", eExec);
+                    }
+                }
+
+                if (copied) {
+                    showToast(`📋 已成功複製【${stock.code} ${stock.name}】近 10 日戰報至剪貼簿！`);
+                } else {
+                    showToast(`⚠️ 瀏覽器剪貼簿權限受限，請長按文字進行複製`, 3500);
+                }
             } catch (err) {
                 console.error("複製戰報失敗:", err);
-                alert(`❌ 複製失敗：${err.message}`);
+                showToast(`❌ 複製失敗：${err.message}`, 3500);
             }
         };
 
