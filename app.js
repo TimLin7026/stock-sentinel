@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261019.05');
+        const appVersion = ref('v2.20261019.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1289,13 +1289,24 @@ createApp({
             rsi12: '--',
             wr3: '--',
             wr50: '--',
-            heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0 }
+            heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0 },
+            arrows: {}
         });
 
         let stockHistoryCache = null; // 記憶體歷史快取字典
         const chartInstances = {}; // ECharts 實例字典
 
-        // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA)
+        // 計算相對於前一日數值的漲跌趨勢直箭頭 (當日>前日: ↑, 當日<前日: ↓, 相等: =)
+        const calcTrendArrow = (curr, prev) => {
+            if (curr === undefined || curr === null || curr === '--' || prev === undefined || prev === null || prev === '--') return '';
+            const c = Number(curr), p = Number(prev);
+            if (isNaN(c) || isNaN(p)) return '';
+            if (c > p) return '↑';
+            if (c < p) return '↓';
+            return '=';
+        };
+
+        // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA 與各指標漲跌直箭頭)
         const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
             // 計算 6 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平)
@@ -1327,6 +1338,50 @@ createApp({
             const pivotStr = pivotVal.toFixed(2);
             const vwapStr = vwapVal.toFixed(2);
             const actualVma = vmaObj || r._vma || null;
+
+            // 計算前一日籌碼與均價數值 (用於箭頭比對)
+            const prevVma = prevR ? (prevR._vma || null) : null;
+            const prevH = prevR ? Number(prevR[2]) : NaN;
+            const prevL = prevR ? Number(prevR[3]) : NaN;
+            const prevC = prevR ? Number(prevR[4]) : NaN;
+            const prevClvDiff = (!isNaN(prevH) && !isNaN(prevL)) ? (prevH - prevL) : 0;
+            const prevClvVal = prevClvDiff > 0 ? ((2 * prevC - prevH - prevL) / prevClvDiff) : 0;
+            const prevPivotVal = prevR ? (prevH + prevL + prevC) / 3 : NaN;
+            const prevVwapVal = prevR ? ((prevR[29] !== undefined && prevR[29] !== null) ? Number(prevR[29]) : (prevH + prevL + prevC) / 3) : NaN;
+
+            const arrows = {
+                ma5: calcTrendArrow(r[6], prevR ? prevR[6] : null),
+                ma10: calcTrendArrow(r[7], prevR ? prevR[7] : null),
+                bbMid: calcTrendArrow(r[8], prevR ? prevR[8] : null),
+                bbU: calcTrendArrow(r[9], prevR ? prevR[9] : null),
+                bbL: calcTrendArrow(r[10], prevR ? prevR[10] : null),
+                marginCost: calcTrendArrow(r[27], prevR ? prevR[27] : null),
+                foreignCost: calcTrendArrow(r[28], prevR ? prevR[28] : null),
+                pivot: calcTrendArrow(pivotVal, prevPivotVal),
+                vwap: calcTrendArrow(vwapVal, prevVwapVal),
+                vma5: calcTrendArrow(actualVma ? actualVma.vma5 : null, prevVma ? prevVma.vma5 : null),
+                vma10: calcTrendArrow(actualVma ? actualVma.vma10 : null, prevVma ? prevVma.vma10 : null),
+                vma20: calcTrendArrow(actualVma ? actualVma.vma20 : null, prevVma ? prevVma.vma20 : null),
+                vma60: calcTrendArrow(actualVma ? actualVma.vma60 : null, prevVma ? prevVma.vma60 : null),
+                vma120: calcTrendArrow(actualVma ? actualVma.vma120 : null, prevVma ? prevVma.vma120 : null),
+                dif: calcTrendArrow(r[11], prevR ? prevR[11] : null),
+                macdS: calcTrendArrow(r[12], prevR ? prevR[12] : null),
+                osc: calcTrendArrow(r[13], prevR ? prevR[13] : null),
+                kdK: calcTrendArrow(r[14], prevR ? prevR[14] : null),
+                kdD: calcTrendArrow(r[15], prevR ? prevR[15] : null),
+                fb: calcTrendArrow(r[16], prevR ? prevR[16] : null),
+                sb: calcTrendArrow(r[17], prevR ? prevR[17] : null),
+                db: calcTrendArrow(r[18], prevR ? prevR[18] : null),
+                vol: calcTrendArrow(r[5], prevR ? prevR[5] : null),
+                marginBal: calcTrendArrow(r[19], prevR ? prevR[19] : null),
+                mtm: calcTrendArrow(r[21], prevR ? prevR[21] : null),
+                mtmMa: calcTrendArrow(r[22], prevR ? prevR[22] : null),
+                rsi4: calcTrendArrow(r[23], prevR ? prevR[23] : null),
+                rsi12: calcTrendArrow(r[24], prevR ? prevR[24] : null),
+                wr3: calcTrendArrow(r[25], prevR ? prevR[25] : null),
+                wr50: calcTrendArrow(r[26], prevR ? prevR[26] : null),
+                clv: calcTrendArrow(clvVal, prevClvVal)
+            };
 
             crosshairData.value = {
                 date: String(r[0]),
@@ -1374,7 +1429,8 @@ createApp({
                     dif: difVal,
                     kd: kdVal,
                     macd: macdVal
-                }
+                },
+                arrows: arrows
             };
         };
 
