@@ -823,7 +823,22 @@
                                 </div>
                             </div>
 
-                            <!-- 建議買入 / 賣出區間 (對齊地端卡片格式) -->
+                            <!-- 6 燈技術指標燈號膠囊 (青紅燈移至現價正下方，100% 對齊電腦端) -->
+                            <div class="flex items-center space-x-1.5 mb-1.5 w-full">
+                                <span class="text-[11px] font-bold shrink-0 flex items-center justify-center">
+                                    {{ stock.isIndicatorFresh ? '✅' : '⚠️' }}
+                                </span>
+                                <div class="grid grid-cols-6 gap-1 flex-1">
+                                    <span v-for="tag in stock.indicatorTags" :key="tag.text" 
+                                          :style="tag.bgStyle"
+                                          :title="tag.tooltip || tag.text"
+                                          class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center font-bold transition-all">
+                                        {{ tag.text }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 建議買入 / 賣出區間 (移至青紅燈下方) -->
                             <div :class="theme === 'dark' ? 'bg-slate-950/40 border-slate-800/50 text-slate-300 backdrop-blur-[2px]' : 'bg-white/60 border-slate-200/80 text-slate-700 backdrop-blur-[2px]'" class="p-2 rounded-xl border text-[11px] flex justify-between items-center mb-1.5 font-mono">
                                 <div class="truncate mr-1">
                                     <span class="text-sky-600 dark:text-sky-400 font-bold">{{ stock.isReportFresh ? '✅' : '⚠️' }} 建議：</span>
@@ -841,18 +856,34 @@
                                 </div>
                             </div>
 
-                            <!-- 6 燈技術指標燈號膠囊 (左側時效標籤 + 6 欄技術指標膠囊，100% 對齊電腦端) -->
-                            <div class="flex items-center space-x-1.5 pt-1.5 w-full">
-                                <span class="text-[11px] font-bold shrink-0 flex items-center justify-center">
-                                    {{ stock.isIndicatorFresh ? '✅' : '⚠️' }}
-                                </span>
-                                <div class="grid grid-cols-6 gap-1 flex-1">
-                                    <span v-for="tag in stock.indicatorTags" :key="tag.text" 
-                                          :style="tag.bgStyle"
-                                          :title="tag.tooltip || tag.text"
-                                          class="text-[10px] py-1 text-center rounded-lg shadow-sm font-mono tracking-tighter truncate flex items-center justify-center font-bold transition-all">
-                                        {{ tag.text }}
-                                    </span>
+                            <!-- 戰報短評總結 (移出至常駐區：資訊日期與時效燈號 + [戰報] 與 [匯入] 按鈕) -->
+                            <div class="mb-1">
+                                <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center justify-between">
+                                    <div class="flex items-center truncate mr-1">
+                                        <span class="mr-1 text-xs shrink-0">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
+                                        <span class="mr-1.5 shrink-0">📖</span><span class="truncate">短評 ({{ stock.reportDate || '最新' }})</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1.5 shrink-0">
+                                        <!-- 📄 查看最新戰報完整內容按鈕 -->
+                                        <button @click.stop="openFullReportModal(stock)" 
+                                                :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
+                                                class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
+                                                title="查看最新完整戰情報告">
+                                            <i class="fa-solid fa-file-lines text-[10px]"></i>
+                                            <span>戰報</span>
+                                        </button>
+                                        <!-- 🧠 單一入口：匯入戰報小按鈕 -->
+                                        <button @click.stop="openImportReportModal(stock)" 
+                                                :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
+                                                class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
+                                                title="匯入戰情報告">
+                                            <i class="fa-solid fa-brain text-[10px]"></i>
+                                            <span>匯入</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div :class="theme === 'dark' ? 'bg-slate-900/80 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
+                                    {{ stock.summaryText || '暫無策略總結，請於 PC 端進行全量掃描分析。' }}
                                 </div>
                             </div>
 
@@ -866,38 +897,7 @@
                         <transition name="card-expand">
                             <div v-if="isExpanded(stock.uid)" :class="theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'" class="stock-detail-body px-3.5 py-3 border-t space-y-3 text-xs">
                                 
-                                <!-- 1. 戰報戰情總結 (置頂顯示：資訊日期與時效燈號 + [戰報] 與 [匯入] 按鈕) -->
-                                <div>
-                                    <div :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold mb-1 flex items-center justify-between">
-                                        <div class="flex items-center truncate mr-1">
-                                            <span class="mr-1 text-xs shrink-0">{{ stock.isReportFresh ? '✅' : '⚠️' }}</span>
-                                            <span class="mr-1.5 shrink-0">📖</span><span class="truncate">短評 ({{ stock.reportDate || '最新' }})</span>
-                                        </div>
-                                        <div class="flex items-center space-x-1.5 shrink-0">
-                                            <!-- 📄 查看最新戰報完整內容按鈕 -->
-                                            <button @click.stop="openFullReportModal(stock)" 
-                                                    :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
-                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
-                                                    title="查看最新完整戰情報告">
-                                                <i class="fa-solid fa-file-lines text-[10px]"></i>
-                                                <span>戰報</span>
-                                            </button>
-                                            <!-- 🧠 單一入口：匯入戰報小按鈕 -->
-                                            <button @click.stop="openImportReportModal(stock)" 
-                                                    :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-900/50' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
-                                                    class="px-2 py-0.5 rounded-lg text-[10px] font-bold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap" 
-                                                    title="匯入戰情報告">
-                                                <i class="fa-solid fa-brain text-[10px]"></i>
-                                                <span>匯入</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
-                                        {{ stock.summaryText || '暫無策略總結，請於 PC 端進行全量掃描分析。' }}
-                                    </div>
-                                </div>
-
-                                <!-- 2. 快捷關注設置欄 (▲ 關注買 / ▼ 關注賣 / 取消) -->
+                                <!-- 1. 快捷關注設置欄 (▲ 關注買 / ▼ 關注賣 / 取消) -->
                                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center justify-between p-2 rounded-xl border">
                                     <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'" class="text-[11px] font-bold">特別關注標記：</span>
                                     <div class="flex space-x-1.5">
@@ -921,30 +921,8 @@
                                     </div>
                                 </div>
 
-                                <!-- 3. 🎯 策略特徵指標 ── 100% 結構化對齊地端截圖 (顯示資訊日期與時效燈號) -->
-                                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-3 rounded-2xl border space-y-2">
-                                    <div :class="theme === 'dark' ? 'text-rose-400 border-slate-800' : 'text-rose-600 border-slate-100'" class="text-xs font-bold flex items-center border-b pb-1.5">
-                                        <span class="mr-1 text-xs">{{ stock.isStrategyFresh ? '✅' : '⚠️' }}</span>
-                                        <span class="mr-1.5 text-sm">🎯</span>策略特徵指標 ({{ stock.strategyDate || '最新交易日' }})：
-                                    </div>
-                                    
-                                    <div class="space-y-1.5 text-[11px] leading-relaxed font-mono">
-                                        <div v-for="feat in (stock.strategyFeatures || defaultFeatures)" :key="feat.name" class="flex items-start">
-                                            <span class="mr-1 text-slate-400">-</span>
-                                            <!-- 地端對齊狀態燈號 (🟢 偏多/強勢 / 🔴 偏空/弱勢 / ⚪ 整理/平穩 / 🟡 背離警示) -->
-                                            <span class="mr-1.5 text-xs leading-none">{{ feat.emoji || '⚪' }}</span>
-                                            <div class="flex-1" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
-                                                <b :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-900'">{{ feat.name }}：</b>{{ feat.desc }}
-                                                <div v-if="feat.subLines && feat.subLines.length" class="pl-3 text-[10px] text-slate-400 space-y-0.5 mt-0.5">
-                                                    <div v-for="sub in feat.subLines" :key="sub">↳ {{ sub }}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 底部操作工具列 (對齊地端：🗑️移除個股 + 🔍查交易 + ➕錄入交易) -->
-                                <div :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'" class="pt-1 flex space-x-2 items-center border-t">
+                                <!-- 2. 底部操作工具列 (移動至特別關注與策略特徵中間：🗑️移除個股 + 🔍查交易 + ➕錄入交易) -->
+                                <div class="flex space-x-2 items-center">
                                     <button @click.stop="deleteStockCard(stock)" 
                                             :disabled="Number(stock.shares || 0) > 0"
                                             :title="Number(stock.shares || 0) > 0 ? `尚有實質持股 (${formatNumber(stock.shares)} 股)，無法移除個股` : '從戰情室名冊中移除此個股'"
@@ -966,6 +944,28 @@
                                     <button @click.stop="openTradeModal(stock)" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center shadow transition active:scale-95">
                                         <i class="fa-solid fa-plus mr-1"></i>錄入交易
                                     </button>
+                                </div>
+
+                                <!-- 3. 🎯 策略特徵指標 ── 100% 結構化對齊地端截圖 (顯示資訊日期與時效燈號) -->
+                                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-3 rounded-2xl border space-y-2">
+                                    <div :class="theme === 'dark' ? 'text-rose-400 border-slate-800' : 'text-rose-600 border-slate-100'" class="text-xs font-bold flex items-center border-b pb-1.5">
+                                        <span class="mr-1 text-xs">{{ stock.isStrategyFresh ? '✅' : '⚠️' }}</span>
+                                        <span class="mr-1.5 text-sm">🎯</span>策略特徵指標 ({{ stock.strategyDate || '最新交易日' }})：
+                                    </div>
+                                    
+                                    <div class="space-y-1.5 text-[11px] leading-relaxed font-mono">
+                                        <div v-for="feat in (stock.strategyFeatures || defaultFeatures)" :key="feat.name" class="flex items-start">
+                                            <span class="mr-1 text-slate-400">-</span>
+                                            <!-- 地端對齊狀態燈號 (🟢 偏多/強勢 / 🔴 偏空/弱勢 / ⚪ 整理/平穩 / 🟡 背離警示) -->
+                                            <span class="mr-1.5 text-xs leading-none">{{ feat.emoji || '⚪' }}</span>
+                                            <div class="flex-1" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
+                                                <b :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-900'">{{ feat.name }}：</b>{{ feat.desc }}
+                                                <div v-if="feat.subLines && feat.subLines.length" class="pl-3 text-[10px] text-slate-400 space-y-0.5 mt-0.5">
+                                                    <div v-for="sub in feat.subLines" :key="sub">↳ {{ sub }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </transition>
