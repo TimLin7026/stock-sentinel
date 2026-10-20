@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-20 16:51:35",
+  "run_time": "2026-10-20 19:54:26",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261020] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,7 +15,7 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2208,
+      "count": 2211,
       "status": "OK"
     },
     "margin": {
@@ -25,7 +25,7 @@
     },
     "indicators": {
       "count": 2377,
-      "elapsed": 80.05,
+      "elapsed": 74.52,
       "status": "OK"
     }
   },
@@ -140,10 +140,6 @@
         "name": "富邦上証+R"
       },
       {
-        "code": "00636K",
-        "name": "國泰中國A50+U"
-      },
-      {
         "code": "00643K",
         "name": "群益深証中小+R"
       },
@@ -214,12 +210,16 @@
       {
         "code": "1213",
         "name": "大飲"
+      },
+      {
+        "code": "1423",
+        "name": "利華"
       }
     ]
   },
   "target_date": "20261020",
-  "total_elapsed": 159.51,
-  "snapshot_size_kb": 448.8,
+  "total_elapsed": 167.27,
+  "snapshot_size_kb": 448.7,
   "next_scheduled_run": "2026/10/20 (週二) 21:00",
   "next_scheduled_iso": "2026-10-20T21:00:00",
   "schedule_times": [
