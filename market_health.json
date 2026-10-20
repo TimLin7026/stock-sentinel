@@ -1,32 +1,32 @@
 {
-  "run_time": "2026-10-20 02:59:23",
+  "run_time": "2026-10-20 14:03:14",
   "status": "READY",
-  "progress": "全流程清洗審計合格，最新 [20261019] 快照已就緒提供更新！",
+  "progress": "全流程清洗審計合格，最新 [20261020] 快照已就緒提供更新！",
   "missing_dates": [],
   "nodes": {
     "twse": {
-      "count": 1354,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "tpex": {
-      "count": 1010,
+      "count": 0,
       "elapsed": 0.0,
       "status": "OK"
     },
     "chip": {
-      "count": 2364,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "margin": {
-      "count": 2364,
+      "count": 5,
       "elapsed": 0.0,
       "status": "OK"
     },
     "indicators": {
       "count": 2375,
-      "elapsed": 77.06,
+      "elapsed": 58.05,
       "status": "OK"
     }
   },
@@ -189,37 +189,37 @@
         "name": "富邦歐洲銀行債"
       },
       {
+        "code": "00983A",
+        "name": "主動中信ARK創新"
+      },
+      {
+        "code": "00983D",
+        "name": "主動富邦複合收益"
+      },
+      {
+        "code": "00984A",
+        "name": "主動安聯台灣高息"
+      },
+      {
+        "code": "00984D",
+        "name": "主動聯博全球非投"
+      },
+      {
+        "code": "00985A",
+        "name": "主動野村台灣50"
+      },
+      {
         "code": "1101B",
         "name": "台泥乙特"
       },
       {
         "code": "1213",
         "name": "大飲"
-      },
-      {
-        "code": "1295",
-        "name": "生合"
-      },
-      {
-        "code": "1312A",
-        "name": "國喬特"
-      },
-      {
-        "code": "1324",
-        "name": "地球"
-      },
-      {
-        "code": "1471",
-        "name": "首利"
-      },
-      {
-        "code": "1475",
-        "name": "業旺"
       }
     ]
   },
-  "target_date": "20261019",
-  "total_elapsed": 147.45,
+  "target_date": "20261020",
+  "total_elapsed": 123.64,
   "snapshot_size_kb": 460.4,
   "next_scheduled_run": "2026/10/20 (週二) 14:30",
   "next_scheduled_iso": "2026-10-20T14:30:00",
