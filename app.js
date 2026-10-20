@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261019.06');
+        const appVersion = ref('v2.20261020.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -513,6 +513,16 @@ createApp({
             const curFp = getLocalDbFingerprint();
             if (curFp) {
                 localStorage.setItem('sentinel_last_sync_fingerprint', curFp);
+            }
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            localStorage.setItem('sentinel_last_sync_time', nowStr);
+            if (cloudDbStats.value && cloudDbStats.value.lastModified && cloudDbStats.value.lastModified !== '雲端尚無資料庫主檔') {
+                localStorage.setItem('sentinel_last_synced_cloud_mtime', cloudDbStats.value.lastModified);
+            }
+            if (cloudDbStats.value && cloudDbStats.value.rawModifiedTime) {
+                localStorage.setItem('sentinel_last_synced_cloud_raw_mtime', cloudDbStats.value.rawModifiedTime);
             }
             hasUnsyncedChanges.value = false;
         };
@@ -6295,11 +6305,8 @@ createApp({
                     googleUser.value.isLoggedIn = true;
                     console.log(`🟢 Google Token (${curEmail}) 靜默刷新成功！`);
 
-                    // 重新查詢雲端最新狀態
+                    // 重新查詢雲端最新狀態（將自動檢測雲端是否有新資料庫並觸發防呆同步）
                     await fetchCloudDbStats();
-
-                    // 🌟 方案 B 核心：Google 觸發重連完成時，一併強制 refresh 網頁！
-                    forceReloadApp('Google 帳號重連完成');
                 }
             });
 
@@ -6583,6 +6590,7 @@ createApp({
                     const targetFile = searchData.files[0];
                     cloudDbStats.value.fileId = targetFile.id;
                     cloudDbStats.value.sizeKB = Math.round((targetFile.size || 0) / 1024);
+                    cloudDbStats.value.rawModifiedTime = targetFile.modifiedTime || '';
                     
                     let timeStr = '---';
                     if (targetFile.modifiedTime) {
@@ -6632,6 +6640,7 @@ createApp({
                 } else {
                     cloudDbStats.value = {
                         lastModified: '雲端尚無資料庫主檔',
+                        rawModifiedTime: '',
                         tradeLogCount: 0,
                         myStockCount: 0,
                         gemStrategyCount: 0,
@@ -6644,6 +6653,67 @@ createApp({
             } finally {
                 isFetchingCloudStats.value = false;
                 checkUnsyncedStatus();
+                checkAndTriggerAutoSync('雲端狀態查詢完成');
+            }
+        };
+
+        // ─── 🤖 智慧偵測雲端新版本並防呆自動同步 ───
+        let lastAutoSyncAttemptTs = 0;
+        const checkAndTriggerAutoSync = (reason = '雲端狀態更新') => {
+            // 1. 基礎環境安全防呆：未解鎖、未登入 Google、未取得 Token、或當前已在同步中則不觸發
+            if (!isAppUnlocked.value) return;
+            if (!googleUser.value.isLoggedIn || !googleAccessToken.value) return;
+            if (syncStatus.value.loading) return;
+
+            // 2. 30 秒防抖冷卻，避免短時間內頻繁觸發
+            const now = Date.now();
+            if (now - lastAutoSyncAttemptTs < 30 * 1000) return;
+
+            // 3. 檢查雲端資料庫狀態
+            const cloudMtimeStr = cloudDbStats.value.lastModified;
+            if (!cloudMtimeStr || cloudMtimeStr === '---' || cloudMtimeStr === '雲端尚無資料庫主檔') return;
+
+            const cloudRawMtime = cloudDbStats.value.rawModifiedTime;
+            const lastSyncedCloudRaw = localStorage.getItem('sentinel_last_synced_cloud_raw_mtime');
+            const lastSyncedCloudMtime = localStorage.getItem('sentinel_last_synced_cloud_mtime');
+
+            let isCloudNewer = false;
+
+            if (cloudRawMtime && lastSyncedCloudRaw) {
+                const cTime = new Date(cloudRawMtime).getTime();
+                const lTime = new Date(lastSyncedCloudRaw).getTime();
+                if (!isNaN(cTime) && !isNaN(lTime)) {
+                    // 雲端修改時間晚於上次同步紀錄（容許 2 秒時鐘微差）
+                    if (cTime - lTime > 2000) {
+                        isCloudNewer = true;
+                    }
+                }
+            } else if (lastSyncedCloudMtime) {
+                const cTime = new Date(cloudMtimeStr.replace(/-/g, '/')).getTime();
+                const lTime = new Date(lastSyncedCloudMtime.replace(/-/g, '/')).getTime();
+                if (!isNaN(cTime) && !isNaN(lTime)) {
+                    if (cTime - lTime > 2000) {
+                        isCloudNewer = true;
+                    }
+                } else if (cloudMtimeStr !== lastSyncedCloudMtime) {
+                    isCloudNewer = true;
+                }
+            } else {
+                // 初次具備雲端檔案但尚未有本機同步時間戳紀錄
+                isCloudNewer = true;
+            }
+
+            if (isCloudNewer) {
+                lastAutoSyncAttemptTs = now;
+                console.log(`🚀 [智慧自動同步] 偵測到雲端資料庫有新版本 (${cloudMtimeStr} > ${lastSyncedCloudMtime || '初次'}), 原因: ${reason}`);
+                showToast(`☁️ 偵測到雲端資料庫有新版本，啟動防呆自動同步...`, 3000);
+                setTimeout(() => {
+                    if (!syncStatus.value.loading) {
+                        handleOneClickSync();
+                    }
+                }, 800);
+            } else {
+                console.log(`☕ [智慧自動同步] 雲端資料庫版本已是對齊狀態 (${cloudMtimeStr})，無需重複同步。`);
             }
         };
 
