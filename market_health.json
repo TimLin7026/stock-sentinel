@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-21 16:51:38",
+  "run_time": "2026-10-21 20:06:28",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261021] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,7 +15,7 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2226,
+      "count": 2229,
       "status": "OK"
     },
     "margin": {
@@ -25,7 +25,7 @@
     },
     "indicators": {
       "count": 2377,
-      "elapsed": 76.2,
+      "elapsed": 74.46,
       "status": "OK"
     }
   },
@@ -218,7 +218,7 @@
     ]
   },
   "target_date": "20261021",
-  "total_elapsed": 144.34,
+  "total_elapsed": 153.84,
   "snapshot_size_kb": 447.4,
   "next_scheduled_run": "2026/10/21 (週三) 21:00",
   "next_scheduled_iso": "2026-10-21T21:00:00",
