@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.09');
+        const appVersion = ref('v2.20261022.10');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4945,7 +4945,7 @@ createApp({
             }
 
             stock.isGeneratingGemini = true;
-            showToast(`🧠 富貴 Gem 正在為【${stock.code} ${stock.name || ''}】進行深度診斷，請稍候約 10~15 秒...`, 6000);
+            showToast(`🧠 富貴 Gem 正在為【${stock.code} ${stock.name || ''}】深度推導八大章節與盤中檢核表，約需 30~50 秒，請稍候...`, 8000);
 
             try {
                 // 1. 組裝該股近 10 日完整指標戰報文本
@@ -4978,7 +4978,7 @@ createApp({
                 };
 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 35000);
+                const timeoutId = setTimeout(() => controller.abort(), 90000);
 
                 const res = await fetch(apiUrl, {
                     method: 'POST',
@@ -5080,7 +5080,11 @@ createApp({
                 showToast(`🎉【${stock.code} ${stock.name}】富貴戰報已成功生成並自動匯入！`, 4000);
             } catch (err) {
                 console.error("富貴 Gem 智能戰報生成失敗:", err);
-                alert(`❌【富貴 Gem】生成失敗：\n${err.message}`);
+                if (err.name === 'AbortError' || (err.message && err.message.includes('aborted'))) {
+                    alert(`❌【富貴 Gem】生成逾時（超過 90 秒）：\nGoogle 伺服器目前運算量較大，請稍後再試，或至「雲端同步」切換至極速版【gemini-3.5-flash-lite】走快車道！`);
+                } else {
+                    alert(`❌【富貴 Gem】生成失敗：\n${err.message}`);
+                }
             } finally {
                 stock.isGeneratingGemini = false;
             }
