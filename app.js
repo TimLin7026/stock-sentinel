@@ -4684,6 +4684,195 @@ createApp({
             }
         };
 
+                // ─── 💎 Google Gemini AI 智能戰報模組 ───
+        const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
+        const geminiModel = ref(localStorage.getItem('sentinel_gemini_model') || 'gemini-2.5-flash');
+        const showGeminiKey = ref(false);
+        const isTestingGemini = ref(false);
+        let cachedGeminiPrompt = null;
+
+        const saveGeminiSettings = () => {
+            if (geminiApiKey.value) {
+                localStorage.setItem('sentinel_gemini_api_key', geminiApiKey.value.trim());
+            } else {
+                localStorage.removeItem('sentinel_gemini_api_key');
+            }
+            if (geminiModel.value) {
+                localStorage.setItem('sentinel_gemini_model', geminiModel.value.trim());
+            }
+            showToast('✅ Gemini 設定已成功儲存！', 2500);
+        };
+
+        const testGeminiConnection = async () => {
+            const key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                alert('⚠️ 請先填入 Gemini API Key！');
+                return;
+            }
+            isTestingGemini.value = true;
+            try {
+                const model = geminiModel.value || 'gemini-2.5-flash';
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts: [{ text: 'Ping: 請回覆 OK' }] }],
+                        generationConfig: { maxOutputTokens: 10 }
+                    })
+                });
+                if (res.ok) {
+                    alert(`🎉 連線測試成功！\n模型 [${model}] 正常運作中。`);
+                } else {
+                    const errJson = await res.json().catch(() => ({}));
+                    const msg = errJson.error ? errJson.error.message : res.statusText;
+                    alert(`❌ 連線測試失敗 (HTTP ${res.status})：\n${msg}`);
+                }
+            } catch (err) {
+                alert(`❌ 網路連線異常：${err.message}`);
+            } finally {
+                isTestingGemini.value = false;
+            }
+        };
+
+        const fetchGeminiPrompt = async () => {
+            if (cachedGeminiPrompt) return cachedGeminiPrompt;
+            try {
+                const res = await fetch('./財經富貴gem_prompt.md?_t=' + Date.now());
+                if (res.ok) {
+                    const txt = await res.text();
+                    if (txt && txt.length > 100) {
+                        cachedGeminiPrompt = txt;
+                        return cachedGeminiPrompt;
+                    }
+                }
+            } catch (e) {
+                console.warn("從遠端抓取 prompt 失敗，使用備援提示詞:", e);
+            }
+            cachedGeminiPrompt = `你是一位深耕台股市場的策略分析師「財經富貴」。請依據使用者提供的個股多日技術籌碼數據，產出個股深度診斷戰報。
+必須包含：
+代碼：[股票代碼]
+戰情總結：[40字以內之精準動態總結，禁包含「殖利率防禦」、「5%-10%」、「波段空間」]
+佈局區間下限：[數值]
+佈局區間上限：[數值]
+防守停損點：[數值]
+目標調節下限：[數值]
+目標調節上限：[數值]
+請嚴格遵守繁體中文輸出。`;
+            return cachedGeminiPrompt;
+        };
+
+        const generateGeminiReportForStock = async (stock) => {
+            if (!stock) return;
+            if (stock.isGeneratingGemini) return;
+
+            let key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                key = localStorage.getItem('sentinel_gemini_api_key') || '';
+            }
+            if (!key) {
+                const inputKey = prompt(`💎 歡迎使用「富貴 Gem」一鍵 AI 智能戰報！\n\n您尚未設定 Google Gemini API Key。\n請在此貼上您的個人 API Key (支援免費版)：\n(金鑰僅儲存於您本地手機/瀏覽器中，亦可隨時在「雲端同步」中維護)`);
+                if (inputKey && inputKey.trim()) {
+                    key = inputKey.trim();
+                    geminiApiKey.value = key;
+                    localStorage.setItem('sentinel_gemini_api_key', key);
+                } else {
+                    return;
+                }
+            }
+
+            stock.isGeneratingGemini = true;
+            showToast(`🧠 富貴 Gem 正在為【${stock.code} ${stock.name || ''}】進行深度診斷，請稍候約 10~15 秒...`, 6000);
+
+            try {
+                // 1. 組裝該股近 10 日完整指標戰報文本
+                const stockReportText = await buildStock10DayReport(stock);
+                if (!stockReportText) {
+                    throw new Error("無法重組該股技術指標數據！");
+                }
+
+                // 2. 獲取富貴 Gem 系統提示詞
+                const systemPrompt = await fetchGeminiPrompt();
+
+                // 3. 呼叫 Gemini REST API
+                const model = geminiModel.value || 'gemini-2.5-flash';
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+                const payload = {
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [{ text: stockReportText }]
+                        }
+                    ],
+                    generationConfig: {
+                        temperature: 0.2,
+                        maxOutputTokens: 4096
+                    }
+                };
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const errBody = await res.json().catch(() => ({}));
+                    const errMsg = (errBody && errBody.error && errBody.error.message) ? errBody.error.message : `HTTP ${res.status}`;
+                    throw new Error(errMsg);
+                }
+
+                const data = await res.json();
+                const candidates = data.candidates || [];
+                if (!candidates.length || !candidates[0].content || !candidates[0].content.parts || !candidates[0].content.parts.length) {
+                    throw new Error("Gemini 回傳內容為空！");
+                }
+
+                const generatedMarkdown = candidates[0].content.parts[0].text;
+                console.log("💎 Gemini 產出戰報長度:", generatedMarkdown.length);
+
+                // 4. 解析回傳戰報並直接自動匯入 SQLite
+                if (!dbInstance) {
+                    await ensureLocalDatabaseInitialized();
+                }
+
+                const parsed = parseReportText(generatedMarkdown);
+                if (!parsed) {
+                    throw new Error("戰報格式無法解析！");
+                }
+
+                const targetCode = parsed.code || stock.code;
+                const normalizedCode = String(targetCode).padStart(4, '0');
+                const nowTime = getNowDateTimeStr() + ':00';
+
+                dbInstance.run(
+                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
+                );
+
+                // 銷除墓碑
+                try {
+                    dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'gem_strategy' AND unique_key = ?", [makeStrategyUniqueKey(normalizedCode, nowTime)]);
+                } catch (e) {}
+
+                await saveDbToIndexedDb();
+                const u8 = dbInstance.export();
+                await loadDatabaseFromArrayBuffer(u8.buffer, '本機 SQLite (富貴 Gem 智能匯入)');
+                hasUnsyncedChanges.value = true;
+
+                showToast(`🎉【${stock.code} ${stock.name}】富貴戰報已成功生成並自動匯入！`, 4000);
+            } catch (err) {
+                console.error("富貴 Gem 智能戰報生成失敗:", err);
+                alert(`❌【富貴 Gem】生成失敗：\n${err.message}`);
+            } finally {
+                stock.isGeneratingGemini = false;
+            }
+        };
+
         // ─── 📅 手機端「更新休市日」模組 (對接證交所 OpenAPI + GitHub Pages 雲端自訂休市表) ───
         const updateMarketHolidays = async () => {
             if (!dbInstance) {
@@ -7555,6 +7744,13 @@ createApp({
             deleteStockCard,
             buildStock10DayReport,
             copyStock10DayReport,
+            geminiApiKey,
+            showGeminiKey,
+            geminiModel,
+            isTestingGemini,
+            saveGeminiSettings,
+            testGeminiConnection,
+            generateGeminiReportForStock,
             tradeSearchKeyword,
             goToTradeHistory,
             showImportReportModal,

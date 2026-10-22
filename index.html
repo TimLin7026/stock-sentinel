@@ -827,6 +827,13 @@
                                         <span class="mr-1.5 shrink-0">📖</span><span class="truncate">短評 ({{ stock.reportDate || '最新' }})</span>
                                     </div>
                                     <div class="flex items-center space-x-1 shrink-0">
+                                        <!-- 0. 💎 富貴 Gem 一鍵 AI 智能戰報按鈕 (純圖示) -->
+                                        <button @click.stop="generateGeminiReportForStock(stock)" 
+                                                class="w-6 h-6 rounded-md font-bold border border-indigo-400/30 transition flex items-center justify-center shadow-sm active:scale-95 shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white" 
+                                                :title="stock.isGeneratingGemini ? '富貴 Gem 正在生成戰報中...' : '富貴 Gem 一鍵 AI 智能生成戰報並匯入'">
+                                            <i v-if="stock.isGeneratingGemini" class="fa-solid fa-arrows-rotate fa-spin text-[10px]"></i>
+                                            <span v-else class="text-[11px] leading-none">💎</span>
+                                        </button>
                                         <!-- 1. 📄 查看最新戰報完整內容按鈕 (純圖示) -->
                                         <button @click.stop="openFullReportModal(stock)" 
                                                 :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
@@ -1416,6 +1423,60 @@
                                 <div>• <b>雲端資料夾：</b> <code :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">台股戰情室_雲端同步</code></div>
                                 <div>• <b>最後同步：</b> <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-800'">{{ googleUser.lastSyncTime || '尚未同步' }}</span></div>
                                 <div>• <b>資料庫狀態：</b> <span :class="isDbLoaded ? 'text-emerald-400 font-bold' : 'text-amber-400'">{{ dbInfoText }}</span></div>
+                            </div>
+
+                            <!-- 💎 Google Gemini AI 智能戰報配置區 -->
+                            <div class="pt-2 border-t text-[11px]" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                                <div class="p-3 rounded-2xl border space-y-2.5" :class="theme === 'dark' ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50/50 border-indigo-200/60'">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="font-bold text-indigo-400 flex items-center text-xs">
+                                            <span class="mr-1.5">💎</span>Google Gemini AI 智能戰報設定
+                                        </h4>
+                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-[10px] text-indigo-400 hover:text-indigo-300 underline font-medium">
+                                            免費申請 Key ↗
+                                        </a>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-[11px] font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">個人 Gemini API Key：</label>
+                                        <div class="flex items-center space-x-1.5">
+                                            <input v-model="geminiApiKey" :type="showGeminiKey ? 'text' : 'password'" placeholder="貼上 AI Studio 取得的 API Key (AIzaSy...)" 
+                                                   :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                                   class="flex-1 border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                                            <button @click="showGeminiKey = !showGeminiKey" type="button" 
+                                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-300'"
+                                                    class="border px-2 py-1.5 rounded-lg text-xs" :title="showGeminiKey ? '隱藏金鑰' : '顯示金鑰'">
+                                                <i class="fa-solid" :class="showGeminiKey ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 pt-1 items-end">
+                                        <div>
+                                            <label class="block text-[10px] font-semibold mb-1" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">AI 模型版本：</label>
+                                            <select v-model="geminiModel" 
+                                                    :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                                    class="w-full border rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                                                <option value="gemini-2.5-flash">gemini-2.5-flash (推薦/極速)</option>
+                                                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                                                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                                            </select>
+                                        </div>
+                                        <div class="flex space-x-1.5">
+                                            <button @click="testGeminiConnection" :disabled="isTestingGemini || !geminiApiKey"
+                                                    :class="theme === 'dark' ? 'bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border-indigo-700/60' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-700 border-indigo-300'"
+                                                    class="flex-1 border py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1 transition disabled:opacity-40">
+                                                <i class="fa-solid fa-plug text-[11px]" :class="isTestingGemini ? 'fa-spin' : ''"></i>
+                                                <span>{{ isTestingGemini ? '測試中' : '連線測試' }}</span>
+                                            </button>
+                                            <button @click="saveGeminiSettings" 
+                                                    class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-1.5 px-2 rounded-lg text-xs shadow-sm transition">
+                                                <span>儲存</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="text-[9px] text-slate-400 leading-relaxed">
+                                        💡 金鑰僅儲存於您當前設備本地（不共用、零外洩），每位使用者享有 Google 官方每日龐大免費配額。
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- ⚙️ Google Client ID 進階配置折疊區 -->
