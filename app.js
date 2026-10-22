@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.01');
+        const appVersion = ref('v2.20261022.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1092,6 +1092,16 @@ createApp({
 
                 if (remoteVersion && remoteVersion !== appVersion.value) {
                     console.log(`🚀 檢測到新版本: 當前=${appVersion.value}, 遠端=${remoteVersion}`);
+
+                    // 🛡️ 防死循環保險栓：若已因版本不符自動重載超過 1 次，自動阻斷避免遮罩死鎖
+                    const reloadRetryCount = parseInt(sessionStorage.getItem('sentinel_reload_retry_count') || '0', 10);
+                    if (reloadRetryCount >= 2) {
+                        console.warn("⚠️ 檢測到多次重載後版本仍未更新，自動中斷重載死循環，允許使用者正常執行同步。");
+                        sessionStorage.removeItem('sentinel_auto_sync_after_reload');
+                        sessionStorage.removeItem('sentinel_reload_retry_count');
+                        return false;
+                    }
+                    sessionStorage.setItem('sentinel_reload_retry_count', String(reloadRetryCount + 1));
                     
                     // 防打斷：若正開啟記帳表單且非強制手動同步，先暫緩自動重載以保護正在輸入的交易
                     if (showTradeModal.value && !isExplicitSync) {
@@ -1113,6 +1123,9 @@ createApp({
                     }, 1000);
 
                     return true;
+                } else if (remoteVersion && remoteVersion === appVersion.value) {
+                    // 版本已對齊，重置重試計數器
+                    sessionStorage.removeItem('sentinel_reload_retry_count');
                 }
             } catch (err) {
                 console.warn("檢查遠端版本失敗:", err);
