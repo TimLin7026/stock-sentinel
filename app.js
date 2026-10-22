@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.03');
+        const appVersion = ref('v2.20261022.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4686,9 +4686,19 @@ createApp({
 
                 // ─── 💎 Google Gemini AI 智能戰報模組 ───
         const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
-        const geminiModel = ref(localStorage.getItem('sentinel_gemini_model') || 'gemini-2.5-flash');
+        const storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
+        const predefinedModels = ['gemini-3.8-flash', 'gemini-4-argon', 'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+        const geminiModelSelection = ref(predefinedModels.includes(storedModel) ? storedModel : 'custom');
+        const geminiCustomModel = ref(predefinedModels.includes(storedModel) ? '' : storedModel);
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
+
+        const getActiveGeminiModel = () => {
+            if (geminiModelSelection.value === 'custom') {
+                return (geminiCustomModel.value || '').trim() || 'gemini-3.8-flash';
+            }
+            return geminiModelSelection.value || 'gemini-3.8-flash';
+        };
         let cachedGeminiPrompt = null;
 
         const saveGeminiSettings = () => {
@@ -4697,9 +4707,8 @@ createApp({
             } else {
                 localStorage.removeItem('sentinel_gemini_api_key');
             }
-            if (geminiModel.value) {
-                localStorage.setItem('sentinel_gemini_model', geminiModel.value.trim());
-            }
+            const activeM = getActiveGeminiModel();
+            localStorage.setItem('sentinel_gemini_model', activeM);
             showToast('✅ Gemini 設定已成功儲存！', 2500);
         };
 
@@ -4711,7 +4720,7 @@ createApp({
             }
             isTestingGemini.value = true;
             try {
-                const model = geminiModel.value || 'gemini-2.5-flash';
+                const model = getActiveGeminiModel();
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
                 const res = await fetch(url, {
                     method: 'POST',
@@ -4795,7 +4804,7 @@ createApp({
                 const systemPrompt = await fetchGeminiPrompt();
 
                 // 3. 呼叫 Gemini REST API
-                const model = geminiModel.value || 'gemini-2.5-flash';
+                const model = getActiveGeminiModel();
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
                 const payload = {
@@ -7746,7 +7755,9 @@ createApp({
             copyStock10DayReport,
             geminiApiKey,
             showGeminiKey,
-            geminiModel,
+            geminiModelSelection,
+            geminiCustomModel,
+            getActiveGeminiModel,
             isTestingGemini,
             saveGeminiSettings,
             testGeminiConnection,
