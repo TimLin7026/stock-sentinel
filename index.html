@@ -1911,6 +1911,15 @@
                             </div>
 
                             <div class="flex items-center space-x-1.5">
+                                <!-- 移動查價開關按鈕 (預設關閉，防止手機滑動誤觸) -->
+                                <button @click="toggleCrosshair" 
+                                        :class="isCrosshairEnabled 
+                                            ? 'bg-sky-600 text-white shadow-md shadow-sky-500/40 border-sky-500' 
+                                            : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300')"
+                                        class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                        :title="isCrosshairEnabled ? '📍 查價中 (點擊關閉，鎖定最新當日指標)' : '📍 查價已關 (點擊開啟查價)'">
+                                    <i class="fa-solid fa-crosshairs text-xs" :class="isCrosshairEnabled ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')"></i>
+                                </button>
                                 <!-- 直/橫切換 -->
                                 <button @click="toggleChartOrientation" 
                                         :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
@@ -1947,6 +1956,16 @@
                             </div>
 
                             <div class="flex items-center space-x-1.5">
+                                <!-- 移動查價開關按鈕 (預設關閉，防止滑動誤觸) -->
+                                <button @click="toggleCrosshair" 
+                                        :class="isCrosshairEnabled 
+                                            ? 'bg-sky-600 text-white shadow-md shadow-sky-500/40 border-sky-500' 
+                                            : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300')"
+                                        class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                        :title="isCrosshairEnabled ? '📍 查價中 (點擊關閉，鎖定最新當日指標)' : '📍 查價已關 (點擊開啟查價)'">
+                                    <i class="fa-solid fa-crosshairs text-xs" :class="isCrosshairEnabled ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')"></i>
+                                </button>
+
                                 <!-- 直/橫切換 -->
                                 <button @click="toggleChartOrientation" 
                                         :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
@@ -1974,7 +1993,7 @@
 
                     <!-- 十字準心即時數值跑馬燈看板 (查價列) -->
                     <div :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800/80 text-slate-400' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="px-2 py-1 rounded-lg border text-[10px] font-mono flex items-center justify-between overflow-x-auto no-scrollbar">
-                        <span :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600 font-bold'">{{ crosshairData.date || '滑動圖表查價' }}</span>
+                        <span :class="theme === 'dark' ? 'text-sky-400' : 'text-sky-600 font-bold'">{{ crosshairData.date || (isCrosshairEnabled ? '滑動圖表查價' : '最新當日') }}</span>
                         <span>開: <b :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900 font-bold'">{{ crosshairData.open || '--' }}</b></span>
                         <span>高: <b class="text-rose-500 font-bold">{{ crosshairData.high || '--' }}</b></span>
                         <span>低: <b class="text-emerald-500 font-bold">{{ crosshairData.low || '--' }}</b></span>

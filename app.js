@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261020.01');
+        const appVersion = ref('v2.20261022.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1303,6 +1303,71 @@ createApp({
             arrows: {}
         });
 
+        const isCrosshairEnabled = ref(false); // 移動查價開關 (每次打開走勢預設為 false，杜絕手機滑動誤觸)
+
+        // 重置十字準心看板數值為當前個股最新一日 (最後一筆)
+        const resetCrosshairToLatest = () => {
+            if (!activeChartStock.value || !stockHistoryCache) return;
+            const rawCode = String(activeChartStock.value.code).trim();
+            const rawRows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
+            const rows = rawRows.slice(-chartDaysCount.value);
+            if (rows.length > 0) {
+                updateCrosshairValuesFromRow(rows[rows.length - 1], rows.length > 1 ? rows[rows.length - 2] : null);
+            }
+        };
+
+        // 隱藏圖表上的十字準心虛線與 Tooltip 浮標
+        const hideAllChartAxisPointers = () => {
+            Object.values(chartInstances).forEach(c => {
+                if (c && typeof c.dispatchAction === 'function') {
+                    try {
+                        c.dispatchAction({ type: 'hideTip' });
+                        c.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
+                    } catch(e) {}
+                }
+            });
+        };
+
+        // 動態切換所有 ECharts 實例之十字準心狀態
+        const updateChartsAxisPointerState = () => {
+            const show = isCrosshairEnabled.value;
+            Object.values(chartInstances).forEach(c => {
+                if (c && typeof c.setOption === 'function') {
+                    try {
+                        c.setOption({
+                            tooltip: {
+                                show: show,
+                                trigger: show ? 'axis' : 'none',
+                                axisPointer: {
+                                    show: show,
+                                    type: show ? 'cross' : 'none'
+                                }
+                            }
+                        });
+                        if (!show) {
+                            c.dispatchAction({ type: 'hideTip' });
+                            c.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
+                        }
+                    } catch(e) {}
+                }
+            });
+        };
+
+        // 切換移動查價功能 (ON / OFF)
+        const toggleCrosshair = () => {
+            isCrosshairEnabled.value = !isCrosshairEnabled.value;
+            if (!isCrosshairEnabled.value) {
+                // 關閉查價：立刻歸位最新一日，並清除圖表十字準心線
+                resetCrosshairToLatest();
+                hideAllChartAxisPointers();
+                updateChartsAxisPointerState();
+                showToast("📍 已關閉移動查價，指標鎖定最新當日", 2000);
+            } else {
+                updateChartsAxisPointerState();
+                showToast("📍 已開啟移動查價，滑動圖表可查閱歷史數值", 2000);
+            }
+        };
+
         let stockHistoryCache = null; // 記憶體歷史快取字典
         const chartInstances = {}; // ECharts 實例字典
 
@@ -1667,9 +1732,11 @@ createApp({
             };
 
             const commonTooltip = {
-                trigger: 'axis',
+                show: isCrosshairEnabled.value,
+                trigger: isCrosshairEnabled.value ? 'axis' : 'none',
                 axisPointer: {
-                    type: 'cross',
+                    show: isCrosshairEnabled.value,
+                    type: isCrosshairEnabled.value ? 'cross' : 'none',
                     lineStyle: { color: '#38bdf8', type: 'dashed', width: 1 },
                     label: { backgroundColor: '#0f172a', fontSize: 10 }
                 },
@@ -1880,6 +1947,7 @@ createApp({
             const bindAxisPointerListener = (chartInstance) => {
                 if (!chartInstance) return;
                 chartInstance.on('updateAxisPointer', (event) => {
+                    if (!isCrosshairEnabled.value) return; // 🌟 查價關閉時，絕對不更新看板與指標數值！
                     const dataIndex = event.dataIndex;
                     if (dataIndex !== undefined && rows[dataIndex]) {
                         updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
@@ -2062,8 +2130,13 @@ createApp({
                 animation: false,
                 grid: commonGrid,
                 tooltip: {
-                    trigger: 'axis',
-                    axisPointer: { type: 'cross', lineStyle: { color: '#38bdf8', type: 'dashed', width: 1 } },
+                    show: isCrosshairEnabled.value,
+                    trigger: isCrosshairEnabled.value ? 'axis' : 'none',
+                    axisPointer: {
+                        show: isCrosshairEnabled.value,
+                        type: isCrosshairEnabled.value ? 'cross' : 'none',
+                        lineStyle: { color: '#38bdf8', type: 'dashed', width: 1 }
+                    },
                     showContent: false
                 },
                 xAxis: commonXAxis,
@@ -2074,6 +2147,7 @@ createApp({
 
             // 綁定十字準心
             chart.on('updateAxisPointer', (event) => {
+                if (!isCrosshairEnabled.value) return; // 🌟 查價關閉時，絕對不更新看板與指標數值！
                 const dataIndex = event.dataIndex;
                 if (dataIndex !== undefined && rows[dataIndex]) {
                     updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
@@ -2087,6 +2161,9 @@ createApp({
         // 打開技術指標彈窗
         const openStockChartModal = (stock) => {
             if (!stock) return;
+
+            // 📍 移動查價狀態：每次進入走勢圖一律強制預設為關閉 (OFF)，杜絕手機滑動誤觸
+            isCrosshairEnabled.value = false;
 
             // 📌 走勢打開時的釘選狀態判斷：
             // 若彈窗原本是關閉狀態 (外部首次點開)，預設為未釘選
@@ -7526,6 +7603,8 @@ createApp({
             isKlinePinned,
             togglePinKline,
             crosshairData,
+            isCrosshairEnabled,
+            toggleCrosshair,
             openStockChartModal,
             closeStockChartModal,
             currentChartStockIndex,
