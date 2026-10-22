@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.07');
+        const appVersion = ref('v2.20261022.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4687,26 +4687,31 @@ createApp({
                 // ─── 💎 Google Gemini AI 智能戰報模組 ───
         const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
         let storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
-        if (storedModel === 'gemini-2.5-flash' || !storedModel) {
+        if (storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-4-argon' || !storedModel) {
             storedModel = 'gemini-3.8-flash';
             localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
         }
 
-        // 預設與快取的可用模型清單 (支援向 Google 官方即時同步)
+        // 預設與快取的可用模型清單 (精準純免費 Flash 陣容)
         const defaultModels = [
-            { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (主力推薦 🚀)' },
-            { id: 'gemini-4-argon', label: 'gemini-4-argon (旗艦推理 👑)' },
-            { id: 'gemini-3.1-pro-preview', label: 'gemini-3.1-pro-preview' },
-            { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash' },
-            { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite' },
-            { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
-            { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
+            { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (免費主力推薦 🚀)' },
+            { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash (免費主力 💎)' },
+            { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (免費快速 ⚡)' },
+            { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite (極速輕量 🍃)' },
+            { id: 'gemini-flash-latest', label: 'gemini-flash-latest (自動最新 🔄)' }
         ];
 
         let cachedModels = null;
         try {
             const rawCache = localStorage.getItem('sentinel_gemini_models_cache');
-            if (rawCache) cachedModels = JSON.parse(rawCache);
+            if (rawCache) {
+                const parsed = JSON.parse(rawCache);
+                // 自動清洗過往快取中的非 Flash 或付費雜質模型
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const cleaned = parsed.filter(m => m.id && m.id.includes('flash') && !m.id.includes('tts') && !m.id.includes('image') && !m.id.includes('argon') && !m.id.includes('banana'));
+                    if (cleaned.length > 0) cachedModels = cleaned;
+                }
+            }
         } catch (e) {}
 
         const availableGeminiModels = ref((Array.isArray(cachedModels) && cachedModels.length > 0) ? cachedModels : defaultModels);
@@ -4748,7 +4753,7 @@ createApp({
             return m || 'gemini-3.8-flash';
         };
 
-        // 🔄 向 Google 官方 API 動態查詢目前此 API Key 可用的所有即時模型清單
+        // 🔄 向 Google 官方 API 動態查詢目前此 API Key 可用的純免費 Flash 即時模型清單
         const fetchAvailableGeminiModels = async (quiet = false) => {
             const key = (geminiApiKey.value || '').trim();
             if (!key) {
@@ -4756,40 +4761,63 @@ createApp({
                 return;
             }
             isFetchingModels.value = true;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-                const res = await fetch(url);
+                const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error((err.error && err.error.message) ? err.error.message : `HTTP ${res.status}`);
                 }
                 const data = await res.json();
                 const rawList = data.models || [];
+
+                // 🎯 精準篩選：必須支援 generateContent、包含 flash、且排除語音/圖像/音樂/付費模型
                 const filtered = rawList.filter(m => {
                     const methods = m.supportedGenerationMethods || [];
                     const name = (m.name || '').toLowerCase();
-                    return methods.includes('generateContent') && !name.includes('embedding') && !name.includes('aqa');
+                    const isGen = methods.includes('generateContent');
+                    const isFlash = name.includes('flash');
+                    const isExcluded = name.includes('tts') || 
+                                       name.includes('transcribe') || 
+                                       name.includes('image') || 
+                                       name.includes('banana') || 
+                                       name.includes('lyria') || 
+                                       name.includes('argon') || 
+                                       name.includes('robotics') || 
+                                       name.includes('computer-use') ||
+                                       name.includes('embedding') || 
+                                       name.includes('aqa');
+                    return isGen && isFlash && !isExcluded;
                 });
 
                 if (filtered.length > 0) {
                     const mapped = filtered.map(m => {
                         const id = m.name.replace(/^models\//, '');
                         let tag = '';
-                        if (id === 'gemini-3.8-flash') tag = ' (主力推薦 🚀)';
-                        else if (id === 'gemini-4-argon') tag = ' (旗艦推理 👑)';
-                        else if (m.displayName) tag = ` (${m.displayName})`;
+                        if (id === 'gemini-3.8-flash') tag = ' (免費主力推薦 🚀)';
+                        else if (id === 'gemini-3.7-flash') tag = ' (免費主力 💎)';
+                        else if (id === 'gemini-3.6-flash') tag = ' (免費快速 ⚡)';
+                        else if (id === 'gemini-3.5-flash-lite') tag = ' (極速輕量 🍃)';
+                        else if (id === 'gemini-flash-latest') tag = ' (自動最新 🔄)';
+                        else tag = ' (免費可用)';
                         return { id: id, label: `${id}${tag}` };
                     });
 
+                    // 智慧排序：3.8 置頂第一，3.7 置頂第二，其餘降序排列
                     mapped.sort((a, b) => {
                         if (a.id === 'gemini-3.8-flash') return -1;
                         if (b.id === 'gemini-3.8-flash') return 1;
-                        return a.id.localeCompare(b.id);
+                        if (a.id === 'gemini-3.7-flash') return -1;
+                        if (b.id === 'gemini-3.7-flash') return 1;
+                        return b.id.localeCompare(a.id);
                     });
 
                     availableGeminiModels.value = mapped;
                     localStorage.setItem('sentinel_gemini_models_cache', JSON.stringify(mapped));
-                    if (!quiet) showToast(`✅ 已從 Google 官方同步 ${mapped.length} 組可用模型！`, 2500);
+                    if (!quiet) showToast(`✅ 已從 Google 官方同步 ${mapped.length} 組純免費可用模型！`, 2500);
 
                     const exists = mapped.some(m => m.id === geminiModelSelection.value);
                     if (!exists && geminiModelSelection.value !== 'custom') {
@@ -4798,8 +4826,15 @@ createApp({
                     }
                 }
             } catch (err) {
+                clearTimeout(timeoutId);
                 console.warn("動態更新模型清單失敗:", err);
-                if (!quiet) alert("❌ 更新模型清單失敗：" + err.message);
+                if (!quiet) {
+                    if (err.name === 'AbortError') {
+                        alert("❌ 網路連線逾時（超過 12 秒）：無法連線至 Google 伺服器，請檢查網路或 Proxy/VPN！");
+                    } else {
+                        alert("❌ 更新模型清單失敗：" + err.message);
+                    }
+                }
             } finally {
                 isFetchingModels.value = false;
             }
@@ -4824,24 +4859,43 @@ createApp({
                 return;
             }
             isTestingGemini.value = true;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
                 const model = getActiveGeminiModel();
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ role: 'user', parts: [{ text: 'Ping: 請回覆 OK' }] }],
+                        contents: [{ role: 'user', parts: [{ text: 'Ping' }] }],
                         generationConfig: { maxOutputTokens: 10 }
-                    })
+                    }),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
                 if (res.ok) {
                     alert(`🎉 連線測試成功！\n模型 [${model}] 正常運作中。`);
                     fetchAvailableGeminiModels(true);
                 } else {
                     const errJson = await res.json().catch(() => ({}));
                     const msg = errJson.error ? errJson.error.message : res.statusText;
-                    if (isModelDeprecatedError(msg, res.status)) {
+                    
+                    if (res.status === 503) {
+                        alert(
+                            `⚠️ Google 伺服器尖峰塞車中 (HTTP 503)\n\n` +
+                            `Google 官方回報目前該模型全球請求量瞬間暴增正在排隊中。\n` +
+                            `這通常是暫時性的（1~3 分鐘內會自動恢復）。\n\n` +
+                            `💡 建議：請稍候再試，或在選單中切換至【gemini-3.7-flash】或【gemini-3.6-flash】走快車道！`
+                        );
+                    } else if (res.status === 429 && msg.includes('limit: 0')) {
+                        alert(
+                            `⚠️ 此模型為 Google 頂級付費專用模型（免費用戶配額為 0）！\n\n` +
+                            `已為您自動切換回免費主力推薦模型【gemini-3.8-flash】！`
+                        );
+                        geminiModelSelection.value = 'gemini-3.8-flash';
+                        localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
+                    } else if (isModelDeprecatedError(msg, res.status)) {
                         alert(
                             `❌ 連線測試失敗（模型已失效）\n\n` +
                             `Google 官方回報：模型 [${model}] 已停用或下線！\n` +
@@ -4853,7 +4907,12 @@ createApp({
                     }
                 }
             } catch (err) {
-                alert(`❌ 網路連線異常：${err.message}`);
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    alert(`❌ 連線逾時（超過 12 秒）：\n無法連線至 Google Gemini 伺服器，請檢查您的網路連線或 Proxy/VPN 設定！`);
+                } else {
+                    alert(`❌ 網路連線異常：${err.message}`);
+                }
             } finally {
                 isTestingGemini.value = false;
             }
@@ -4920,7 +4979,7 @@ createApp({
 
                 // 3. 呼叫 Gemini REST API
                 const model = getActiveGeminiModel();
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
 
                 const payload = {
                     systemInstruction: {
@@ -4938,16 +4997,41 @@ createApp({
                     }
                 };
 
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 35000);
+
                 const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 if (!res.ok) {
                     const errBody = await res.json().catch(() => ({}));
                     const errMsg = (errBody && errBody.error && errBody.error.message) ? errBody.error.message : `HTTP ${res.status}`;
                     
+                    if (res.status === 503) {
+                        stock.isGeneratingGemini = false;
+                        alert(
+                            `⚠️ Google 伺服器尖峰塞車中 (HTTP 503)\n\n` +
+                            `Google 官方回報目前該模型請求量瞬間暴增正在排隊中。\n` +
+                            `這通常是短暫塞車（1~3 分鐘內會自動恢復）。\n\n` +
+                            `💡 建議：請稍候片刻再試，或前往「雲端同步」切換至【gemini-3.7-flash】或【gemini-3.6-flash】走快車道！`
+                        );
+                        return;
+                    }
+
+                    if (res.status === 429 && errMsg.includes('limit: 0')) {
+                        geminiModelSelection.value = 'gemini-3.8-flash';
+                        localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
+                        fetchAvailableGeminiModels(true);
+                        showToast(`🔄 偵測到原模型為付費專用，已自動切換為免費主力【gemini-3.8-flash】並重新產出戰報...`, 4000);
+                        stock.isGeneratingGemini = false;
+                        return generateGeminiReportForStock(stock);
+                    }
+
                     if (isModelDeprecatedError(errMsg, res.status)) {
                         const currentModel = model;
                         const recommendedModel = 'gemini-3.8-flash';
