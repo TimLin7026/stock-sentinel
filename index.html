@@ -1452,17 +1452,20 @@
                                     <div class="space-y-2 pt-1">
                                         <div class="grid grid-cols-2 gap-2 items-end">
                                             <div>
-                                                <label class="block text-[10px] font-semibold mb-1" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">AI 模型版本：</label>
+                                                <div class="flex items-center justify-between mb-1">
+                                                    <label class="block text-[10px] font-semibold" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-600'">AI 模型版本：</label>
+                                                    <button @click="fetchAvailableGeminiModels(false)" :disabled="isFetchingModels || !geminiApiKey"
+                                                            type="button"
+                                                            class="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium flex items-center space-x-1 disabled:opacity-40"
+                                                            title="向 Google 官方即時同步最新的可用模型清單">
+                                                        <i class="fa-solid fa-arrows-rotate" :class="isFetchingModels ? 'fa-spin' : ''"></i>
+                                                        <span>{{ isFetchingModels ? '同步中' : '同步官方' }}</span>
+                                                    </button>
+                                                </div>
                                                 <select v-model="geminiModelSelection" 
                                                         :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
                                                         class="w-full border rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
-                                                    <option value="gemini-3.8-flash">gemini-3.8-flash (熱門推薦)</option>
-                                                    <option value="gemini-4-argon">gemini-4-argon (旗艦推理)</option>
-                                                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
-                                                    <option value="gemini-3.6-flash">gemini-3.6-flash</option>
-                                                    <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
-                                                                                                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                                                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                                                    <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">{{ m.label }}</option>
                                                     <option value="custom">✏️ 自訂模型 (Custom)...</option>
                                                 </select>
                                             </div>
@@ -2402,6 +2405,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261022.05"></script>
+    <script src="app.js?v=2.20261022.06"></script>
 </body>
 </html>

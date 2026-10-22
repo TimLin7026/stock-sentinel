@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.05');
+        const appVersion = ref('v2.20261022.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4691,9 +4691,30 @@ createApp({
             storedModel = 'gemini-3.8-flash';
             localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
         }
-        const predefinedModels = ['gemini-3.8-flash', 'gemini-4-argon', 'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-        const geminiModelSelection = ref(predefinedModels.includes(storedModel) ? storedModel : 'custom');
-        const geminiCustomModel = ref(predefinedModels.includes(storedModel) ? '' : storedModel);
+
+        // 預設與快取的可用模型清單 (支援向 Google 官方即時同步)
+        const defaultModels = [
+            { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (主力推薦 🚀)' },
+            { id: 'gemini-4-argon', label: 'gemini-4-argon (旗艦推理 👑)' },
+            { id: 'gemini-3.1-pro-preview', label: 'gemini-3.1-pro-preview' },
+            { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash' },
+            { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite' },
+            { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+            { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro' }
+        ];
+
+        let cachedModels = null;
+        try {
+            const rawCache = localStorage.getItem('sentinel_gemini_models_cache');
+            if (rawCache) cachedModels = JSON.parse(rawCache);
+        } catch (e) {}
+
+        const availableGeminiModels = ref((Array.isArray(cachedModels) && cachedModels.length > 0) ? cachedModels : defaultModels);
+        const isFetchingModels = ref(false);
+
+        const isKnownModel = availableGeminiModels.value.some(m => m.id === storedModel);
+        const geminiModelSelection = ref(isKnownModel ? storedModel : 'custom');
+        const geminiCustomModel = ref(isKnownModel ? '' : storedModel);
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
 
@@ -4706,6 +4727,63 @@ createApp({
                 m = 'gemini-3.8-flash';
             }
             return m || 'gemini-3.8-flash';
+        };
+
+        // 🔄 向 Google 官方 API 動態查詢目前此 API Key 可用的所有即時模型清單
+        const fetchAvailableGeminiModels = async (quiet = false) => {
+            const key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                if (!quiet) alert('⚠️ 請先填入 API Key 再更新模型清單！');
+                return;
+            }
+            isFetchingModels.value = true;
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+                const res = await fetch(url);
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error((err.error && err.error.message) ? err.error.message : `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                const rawList = data.models || [];
+                const filtered = rawList.filter(m => {
+                    const methods = m.supportedGenerationMethods || [];
+                    const name = (m.name || '').toLowerCase();
+                    return methods.includes('generateContent') && !name.includes('embedding') && !name.includes('aqa');
+                });
+
+                if (filtered.length > 0) {
+                    const mapped = filtered.map(m => {
+                        const id = m.name.replace(/^models\//, '');
+                        let tag = '';
+                        if (id === 'gemini-3.8-flash') tag = ' (主力推薦 🚀)';
+                        else if (id === 'gemini-4-argon') tag = ' (旗艦推理 👑)';
+                        else if (m.displayName) tag = ` (${m.displayName})`;
+                        return { id: id, label: `${id}${tag}` };
+                    });
+
+                    mapped.sort((a, b) => {
+                        if (a.id === 'gemini-3.8-flash') return -1;
+                        if (b.id === 'gemini-3.8-flash') return 1;
+                        return a.id.localeCompare(b.id);
+                    });
+
+                    availableGeminiModels.value = mapped;
+                    localStorage.setItem('sentinel_gemini_models_cache', JSON.stringify(mapped));
+                    if (!quiet) showToast(`✅ 已從 Google 官方同步 ${mapped.length} 組可用模型！`, 2500);
+
+                    const exists = mapped.some(m => m.id === geminiModelSelection.value);
+                    if (!exists && geminiModelSelection.value !== 'custom') {
+                        geminiModelSelection.value = mapped[0].id;
+                        localStorage.setItem('sentinel_gemini_model', geminiModelSelection.value);
+                    }
+                }
+            } catch (err) {
+                console.warn("動態更新模型清單失敗:", err);
+                if (!quiet) alert("❌ 更新模型清單失敗：" + err.message);
+            } finally {
+                isFetchingModels.value = false;
+            }
         };
         let cachedGeminiPrompt = null;
 
@@ -4740,6 +4818,7 @@ createApp({
                 });
                 if (res.ok) {
                     alert(`🎉 連線測試成功！\n模型 [${model}] 正常運作中。`);
+                    fetchAvailableGeminiModels(true);
                 } else {
                     const errJson = await res.json().catch(() => ({}));
                     const msg = errJson.error ? errJson.error.message : res.statusText;
@@ -7763,6 +7842,9 @@ createApp({
             copyStock10DayReport,
             geminiApiKey,
             showGeminiKey,
+            availableGeminiModels,
+            isFetchingModels,
+            fetchAvailableGeminiModels,
             geminiModelSelection,
             geminiCustomModel,
             getActiveGeminiModel,
