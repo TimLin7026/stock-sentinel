@@ -1,11 +1,7 @@
 name: Market Daily Data & Health Sync
 
 on:
-  schedule:
-    # 台灣時間週一至週五 14:30 (UTC 06:30) 盤後第一時間即時同步
-    - cron: '30 6 * * 1-5'
-    # 台灣時間週一至週五 21:00 (UTC 13:00) 晚間全量籌碼校準
-    - cron: '0 13 * * 1-5'
+  # 已全面改由 Google Apps Script (GAS) 透過 REST API 秒級定時觸發 (14:40 / 16:30 / 20:30)，徹底消除 GitHub cron 排隊延遲
   workflow_dispatch:
     inputs:
       target_date:

@@ -441,7 +441,7 @@ def parse_cli_args():
 
 def compute_next_scheduled_run():
     """
-    計算下一次大腦自動排程執行時間 (開市日 14:30 與 21:00)
+    計算下一次大腦自動排程執行時間 (對齊 GAS 秒級排程：開市日 14:40、16:30、20:30)
     """
     tw_now = get_taipei_now().replace(tzinfo=None)
     for day_offset in range(8):
@@ -451,7 +451,7 @@ def compute_next_scheduled_run():
         if is_holiday:
             continue
         
-        for hour, minute in [(14, 30), (21, 0)]:
+        for hour, minute in [(14, 40), (16, 30), (20, 30)]:
             slot_time = datetime.datetime(target_day.year, target_day.month, target_day.day, hour, minute, 0)
             if slot_time > tw_now:
                 weekday_names = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
@@ -463,7 +463,7 @@ def compute_next_scheduled_run():
                     "iso": slot_time.isoformat()
                 }
                 
-    return {"time_str": "", "label": "開市日 14:30 / 21:00", "iso": ""}
+    return {"time_str": "", "label": "開市日 14:40 / 16:30 / 20:30", "iso": ""}
 
 def get_missing_market_dates(conn, manual_target_date=None, scan_days=0):
     """
@@ -1610,7 +1610,7 @@ def main():
     health_report["progress"] = f"全流程清洗審計合格，最新 [{latest_trade_date}] 快照已就緒提供更新！"
     health_report["next_scheduled_run"] = next_run_info.get("label", "")
     health_report["next_scheduled_iso"] = next_run_info.get("iso", "")
-    health_report["schedule_times"] = ["14:30", "21:00"]
+    health_report["schedule_times"] = ["14:40", "16:30", "20:30"]
     update_health_status(health_report)
 
     print(f"📊 [產出] 數據健康報表已發布 -> {os.path.join(OUTPUT_DIR, 'market_health.json')}")
