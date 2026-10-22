@@ -1468,6 +1468,10 @@
                                                     <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">{{ m.label }}</option>
                                                     <option value="custom">✏️ 自訂模型 (Custom)...</option>
                                                 </select>
+                                                <div v-if="isModelOutOfDate" class="mt-1 text-[10px] text-amber-500 font-medium flex items-center justify-between">
+                                                    <span>⚠️ 此模型官方已下線</span>
+                                                    <button type="button" @click="fetchAvailableGeminiModels(false)" class="underline text-indigo-400 hover:text-indigo-300 font-bold">點此同步</button>
+                                                </div>
                                             </div>
                                             <div class="flex space-x-1.5">
                                                 <button @click="testGeminiConnection" :disabled="isTestingGemini || !geminiApiKey"
@@ -2405,6 +2409,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261022.06"></script>
+    <script src="app.js?v=2.20261022.07"></script>
 </body>
 </html>

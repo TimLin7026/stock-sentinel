@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.06');
+        const appVersion = ref('v2.20261022.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4718,6 +4718,25 @@ createApp({
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
 
+        // 判定當前選取的模型是否已不在 Google 官方可用清單中
+        const isModelOutOfDate = computed(() => {
+            if (!availableGeminiModels.value || availableGeminiModels.value.length === 0) return false;
+            if (geminiModelSelection.value === 'custom') return false;
+            return !availableGeminiModels.value.some(m => m.id === geminiModelSelection.value);
+        });
+
+        // 辨識 Google API 是否回傳模型已停用/下線/找不到
+        const isModelDeprecatedError = (errMsg, status) => {
+            if (!errMsg) return false;
+            const str = String(errMsg).toLowerCase();
+            return status === 404 || 
+                   str.includes('no longer available') || 
+                   str.includes('is not found') || 
+                   (str.includes('models/gemini-') && str.includes('not found')) || 
+                   str.includes('deprecated') || 
+                   str.includes('is not supported for this api version');
+        };
+
         const getActiveGeminiModel = () => {
             let m = geminiModelSelection.value;
             if (m === 'custom') {
@@ -4822,7 +4841,16 @@ createApp({
                 } else {
                     const errJson = await res.json().catch(() => ({}));
                     const msg = errJson.error ? errJson.error.message : res.statusText;
-                    alert(`❌ 連線測試失敗 (HTTP ${res.status})：\n${msg}`);
+                    if (isModelDeprecatedError(msg, res.status)) {
+                        alert(
+                            `❌ 連線測試失敗（模型已失效）\n\n` +
+                            `Google 官方回報：模型 [${model}] 已停用或下線！\n` +
+                            `（詳細訊息：${msg}）\n\n` +
+                            `👉 請點擊模型版本上方的「🔄 同步官方」按鈕，立即重新取得 Google 官方最新可用模型清單！`
+                        );
+                    } else {
+                        alert(`❌ 連線測試失敗 (HTTP ${res.status})：\n${msg}`);
+                    }
                 }
             } catch (err) {
                 alert(`❌ 網路連線異常：${err.message}`);
@@ -4919,6 +4947,31 @@ createApp({
                 if (!res.ok) {
                     const errBody = await res.json().catch(() => ({}));
                     const errMsg = (errBody && errBody.error && errBody.error.message) ? errBody.error.message : `HTTP ${res.status}`;
+                    
+                    if (isModelDeprecatedError(errMsg, res.status)) {
+                        const currentModel = model;
+                        const recommendedModel = 'gemini-3.8-flash';
+                        const confirmSwitch = confirm(
+                            `⚠️ AI 模型失效提醒\n\n` +
+                            `您目前設定的模型【${currentModel}】已遭 Google 官方停用或下線！\n` +
+                            `（官方回報：${errMsg}）\n\n` +
+                            `💡 系統建議方案：\n` +
+                            `是否立即為您切換為官方最新主力推薦模型【${recommendedModel}】，\n` +
+                            `並同步更新選單預設值與官方清單後，自動重新生成戰報？`
+                        );
+                        if (confirmSwitch) {
+                            geminiModelSelection.value = recommendedModel;
+                            localStorage.setItem('sentinel_gemini_model', recommendedModel);
+                            fetchAvailableGeminiModels(true);
+                            showToast(`🔄 已為您自動切換至【${recommendedModel}】並更新預設值，正在為【${stock.code}】重新產出戰報...`, 4000);
+                            stock.isGeneratingGemini = false;
+                            return generateGeminiReportForStock(stock);
+                        } else {
+                            stock.isGeneratingGemini = false;
+                            alert(`⚠️ 已取消戰報生成。建議您前往「雲端同步 ➔ Google Gemini AI」點擊「🔄 同步官方」更新最新清單。`);
+                            return;
+                        }
+                    }
                     throw new Error(errMsg);
                 }
 
@@ -7847,6 +7900,7 @@ createApp({
             fetchAvailableGeminiModels,
             geminiModelSelection,
             geminiCustomModel,
+            isModelOutOfDate,
             getActiveGeminiModel,
             isTestingGemini,
             saveGeminiSettings,
