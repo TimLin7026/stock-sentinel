@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.04');
+        const appVersion = ref('v2.20261022.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -4686,7 +4686,11 @@ createApp({
 
                 // ─── 💎 Google Gemini AI 智能戰報模組 ───
         const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
-        const storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
+        let storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
+        if (storedModel === 'gemini-2.5-flash' || !storedModel) {
+            storedModel = 'gemini-3.8-flash';
+            localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
+        }
         const predefinedModels = ['gemini-3.8-flash', 'gemini-4-argon', 'gemini-3.1-pro-preview', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
         const geminiModelSelection = ref(predefinedModels.includes(storedModel) ? storedModel : 'custom');
         const geminiCustomModel = ref(predefinedModels.includes(storedModel) ? '' : storedModel);
@@ -4694,10 +4698,14 @@ createApp({
         const isTestingGemini = ref(false);
 
         const getActiveGeminiModel = () => {
-            if (geminiModelSelection.value === 'custom') {
-                return (geminiCustomModel.value || '').trim() || 'gemini-3.8-flash';
+            let m = geminiModelSelection.value;
+            if (m === 'custom') {
+                m = (geminiCustomModel.value || '').trim() || 'gemini-3.8-flash';
             }
-            return geminiModelSelection.value || 'gemini-3.8-flash';
+            if (m === 'gemini-2.5-flash') {
+                m = 'gemini-3.8-flash';
+            }
+            return m || 'gemini-3.8-flash';
         };
         let cachedGeminiPrompt = null;
 
