@@ -4720,6 +4720,7 @@ createApp({
         const isKnownModel = availableGeminiModels.value.some(m => m.id === storedModel);
         const geminiModelSelection = ref(isKnownModel ? storedModel : 'custom');
         const geminiCustomModel = ref(isKnownModel ? '' : storedModel);
+        const currentGeneratingGeminiStock = ref(null); // 🛡️ 全域互斥鎖：記錄當前正在產出戰報的股票 { code, name }
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
 
@@ -4927,6 +4928,19 @@ createApp({
 
         const generateGeminiReportForStock = async (stock) => {
             if (!stock) return;
+
+            // 🛡️ 全域互斥鎖防呆攔截：一次限執行一支股票
+            if (currentGeneratingGeminiStock.value) {
+                const cur = currentGeneratingGeminiStock.value;
+                alert(
+                    `⏳【富貴 Gem 運算中】\n\n` +
+                    `系統目前正在為【${cur.code} ${cur.name || ''}】深度推導完整戰報中！\n\n` +
+                    `💡 為確保資料庫寫入精確與避免運算衝突，一次限執行一支股票。\n` +
+                    `請稍候當前戰報生成完成後（約需 30~50 秒），再點擊【${stock.code} ${stock.name || ''}】！`
+                );
+                return;
+            }
+
             if (stock.isGeneratingGemini) return;
 
             let key = (geminiApiKey.value || '').trim();
@@ -4945,6 +4959,7 @@ createApp({
             }
 
             stock.isGeneratingGemini = true;
+            currentGeneratingGeminiStock.value = { code: stock.code, name: stock.name || '' };
             showToast(`🧠 富貴 Gem 正在為【${stock.code} ${stock.name || ''}】深度推導八大章節與盤中檢核表，約需 30~50 秒，請稍候...`, 8000);
 
             try {
@@ -5087,6 +5102,7 @@ createApp({
                 }
             } finally {
                 stock.isGeneratingGemini = false;
+                currentGeneratingGeminiStock.value = null;
             }
         };
 
@@ -7968,6 +7984,7 @@ createApp({
             fetchAvailableGeminiModels,
             geminiModelSelection,
             geminiCustomModel,
+            currentGeneratingGeminiStock,
             isModelOutOfDate,
             getActiveGeminiModel,
             isTestingGemini,

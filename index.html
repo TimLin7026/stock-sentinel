@@ -830,7 +830,7 @@
                                         <!-- 0. 💎 富貴 Gem 一鍵 AI 智能戰報按鈕 (純圖示) -->
                                         <button @click.stop="generateGeminiReportForStock(stock)" 
                                                 class="w-6 h-6 rounded-md font-bold border border-indigo-400/30 transition flex items-center justify-center shadow-sm active:scale-95 shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white" 
-                                                :title="stock.isGeneratingGemini ? '富貴 Gem 正在生成戰報中...' : '富貴 Gem 一鍵 AI 智能生成戰報並匯入'">
+                                                :title="stock.isGeneratingGemini ? '富貴 Gem 正在生成此股戰報中...' : (currentGeneratingGeminiStock ? `富貴 Gem 正在推導【${currentGeneratingGeminiStock.code}】中，請稍候...` : '富貴 Gem 一鍵 AI 智能生成戰報並匯入')">
                                             <i v-if="stock.isGeneratingGemini" class="fa-solid fa-arrows-rotate fa-spin text-[10px]"></i>
                                             <span v-else class="text-[11px] leading-none">💎</span>
                                         </button>
@@ -2409,6 +2409,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261022.11"></script>
+    <script src="app.js?v=2.20261022.12"></script>
 </body>
 </html>
