@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.14');
+        const appVersion = ref('v2.20261022.15');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2749,6 +2749,27 @@ createApp({
                 } catch (e4) {
                     console.warn("[MIGRATE] my_stock created_at patch warning:", e4);
                 }
+
+                // 5. ⚔️ 自動除垢自癒（對齊地端）：若某股票代號在實體券商已有持股 (個股股數 > 0)，自動驅逐 my_stock 中殘留的同代號「關注」卡片，並登記墓碑
+                try {
+                    const duplicateWatch = db.exec(`
+                        SELECT 股票代號 FROM my_stock 
+                        WHERE 證券商 = '關注' 
+                          AND 股票代號 IN (SELECT 股票代號 FROM my_stock WHERE 證券商 != '關注' AND 個股股數 > 0)
+                    `);
+                    if (duplicateWatch.length > 0 && duplicateWatch[0].values) {
+                        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                        duplicateWatch[0].values.forEach(r => {
+                            const sc = r[0];
+                            db.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [sc]);
+                            const tombUk = String(sc).padStart(4, '0') + '|關注';
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('my_stock', ?, ?)", [tombUk, nowStr]);
+                            console.log(`⚔️ [除垢自癒] 個股 ${sc} 在實體券商已有持股，已驅逐殘留的關注記錄並補寫墓碑。`);
+                        });
+                    }
+                } catch (e5) {
+                    console.warn("[MIGRATE] cleanup duplicate watch warning:", e5);
+                }
             } catch (err) {
                 console.warn("[MIGRATE] Overall migration error:", err);
             }
@@ -3386,9 +3407,12 @@ createApp({
         // 🧭 單次智慧子分頁定位：當目前子分頁 (預設現役持股區) 為 0 檔時，依序單次尋找有股票的分頁 (holding ➔ starred ➔ watchlist)；若全空則固定停在 holding，100% 杜絕無限 Loop
         const autoSelectNonEmptyStockSubTab = () => {
             const list = stockList.value || [];
+            const activeHoldingCodes = new Set(
+                list.filter(s => s.broker !== '關注' && Number(s.shares || 0) > 0).map(s => s.code)
+            );
             const hasHolding = list.some(s => Number(s.shares || 0) > 0);
             const hasStarred = list.some(s => s.focusStatus === '買' || s.focusStatus === '賣');
-            const hasWatchlist = list.some(s => Number(s.shares || 0) === 0 || s.broker === '關注');
+            const hasWatchlist = list.some(s => (Number(s.shares || 0) === 0 || s.broker === '關注') && !activeHoldingCodes.has(s.code));
 
             if (stockSubTab.value === 'holding' && hasHolding) return;
             if (stockSubTab.value === 'starred' && hasStarred) return;
@@ -3505,7 +3529,18 @@ createApp({
             });
         });
 
-        const watchlistStocks = computed(() => stockList.value.filter(s => s.shares === 0 || s.broker === '關注'));
+        // ─── 計算屬性：自選觀察池 (對齊地端：已買進實質持股之個股，嚴格排除於關注區之外) ───
+        const watchlistStocks = computed(() => {
+            const activeHoldingCodes = new Set(
+                (stockList.value || [])
+                    .filter(s => s.broker !== '關注' && Number(s.shares || 0) > 0)
+                    .map(s => s.code)
+            );
+            return (stockList.value || []).filter(s => {
+                const isZeroOrWatch = Number(s.shares || 0) === 0 || s.broker === '關注';
+                return isZeroOrWatch && !activeHoldingCodes.has(s.code);
+            });
+        });
 
         const currentFilteredStocks = computed(() => {
             let baseList = [];
@@ -4275,6 +4310,23 @@ createApp({
                     // 若編輯時更換了券商或代號，也對舊券商/舊代號進行重新滾算銷帳
                     if (oldBroker && (oldBroker !== brokerName || (oldCode && oldCode !== codeVal))) {
                         recalcBrokerHoldings(oldCode || codeVal, oldBroker);
+                    }
+
+                    // ⚔️ 對齊電腦端攔截驅逐機制：若該股票在實體券商已持有大於 0 股，自動將同代號的「關注」卡片物理剔除並登記墓碑！
+                    if (brokerName !== '關注') {
+                        try {
+                            const checkWatch = dbInstance.exec("SELECT created_at FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [codeVal]);
+                            if (checkWatch.length > 0 && checkWatch[0].values.length > 0) {
+                                dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = '關注'", [codeVal]);
+                                const watchUk = makeStockUniqueKey(codeVal, '關注');
+                                const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                                dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                                dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('my_stock', ?, ?)", [watchUk, nowStr]);
+                                console.log(`⚔️ [關注驅逐] 個股 ${codeVal} 已在實體券商 [${brokerName}] 建立持股，已物理剔除關注卡片並補登記墓碑。`);
+                            }
+                        } catch (e_evict) {
+                            console.warn("驅逐關注卡片異常:", e_evict);
+                        }
                     }
 
                     await saveDbToIndexedDb();
