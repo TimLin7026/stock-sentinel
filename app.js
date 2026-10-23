@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.15');
+        const appVersion = ref('v2.20261022.16');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -969,9 +969,9 @@ createApp({
             return matchedCount;
         };
 
-        // ─── 🔄 僅刷新雲端大腦運維狀態 (不下載覆蓋本地快照) ───
+        // ─── 🔄 雲端大腦運維狀態探測引擎 (支援 silent 靜默背景模式與手動彈窗模式) ───
         const isRefreshingBrainStatus = ref(false);
-        const refreshBrainStatusOnly = async () => {
+        const fetchBrainHealthStatusPure = async (silent = true) => {
             isRefreshingBrainStatus.value = true;
             const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
             const fallbackBaseUrl = '.';
@@ -993,8 +993,10 @@ createApp({
                 }
 
                 if (!healthData) {
-                    alert("⚠️ 無法連線至雲端大腦健康報表，請確認網路連線。");
-                    return;
+                    if (!silent) {
+                        alert("⚠️ 無法連線至雲端大腦健康報表，請確認網路連線。");
+                    }
+                    return null;
                 }
 
                 const cloudTimeStr = healthData.run_time || healthData.timestamp || '---';
@@ -1008,14 +1010,24 @@ createApp({
                 localStorage.setItem('sentinel_market_status', healthData.status || 'READY');
                 if (nextRunStr) localStorage.setItem('sentinel_market_next_run', nextRunStr);
 
-                const indCount = healthData.nodes && healthData.nodes.indicators ? healthData.nodes.indicators.count : '---';
-                alert(`📡【雲端大腦最新狀態已更新】\n\n• 大腦狀態：${healthData.status || '就緒'}\n• 審計開市日：${healthData.target_date || '最新'}\n• 大腦產出時間：${cloudTimeStr}\n• 審計合格檔數：${indCount} 檔\n\n💡 提示：本操作僅更新大腦運維狀態。若要將最新行情下載套用到手機，請點擊「立即同步」。`);
+                if (!silent) {
+                    const indCount = healthData.nodes && healthData.nodes.indicators ? healthData.nodes.indicators.count : '---';
+                    alert(`📡【雲端大腦最新狀態已更新】\n\n• 大腦狀態：${healthData.status || '就緒'}\n• 審計開市日：${healthData.target_date || '最新'}\n• 大腦產出時間：${cloudTimeStr}\n• 審計合格檔數：${indCount} 檔\n\n💡 提示：本操作僅更新大腦運維狀態。若要將最新行情下載套用到手機，請點擊「立即同步」。`);
+                }
+                return healthData;
             } catch (err) {
                 console.error("刷新大腦狀態異常:", err);
-                alert("刷新大腦狀態失敗: " + err.message);
+                if (!silent) {
+                    alert("刷新大腦狀態失敗: " + err.message);
+                }
+                return null;
             } finally {
                 isRefreshingBrainStatus.value = false;
             }
+        };
+
+        const refreshBrainStatusOnly = async () => {
+            await fetchBrainHealthStatusPure(false);
         };
 
         // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取)
@@ -8125,6 +8137,16 @@ createApp({
 
             // 📅 掛載時自動感知雲端最新休市日與颱風假表
             fetchCloudHolidays();
+
+            // 🧠 網頁重新整理 (Refresh) / 掛載時，自動背景靜默刷新雲端大腦最新產出時間與狀態
+            fetchBrainHealthStatusPure(true);
+
+            // 📱 當使用者螢幕解鎖或切換分頁回本應用時，自動背景靜默校準大腦產出時間
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    fetchBrainHealthStatusPure(true);
+                }
+            });
 
             // 🌟 檢查重載前是否有待續的一鍵同步任務 (先更新網頁再接續同步 DB)
             try {
