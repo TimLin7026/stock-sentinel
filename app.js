@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.13');
+        const appVersion = ref('v2.20261022.14');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -605,6 +605,51 @@ createApp({
             status: localStorage.getItem('sentinel_market_status') || 'READY'
         });
 
+        // ─── 📅 全域休市日與颱風假即時感知快取 (雲端 typhone_day.txt + SQLite holidays) ───
+        const cloudHolidaysMap = ref({});
+
+        const isMarketHoliday = (dateObj) => {
+            if (!dateObj) return false;
+            const dayOfWeek = dateObj.getDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) return true; // 週末休市
+            const pad = (n) => String(n).padStart(2, '0');
+            const dInt = parseInt(`${dateObj.getFullYear()}${pad(dateObj.getMonth() + 1)}${pad(dateObj.getDate())}`, 10);
+            if (cloudHolidaysMap.value && cloudHolidaysMap.value[dInt]) return true;
+
+            // 輔助檢查本機 SQLite holidays 表
+            if (dbInstance) {
+                try {
+                    const res = dbInstance.exec("SELECT holiday_name FROM holidays WHERE holiday_date = ?", [dInt]);
+                    if (res.length > 0 && res[0].values && res[0].values.length > 0) return true;
+                } catch (e) {}
+            }
+            return false;
+        };
+
+        const fetchCloudHolidays = async () => {
+            try {
+                const cloudTxtUrl = `https://timlin7026.github.io/stock-sentinel/typhone_day.txt?_t=${Date.now()}`;
+                const res = await fetch(cloudTxtUrl, { cache: 'no-store' });
+                if (res.ok) {
+                    const text = await res.text();
+                    const newMap = { ...cloudHolidaysMap.value };
+                    text.split('\n').forEach(line => {
+                        const l = line.trim();
+                        if (l && l.includes(',')) {
+                            const [dStr, reason] = l.split(',', 2);
+                            const cleanD = dStr.trim();
+                            if (cleanD.length === 8 && /^\d+$/.test(cleanD)) {
+                                newMap[parseInt(cleanD, 10)] = reason.trim();
+                            }
+                        }
+                    });
+                    cloudHolidaysMap.value = newMap;
+                }
+            } catch (e) {
+                console.warn("載入雲端休市表警告:", e);
+            }
+        };
+
         // ⏰ 智慧計算下一次開市日抓取時間 (對齊三班制：14:05 盤後第一時間 / 16:45 法人籌碼 / 21:10 全量資券校準)
         const nextCrawlTimeInfo = computed(() => {
             if (marketSyncMeta.value.nextScheduledRun) {
@@ -620,8 +665,7 @@ createApp({
 
             for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
                 const target = new Date(twNow.getTime() + dayOffset * 86400000);
-                const dayOfWeek = target.getDay();
-                if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+                if (isMarketHoliday(target)) continue;
 
                 const slots = [
                     { h: 14, m: 5, tag: '盤後第一時間' },
@@ -640,7 +684,7 @@ createApp({
                         const hh = String(slotDate.getHours()).padStart(2, '0');
                         const mm = String(slotDate.getMinutes()).padStart(2, '0');
                         return {
-                            label: `${y}/${m}/${d} (${weekdays[dayOfWeek]}) ${hh}:${mm}`,
+                            label: `${y}/${m}/${d} (${weekdays[target.getDay()]}) ${hh}:${mm}`,
                             countdown: diffMin > 60 ? `約 ${diffHours} 小時後` : `約 ${diffMin} 分鐘後`,
                             tag: slot.tag
                         };
@@ -650,7 +694,7 @@ createApp({
             return { label: '開市日 14:05 / 16:45 / 21:10', countdown: '', tag: '三班制排程' };
         });
 
-        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (感知今日是否開市、引導 User 同步)
+        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (感知今日是否開市、休市日、引導 User 同步)
         const calendarMarketStatus = computed(() => {
             const now = new Date();
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -664,8 +708,8 @@ createApp({
                 checkDt.setDate(checkDt.getDate() - 1);
             }
 
-            // 往前倒推找到最近一個週一至週五的開市日 (排除週末)
-            while (checkDt.getDay() === 0 || checkDt.getDay() === 6) {
+            // 往前倒推找到最近一個真正的開市交易日 (自動排除週末與颱風假/休市日)
+            while (isMarketHoliday(checkDt)) {
                 checkDt.setDate(checkDt.getDate() - 1);
             }
 
@@ -8026,6 +8070,9 @@ createApp({
             // 啟動開市日 15:00 / 21:30 雲端大腦同步主動提醒
             checkScheduledSyncReminders();
             setInterval(checkScheduledSyncReminders, 30000);
+
+            // 📅 掛載時自動感知雲端最新休市日與颱風假表
+            fetchCloudHolidays();
 
             // 🌟 檢查重載前是否有待續的一鍵同步任務 (先更新網頁再接續同步 DB)
             try {
