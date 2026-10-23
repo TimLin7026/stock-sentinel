@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.12');
+        const appVersion = ref('v2.20261022.13');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -424,6 +424,51 @@ createApp({
                 } catch (e) {}
             }
             return merged;
+        };
+
+        // ─── 💎 Gemini 設定隨 SQLite db_meta 雙向雲端同步輔助模組 ───
+        const readGeminiSettingsFromDbPure = (db) => {
+            if (!db) return { apiKey: '', model: '' };
+            let apiKey = '';
+            let model = '';
+            try {
+                const resKey = db.exec("SELECT value FROM db_meta WHERE key = 'gemini_api_key'");
+                if (resKey.length > 0 && resKey[0].values && resKey[0].values[0]) {
+                    apiKey = String(resKey[0].values[0][0] || '').trim();
+                }
+            } catch (e) {}
+            try {
+                const resModel = db.exec("SELECT value FROM db_meta WHERE key = 'gemini_model'");
+                if (resModel.length > 0 && resModel[0].values && resModel[0].values[0]) {
+                    model = String(resModel[0].values[0][0] || '').trim();
+                }
+            } catch (e) {}
+            return { apiKey, model };
+        };
+
+        const writeGeminiSettingsToDbPure = (db, apiKey, model) => {
+            if (!db) return;
+            try {
+                db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                if (apiKey !== undefined && apiKey !== null) {
+                    const cleanKey = String(apiKey || '').trim();
+                    if (cleanKey) {
+                        db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('gemini_api_key', ?)", [cleanKey]);
+                    } else {
+                        db.run("DELETE FROM db_meta WHERE key = 'gemini_api_key'");
+                    }
+                }
+                if (model !== undefined && model !== null) {
+                    const cleanModel = String(model || '').trim();
+                    if (cleanModel) {
+                        db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('gemini_model', ?)", [cleanModel]);
+                    } else {
+                        db.run("DELETE FROM db_meta WHERE key = 'gemini_model'");
+                    }
+                }
+            } catch (e) {
+                console.warn("寫入 Gemini 設定至 db_meta 警告:", e);
+            }
         };
 
         const addCustomBrokerToDb = async (brokerName) => {
@@ -2803,6 +2848,37 @@ createApp({
                 // 🎯 自動平滑升級架構與補齊歷史時間戳
                 migrateMobileDatabase(dbInstance);
 
+                // 💎 從 SQLite db_meta 讀取並智慧繼承 Gemini 設定 (支援同帳號跨設備漫遊)
+                try {
+                    const dbGemini = readGeminiSettingsFromDbPure(dbInstance);
+                    const localKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
+                    const localModel = (geminiModelSelection.value || localStorage.getItem('sentinel_gemini_model') || '').trim();
+
+                    // 1. 金鑰智慧合流：若 DB 內有金鑰，優先繼承至本機；若 DB 為空但本機已有，則反向補入 DB
+                    if (dbGemini.apiKey) {
+                        if (!localKey || localKey !== dbGemini.apiKey) {
+                            geminiApiKey.value = dbGemini.apiKey;
+                            localStorage.setItem('sentinel_gemini_api_key', dbGemini.apiKey);
+                            console.log("💎 已成功從資料庫繼承 Gemini API Key！");
+                        }
+                    } else if (localKey) {
+                        writeGeminiSettingsToDbPure(dbInstance, localKey, null);
+                    }
+
+                    // 2. 偏好模型智慧合流：若 DB 內有模型記錄，繼承至選單；若 DB 為空但本機有，反向補入 DB
+                    if (dbGemini.model) {
+                        if (!localModel || localModel !== dbGemini.model) {
+                            geminiModelSelection.value = dbGemini.model;
+                            localStorage.setItem('sentinel_gemini_model', dbGemini.model);
+                            console.log(`💎 已成功從資料庫繼承 Gemini 偏好模型: ${dbGemini.model}`);
+                        }
+                    } else if (localModel) {
+                        writeGeminiSettingsToDbPure(dbInstance, null, localModel);
+                    }
+                } catch (eGem) {
+                    console.warn("載入資料庫時讀取 Gemini 設定警告:", eGem);
+                }
+
                 // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
                 try {
                     const dictRes = dbInstance.exec("SELECT stock_code, stock_name FROM stock_dict");
@@ -4842,15 +4918,28 @@ createApp({
         };
         let cachedGeminiPrompt = null;
 
-        const saveGeminiSettings = () => {
-            if (geminiApiKey.value) {
-                localStorage.setItem('sentinel_gemini_api_key', geminiApiKey.value.trim());
+        const saveGeminiSettings = async () => {
+            const cleanKey = (geminiApiKey.value || '').trim();
+            if (cleanKey) {
+                localStorage.setItem('sentinel_gemini_api_key', cleanKey);
             } else {
                 localStorage.removeItem('sentinel_gemini_api_key');
             }
             const activeM = getActiveGeminiModel();
             localStorage.setItem('sentinel_gemini_model', activeM);
-            showToast('✅ Gemini 設定已成功儲存！', 2500);
+
+            // 🛡️ 同步雙寫至 SQLite db_meta，支援隨 DB 跨設備漫遊
+            if (dbInstance) {
+                try {
+                    writeGeminiSettingsToDbPure(dbInstance, cleanKey, activeM);
+                    await saveDbToIndexedDb();
+                    hasUnsyncedChanges.value = true;
+                } catch (eDb) {
+                    console.warn("寫入 Gemini 設定至本地 DB 失敗:", eDb);
+                }
+            }
+
+            showToast('✅ Gemini 設定已儲存，並已綁定本地資料庫（可隨 DB 跨設備同步）！', 3000);
         };
 
         const testGeminiConnection = async () => {
@@ -4953,6 +5042,13 @@ createApp({
                     key = inputKey.trim();
                     geminiApiKey.value = key;
                     localStorage.setItem('sentinel_gemini_api_key', key);
+                    if (dbInstance) {
+                        try {
+                            writeGeminiSettingsToDbPure(dbInstance, key, getActiveGeminiModel());
+                            await saveDbToIndexedDb();
+                            hasUnsyncedChanges.value = true;
+                        } catch (eDb) {}
+                    }
                 } else {
                     return;
                 }
@@ -7425,6 +7521,34 @@ createApp({
                     cloudDb.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
                     cloudDb.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(finalBrokers)]);
                 } catch (e) {}
+
+                // 0.2 合流 Gemini AI 設定 (db_meta.gemini_api_key / gemini_model - 跨設備雙向對齊)
+                try {
+                    const lGemini = readGeminiSettingsFromDbPure(dbInstance);
+                    const cGemini = readGeminiSettingsFromDbPure(cloudDb);
+                    const lsKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
+                    const lsModel = (geminiModelSelection.value || localStorage.getItem('sentinel_gemini_model') || '').trim();
+
+                    // 1. 金鑰決策：若本地有 Key 優先，若本地無 Key 則繼承雲端 Key
+                    const finalKey = lsKey || lGemini.apiKey || cGemini.apiKey || '';
+                    if (finalKey) {
+                        geminiApiKey.value = finalKey;
+                        localStorage.setItem('sentinel_gemini_api_key', finalKey);
+                        writeGeminiSettingsToDbPure(cloudDb, finalKey, null);
+                        writeGeminiSettingsToDbPure(dbInstance, finalKey, null);
+                    }
+
+                    // 2. 偏好模型決策：若本地有選取優先，若無則繼承雲端模型
+                    const finalModel = lsModel || lGemini.model || cGemini.model || 'gemini-3.8-flash';
+                    if (finalModel) {
+                        geminiModelSelection.value = finalModel;
+                        localStorage.setItem('sentinel_gemini_model', finalModel);
+                        writeGeminiSettingsToDbPure(cloudDb, null, finalModel);
+                        writeGeminiSettingsToDbPure(dbInstance, null, finalModel);
+                    }
+                } catch (eGemSync) {
+                    console.warn("雙向合流 Gemini 設定警告:", eGemSync);
+                }
 
                 // 合流墓碑至 cloudDb (保留 stock_created_at)
                 try {
