@@ -1786,8 +1786,9 @@
                             <select v-model="batchFilterBroker" 
                                     :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
                                     class="w-full border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
-                                <option value="全部">全部券商 / 關注</option>
-                                <option v-for="b in availableBrokers.filter(x => x !== '全部')" :key="b" :value="b">{{ b }}</option>
+                                <option value="全部">全部（含券商與關注）</option>
+                                <option value="關注">關注</option>
+                                <option v-for="b in availableBrokers.filter(x => x !== '全部' && x !== '關注')" :key="b" :value="b">{{ b }}</option>
                             </select>
                         </div>
                         <div>
@@ -2591,6 +2592,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.04"></script>
+    <script src="app.js?v=2.20261026.05"></script>
 </body>
 </html>
