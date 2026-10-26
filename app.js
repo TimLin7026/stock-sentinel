@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.17');
+        const appVersion = ref('v2.20261026.18');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -67,6 +67,10 @@ createApp({
             chartDaysCount.value = isLandscape ? 60 : 20;
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
+
+            // 3. 自動同步批次派工彈窗版面 (直/橫自適應)
+            batchModalOrientation.value = isLandscape ? 'landscape' : 'portrait';
+            localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
 
             // 3. 雙重延遲平滑重繪 (等待手機旋轉與 CSS transition 動畫完成)
             Vue.nextTick(() => {
@@ -1267,6 +1271,23 @@ createApp({
                 if (confirm("🔒 需先綁定 Google 帳號以啟用戰情室完整功能，是否立即進行 Google 授權登入？")) {
                     handleGoogleLogin();
                 }
+                return;
+            }
+
+            // 🛑 核心防呆閘門：若雲端正在背景批次推導戰報中，嚴禁觸發同步以防打斷接力佇列！
+            if (isCloudBatchRunning.value) {
+                const cur = cloudBatchStatus.value?.completedCount || 0;
+                const tot = cloudBatchStatus.value?.totalRequested || 0;
+                const curChunk = cloudBatchStatus.value?.currentChunk || 1;
+                const totChunk = cloudBatchStatus.value?.totalChunks || 1;
+                const chunkText = totChunk > 1 ? ` (目前正在第 ${curChunk}/${totChunk} 梯次)` : '';
+                alert(
+                    `⚠️【雲端推導進行中 · 請稍後同步】\n\n` +
+                    `目前 Google 雲端正在背景批次推導戰報中${chunkText}！\n` +
+                    `• 當前進度：已完成 ${cur} / ${tot} 檔\n\n` +
+                    `🛑 為避免清理接力佇列導致推導中斷，請等待推導完畢 (亮綠燈) 後再進行同步。\n` +
+                    `若確定要強制中斷，請先至「⚡ 批次戰報」點擊「🛑 強制解鎖」。`
+                );
                 return;
             }
 
@@ -5026,6 +5047,11 @@ createApp({
         const isTestingGemini = ref(false);
         const geminiGasUrl = ref(sanitizeGasUrl(localStorage.getItem('sentinel_gemini_gas_url') || ''));
         const showBatchDispatchModal = ref(false);
+        const batchModalOrientation = ref(checkDeviceLandscape() ? 'landscape' : (localStorage.getItem('sentinel_batch_modal_orientation') || 'portrait'));
+        const toggleBatchModalOrientation = () => {
+            batchModalOrientation.value = batchModalOrientation.value === 'portrait' ? 'landscape' : 'portrait';
+            localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
+        };
         const batchFilterBroker = ref('全部');
         const batchFilterCategory = ref('全部');
         const selectedBatchStocks = ref([]);
@@ -5674,6 +5700,9 @@ createApp({
 
         // 開啟批次派工 Modal
         const openBatchDispatchModal = () => {
+            if (checkDeviceLandscape()) {
+                batchModalOrientation.value = 'landscape';
+            }
             batchFilterBroker.value = '全部';
             batchFilterCategory.value = '全部';
             selectBatchOnlyExpired();
@@ -7930,6 +7959,12 @@ createApp({
             if (!googleUser.value.isLoggedIn || !googleAccessToken.value) return;
             if (syncStatus.value.loading) return;
 
+            // 🛑 核心防呆閘門：若雲端正在背景批次推導戰報中，網頁喚醒或狀態更新時嚴禁自動觸發同步，以保護接力佇列！
+            if (isCloudBatchRunning.value) {
+                console.log("☕ [智慧自動同步] 雲端正在背景批次推導中，暫緩自動同步，避免打斷接力佇列。");
+                return;
+            }
+
             // 2. 30 秒防抖冷卻，避免短時間內頻繁觸發
             const now = Date.now();
             if (now - lastAutoSyncAttemptTs < 30 * 1000) return;
@@ -8881,6 +8916,8 @@ createApp({
             isTestingGas,
             testGasConnection,
             showBatchDispatchModal,
+            batchModalOrientation,
+            toggleBatchModalOrientation,
             batchFilterBroker,
             batchFilterCategory,
             selectedBatchStocks,

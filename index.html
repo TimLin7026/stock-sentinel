@@ -1770,10 +1770,15 @@
         <!-- ========================================== -->
         <!-- ⚡ 富貴戰報雲端批次派工 Modal 彈窗 -->
         <!-- ========================================== -->
-        <div v-if="showBatchDispatchModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'" 
-                 class="border w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 space-y-3.5 shadow-2xl animate-fade-in max-h-[90vh] flex flex-col">
-                <!-- 頂部標題與關閉按鈕 -->
+        <div v-if="showBatchDispatchModal" 
+             :class="theme === 'dark' ? 'bg-slate-950/90' : 'bg-slate-500/25'"
+             class="fixed inset-0 z-50 backdrop-blur-md flex justify-center items-center overflow-hidden w-full max-w-full p-2 sm:p-4"
+             style="overscroll-behavior: contain;">
+            <div :class="[
+                batchModalOrientation === 'portrait' ? 'max-w-lg w-full max-h-[92vh] rounded-3xl' : 'max-w-5xl w-full h-[94vh] rounded-2xl',
+                theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'
+            ]" class="border shadow-2xl animate-fade-in flex flex-col overflow-hidden transition-all duration-200 relative p-4 sm:p-5 w-full">
+                <!-- 頂部標題與關閉按鈕 (含直/橫模式切換) -->
                 <div :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'" class="flex justify-between items-center border-b pb-3 flex-shrink-0">
                     <div class="flex items-center space-x-2">
                         <span class="text-xl">⚡</span>
@@ -1784,13 +1789,27 @@
                             <div class="text-[10px] text-slate-400">Google 雲端背景平行推導 · 支援離線鎖屏</div>
                         </div>
                     </div>
-                    <button @click="showBatchDispatchModal = false" class="text-slate-400 hover:text-slate-600 p-1">
-                        <i class="fa-solid fa-xmark text-lg"></i>
-                    </button>
+                    <div class="flex items-center space-x-1.5">
+                        <!-- 直/橫版面切換按鈕 (參考走勢圖) -->
+                        <button @click="toggleBatchModalOrientation" 
+                                :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
+                                class="w-8 h-8 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                :title="batchModalOrientation === 'portrait' ? '切換為 🖥️ 橫式/寬版左右雙欄' : '切換為 📱 直式手機版面'">
+                            <i class="fa-solid" :class="batchModalOrientation === 'portrait' ? 'fa-mobile-screen text-sky-400' : 'fa-desktop text-emerald-400'"></i>
+                        </button>
+                        <!-- 關閉按鈕 -->
+                        <button @click="showBatchDispatchModal = false" 
+                                :class="theme === 'dark' ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
+                                class="w-8 h-8 rounded-lg border flex items-center justify-center transition active:scale-90">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- 📊 雲端推導即時進度儀表板 (常駐顯示) -->
-                <div class="p-3 rounded-2xl border transition-all"
+                <!-- 📱 模式一：直式單欄佈局 (Portrait Layout) -->
+                <div v-if="batchModalOrientation === 'portrait'" class="space-y-3.5 flex flex-col flex-1 min-h-0 overflow-hidden pt-3">
+                    <!-- 📊 雲端推導即時進度儀表板 (常駐顯示) -->
+                    <div class="p-3 rounded-2xl border transition-all flex-shrink-0"
                      :class="isCloudBatchRunning 
                         ? 'bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 border-sky-500/40 shadow-sm'
                         : (cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0
@@ -2010,6 +2029,224 @@
                         </button>
                     </div>
                 </div>
+            </div> <!-- 📱 結束直式單欄佈局 -->
+
+            <!-- 🖥️ 模式二：橫式寬版左右雙欄佈局 (Landscape Layout) -->
+            <div v-else class="grid grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden pt-3">
+                <!-- 左欄 (佔 5/12，約 42%): 進度儀表板 + 券商與類別過濾器 + 操作按鈕 -->
+                <div class="col-span-5 flex flex-col justify-between overflow-y-auto no-scrollbar space-y-3 pr-2 border-r" :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-200'">
+                    <div class="space-y-3">
+                        <!-- 📊 雲端推導即時進度儀表板 -->
+                        <div class="p-3 rounded-2xl border transition-all"
+                             :class="isCloudBatchRunning 
+                                ? 'bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 border-sky-500/40 shadow-sm'
+                                : (cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0
+                                    ? 'bg-emerald-500/10 border-emerald-500/40'
+                                    : (theme === 'dark' ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'))">
+                            
+                            <!-- 1. 執行中 (Running) -->
+                            <div v-if="isCloudBatchRunning" class="space-y-1.5">
+                                <div class="flex items-center justify-between text-xs font-bold text-sky-400">
+                                    <span class="flex items-center space-x-1.5 truncate">
+                                        <i class="fa-solid fa-spinner fa-spin"></i>
+                                        <span>雲端推導進行中...</span>
+                                        <span v-if="cloudBatchStatus?.totalChunks > 1" class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-normal">
+                                            第 {{ cloudBatchStatus?.currentChunk || 1 }}/{{ cloudBatchStatus?.totalChunks }} 梯次
+                                        </span>
+                                    </span>
+                                    <span class="shrink-0 text-[11px]">{{ cloudBatchStatus?.completedCount || 0 }}/{{ cloudBatchStatus?.totalRequested || 0 }} 檔</span>
+                                </div>
+                                <!-- 進度條 -->
+                                <div class="w-full bg-slate-700/40 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-gradient-to-r from-sky-400 to-indigo-500 h-2 rounded-full transition-all duration-500" 
+                                         :style="{ width: `${cloudBatchStatus?.progressPercent || 0}%` }"></div>
+                                </div>
+                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                    <span v-if="cloudBatchStatus?.currentStock" class="truncate max-w-[120px]">
+                                        🔄 分析中：<strong class="text-sky-300 font-semibold">{{ cloudBatchStatus.currentStock }}</strong>
+                                    </span>
+                                    <span v-else>排程等待中...</span>
+                                    <div class="flex items-center space-x-1">
+                                        <button @click="forceResetCloudBatchLock(true)" class="text-rose-400 hover:text-rose-300 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 transition">
+                                            強制解鎖
+                                        </button>
+                                        <button @click="fetchCloudBatchStatus(true)" class="text-sky-400 hover:text-sky-300 text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 transition">
+                                            <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. 逾時救援狀態 (Timeout Rescue) -->
+                            <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'timeout'" class="space-y-1.5">
+                                <div class="flex items-center justify-between text-xs font-bold text-amber-400">
+                                    <span class="flex items-center space-x-1 truncate">
+                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                        <span>逾時中斷 (保底產出 {{ cloudBatchStatus.completedCount || 0 }} 檔)</span>
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                    <span>超過 3 分鐘無回應</span>
+                                    <div class="flex items-center space-x-1.5">
+                                        <button @click="forceResetCloudBatchLock(false)" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 transition">
+                                            重置
+                                        </button>
+                                        <button @click="handleHeaderSyncClick" class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 hover:bg-amber-500 text-white shadow transition">
+                                            📥 救援合流
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 3. 完成狀態 (Completed) -->
+                            <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0"
+                                 class="flex items-center justify-between text-xs">
+                                <div class="flex items-center space-x-2 text-emerald-400 font-bold">
+                                    <i class="fa-solid fa-circle-check text-base"></i>
+                                    <div>
+                                        <div>前次完成 ({{ cloudBatchStatus.completedCount }} 檔)</div>
+                                        <div class="text-[10px] text-slate-400 font-normal">可隨時合流至本機</div>
+                                    </div>
+                                </div>
+                                <button @click="handleHeaderSyncClick" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow transition active:scale-95">
+                                    📥 一鍵合流
+                                </button>
+                            </div>
+
+                            <!-- 4. 閒置狀態 (Idle / 預設) -->
+                            <div v-else class="flex items-center justify-between text-xs">
+                                <div class="flex items-center space-x-2">
+                                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'" class="font-bold">雲端閒置中 (可隨時派工)</span>
+                                </div>
+                                <button @click="fetchCloudBatchStatus(true)" 
+                                        :class="theme === 'dark' ? 'bg-slate-700/80 hover:bg-slate-700 text-slate-300' : 'bg-slate-200/80 hover:bg-slate-200 text-slate-700'"
+                                        class="px-2 py-1 rounded-lg text-[10px] font-bold flex items-center space-x-1 transition active:scale-95">
+                                    <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                                    <span>進度</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 快速過濾列 -->
+                        <div class="space-y-2">
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-400 mb-1">證券商過濾：</label>
+                                    <select v-model="batchFilterBroker" 
+                                            :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
+                                            class="w-full border rounded-xl px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
+                                        <option value="全部">全部（含券商與關注）</option>
+                                        <option value="關注">關注</option>
+                                        <option v-for="b in availableBrokers.filter(x => x !== '全部' && x !== '關注')" :key="b" :value="b">{{ b }}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-400 mb-1">名冊類別：</label>
+                                    <select v-model="batchFilterCategory" 
+                                            :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
+                                            class="w-full border rounded-xl px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
+                                        <option value="全部">全部股票</option>
+                                        <option value="庫存">僅庫存持有股</option>
+                                        <option value="特別關注">僅特別關注 (⭐)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 左欄底部操作區 (固定在左側下方，隨手可點) -->
+                    <div class="pt-3 border-t space-y-2 flex-shrink-0" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                        <div class="text-[10px] text-slate-400 leading-tight">
+                            💡 建議單批 3~5 檔，派工後請自由關閉網頁/鎖屏離線。
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button @click="showBatchDispatchModal = false" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'"
+                                    class="w-1/3 py-2.5 rounded-xl text-xs font-bold transition">
+                                取消
+                            </button>
+                            <button @click="dispatchBatchToCloudGas" 
+                                    :disabled="selectedBatchStocks.length === 0 || isDispatchingBatch || isCloudBatchRunning"
+                                    :class="isCloudBatchRunning ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-60' : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white shadow-md disabled:opacity-40'"
+                                    class="w-2/3 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5">
+                                <i class="fa-solid" :class="isCloudBatchRunning ? 'fa-lock' : (isDispatchingBatch ? 'fa-spinner fa-spin' : 'fa-rocket')"></i>
+                                <span v-if="isCloudBatchRunning">雲端推導中 · 暫停派工</span>
+                                <span v-else>{{ isDispatchingBatch ? '派工傳輸中...' : `派工至雲端 (${selectedBatchStocks.length} 檔)` }}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右欄 (佔 7/12，約 58%): 快速勾選組 + 雙欄網格展開待選清單 -->
+                <div class="col-span-7 flex flex-col min-h-0 space-y-2.5 pl-1">
+                    <!-- 快速勾選按鈕組 + 統計 -->
+                    <div class="flex items-center justify-between flex-shrink-0">
+                        <div class="flex items-center space-x-1.5">
+                            <button @click="selectBatchOnlyExpired" 
+                                    class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-600/20 text-amber-400 border border-amber-500/40 hover:bg-amber-600/30 transition">
+                                ⚡ 僅過期 (預設)
+                            </button>
+                            <button @click="selectAllBatchStocks" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                    class="px-2 py-1 rounded-lg text-[11px] font-semibold transition">
+                                全選
+                            </button>
+                            <button @click="clearAllBatchStocks" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                    class="px-2 py-1 rounded-lg text-[11px] font-semibold transition">
+                                全取消
+                            </button>
+                        </div>
+                        <span class="text-[11px] text-slate-400">
+                            已選 <b class="text-indigo-400 font-bold">{{ selectedBatchStocks.length }}</b> / {{ filteredBatchCandidateStocks.length }} 檔
+                        </span>
+                    </div>
+
+                    <!-- 待選個股清單 (雙欄 Grid，最大化橫屏空間效率) -->
+                    <div class="flex-1 overflow-y-auto no-scrollbar pr-1 min-h-0">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div v-for="stk in filteredBatchCandidateStocks" :key="stk.code + '_' + (stk.broker || '關注')"
+                                 @click="toggleBatchStock(stk.code)"
+                                 :class="selectedBatchStocks.includes(stk.code) 
+                                     ? (theme === 'dark' ? 'bg-indigo-950/40 border-indigo-500/60' : 'bg-indigo-50/80 border-indigo-400') 
+                                     : (theme === 'dark' ? 'bg-slate-950/40 border-slate-800 hover:bg-slate-800/40' : 'bg-white border-slate-200 hover:bg-slate-50')"
+                                 class="p-2 rounded-xl border flex items-center justify-between cursor-pointer transition select-none">
+                                <div class="flex items-center space-x-2 min-w-0">
+                                    <input type="checkbox" :checked="selectedBatchStocks.includes(stk.code)" 
+                                           @click.stop="toggleBatchStock(stk.code)"
+                                           class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0">
+                                    <div class="truncate">
+                                        <div class="font-bold text-xs flex items-center space-x-1 truncate">
+                                            <span class="truncate">{{ stk.code }} {{ stk.name }}</span>
+                                            <span v-if="stk.focusStatus === '是'" class="text-amber-400 text-[10px] flex-shrink-0">⭐</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-400 truncate">
+                                            <span>{{ stk.broker || '關注' }}</span>
+                                            <span v-if="stk.shares > 0"> · {{ stk.shares }}股</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="text-right flex-shrink-0 pl-1">
+                                    <span v-if="stk.isReportExpired" 
+                                          class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                        🔴 過期
+                                    </span>
+                                    <span v-else 
+                                          class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                        🟢 最新
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="filteredBatchCandidateStocks.length === 0" class="text-center py-12 text-slate-400 text-xs col-span-2">
+                            目前條件下無符合之股票
+                        </div>
+                    </div>
+                </div>
+            </div>
             </div>
         </div>
 
@@ -2708,6 +2945,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.17"></script>
+    <script src="app.js?v=2.20261026.18"></script>
 </body>
 </html>
