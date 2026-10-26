@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.06');
+        const appVersion = ref('v2.20261026.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3087,15 +3087,35 @@ createApp({
                     if (stratRes.length > 0) {
                         stratRes[0].values.forEach(r => {
                             const rawCode = String(r[0] || '').trim();
-                            const summaryText = String(r[7] || r[1] || '').trim();
+                            const rawContent = r[1] || '';
+                            let summaryText = String(r[7] || '').trim();
+                            let buyLow = r[2];
+                            let buyHigh = r[3];
+                            let defense = r[4];
+                            let targetLow = r[5];
+                            let targetHigh = r[6];
+
+                            // 🛡️ 雙重保險自癒：若 summaryText 含審計文字或點位皆空，但 rawContent 存在，立即以 parseReportText 重新提取第九章精確點位
+                            if (rawContent && (!summaryText || summaryText.includes('【審計】') || (!buyLow && !buyHigh))) {
+                                const healed = parseReportText(rawContent);
+                                if (healed) {
+                                    if (healed.summary) summaryText = healed.summary;
+                                    if (healed.buyLow !== null && healed.buyLow !== undefined) buyLow = healed.buyLow;
+                                    if (healed.buyHigh !== null && healed.buyHigh !== undefined) buyHigh = healed.buyHigh;
+                                    if (healed.defense !== null && healed.defense !== undefined) defense = healed.defense;
+                                    if (healed.targetLow !== null && healed.targetLow !== undefined) targetLow = healed.targetLow;
+                                    if (healed.targetHigh !== null && healed.targetHigh !== undefined) targetHigh = healed.targetHigh;
+                                }
+                            }
+
                             const dataObj = {
-                                content: r[1] || '',
-                                buyLow: r[2],
-                                buyHigh: r[3],
-                                defense: r[4],
-                                targetLow: r[5],
-                                targetHigh: r[6],
-                                summary: summaryText,
+                                content: rawContent,
+                                buyLow: buyLow,
+                                buyHigh: buyHigh,
+                                defense: defense,
+                                targetLow: targetLow,
+                                targetHigh: targetHigh,
+                                summary: summaryText || rawContent.slice(0, 100),
                                 recordTime: r[8] || ''
                             };
                             if (rawCode) {
@@ -4823,7 +4843,7 @@ createApp({
             showImportReportModal.value = true;
         };
 
-        const parseReportText = (text) => {
+        function parseReportText(text) {
             if (!text || typeof text !== 'string') return null;
             const t = text.trim();
             if (!t) return null;
@@ -8298,9 +8318,31 @@ createApp({
                                     bReports.forEach(rep => {
                                         const rCode = String(rep.code).padStart(4, '0');
                                         const rTime = rep.recordTime || (getNowDateTimeStr() + ':00');
+
+                                        // 🛡️ 雙重保險自癒：如果 rep.raw 存在，透過 parseReportText 重新提取精確點位與總結
+                                        let finalRaw = rep.raw || '';
+                                        let finalSummary = rep.summary || '';
+                                        let finalBuyLow = rep.buyLow || 0;
+                                        let finalBuyHigh = rep.buyHigh || 0;
+                                        let finalDefense = rep.defense || 0;
+                                        let finalTargetLow = rep.targetLow || 0;
+                                        let finalTargetHigh = rep.targetHigh || 0;
+
+                                        if (finalRaw) {
+                                            const selfHealed = parseReportText(finalRaw);
+                                            if (selfHealed) {
+                                                if (selfHealed.summary) finalSummary = selfHealed.summary;
+                                                if (selfHealed.buyLow !== null && selfHealed.buyLow !== undefined) finalBuyLow = selfHealed.buyLow;
+                                                if (selfHealed.buyHigh !== null && selfHealed.buyHigh !== undefined) finalBuyHigh = selfHealed.buyHigh;
+                                                if (selfHealed.defense !== null && selfHealed.defense !== undefined) finalDefense = selfHealed.defense;
+                                                if (selfHealed.targetLow !== null && selfHealed.targetLow !== undefined) finalTargetLow = selfHealed.targetLow;
+                                                if (selfHealed.targetHigh !== null && selfHealed.targetHigh !== undefined) finalTargetHigh = selfHealed.targetHigh;
+                                            }
+                                        }
+
                                         dbInstance.run(
                                             "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            [rTime, rCode, rep.raw || '', rep.buyLow || 0, rep.buyHigh || 0, rep.defense || 0, rep.targetLow || 0, rep.targetHigh || 0, rep.summary || '']
+                                            [rTime, rCode, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
                                         );
                                         // 驗證寫入成功後，安全清理該股舊戰報，落實每檔只留一份最新
                                         try {
