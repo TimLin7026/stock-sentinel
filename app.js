@@ -5627,6 +5627,50 @@ createApp({
             }
         };
 
+        // 📋 一鍵複製 GAS 腳本代碼並自動在新分頁開啟 script.new
+        const copyGasScriptAndOpen = async () => {
+            try {
+                let codeText = '';
+                try {
+                    const res = await fetch('scripts/sentinel_gemini_worker.gs');
+                    if (res.ok) {
+                        codeText = await res.text();
+                    }
+                } catch (eFetch) {}
+
+                if (!codeText) {
+                    codeText = `// 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報背景處理器\n// 請至 GitHub 專案 scripts/sentinel_gemini_worker.gs 複製完整代碼\nfunction doPost(e) { /* 請複製完整腳本內容 */ }`;
+                }
+
+                let copySuccess = false;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    try {
+                        await navigator.clipboard.writeText(codeText);
+                        copySuccess = true;
+                    } catch (eClip) {}
+                }
+
+                if (!copySuccess) {
+                    const ta = document.createElement('textarea');
+                    ta.value = codeText;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    copySuccess = true;
+                }
+
+                showToast('📋 GAS 戰報腳本代碼已複製到剪貼簿！正在開啟 Google Apps Script...', 4000);
+                window.open('https://script.new', '_blank');
+            } catch (err) {
+                console.error("複製 GAS 腳本失敗:", err);
+                alert("⚠️ 自動複製受限，正在為您開啟 Google Apps Script 建立頁面...\n代碼請參考專案 scripts/sentinel_gemini_worker.gs。");
+                window.open('https://script.new', '_blank');
+            }
+        };
+
         // ─── 📅 手機端「更新休市日」模組 (對接證交所 OpenAPI + GitHub Pages 雲端自訂休市表) ───
         const updateMarketHolidays = async () => {
             if (!dbInstance) {
@@ -8602,6 +8646,7 @@ createApp({
             toggleBatchStock,
             openBatchDispatchModal,
             dispatchBatchToCloudGas,
+            copyGasScriptAndOpen,
             availableGeminiModels,
             isFetchingModels,
             fetchAvailableGeminiModels,
