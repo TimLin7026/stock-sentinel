@@ -67,6 +67,18 @@ function doPost(e) {
       return createJsonResponse({ ok: false, error: "待推導股票清單為空" }, 400);
     }
 
+    // 🛑 併發互斥防呆檢查：若有執行中的任務且距離最後更新小於 6 分鐘，拒絕新派工
+    const currentLock = getBatchLockStatus();
+    if (currentLock.isRunning) {
+      Logger.log(`🛑 併發攔截：已有任務推導中 (${currentLock.completedCount}/${currentLock.totalRequested} 檔)，拒絕新派工！`);
+      return createJsonResponse({
+        ok: false,
+        isBusy: true,
+        error: `⚠️ 目前已有批次戰報正在雲端背景推導中 (${currentLock.completedCount}/${currentLock.totalRequested} 檔)，為防止額度衝突，請稍後完成後再上傳新清單！`,
+        status: currentLock
+      }, 429);
+    }
+
     // 🚀 執行批次推導處理
     const result = processStockBatch(apiKey, model, stocks);
 
@@ -83,7 +95,30 @@ function doPost(e) {
 }
 
 /**
- * 批次處理核心邏輯：微重試 + 熔斷 + 保底即時存檔
+ * 檢查當前是否有背景任務鎖定中 (6 分鐘逾時租約)
+ */
+function getBatchLockStatus() {
+  try {
+    const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getContentText();
+      if (content) {
+        const data = JSON.parse(content);
+        if (data.status === "running") {
+          const now = new Date().getTime();
+          const last = Number(data.lastHeartbeat) || 0;
+          if (now - last < 360000) { // 6 分鐘內判定為活躍執行中
+            return { isRunning: true, ...data };
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return { isRunning: false };
+}
+
+/**
+ * 批次處理核心邏輯：微重試 + 熔斷 + 保底即時存檔 + 逐檔即時心跳
  */
 function processStockBatch(apiKey, model, stocks) {
   const completedReports = [];
@@ -91,8 +126,26 @@ function processStockBatch(apiKey, model, stocks) {
   let consecutiveFailures = 0;
   let isCircuitBroken = false;
   let breakReason = "";
+  const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
 
   Logger.log(`🚀 開始執行批次推導，總檔數: ${stocks.length}，使用模型: ${model}`);
+
+  // 🔒 1. 任務啟動：立即寫入執行中鎖定狀態
+  saveStatusReportToCloudDrive({
+    status: "running",
+    startTime: startTimeStr,
+    lastHeartbeat: new Date().getTime(),
+    totalRequested: stocks.length,
+    completedCount: 0,
+    failedCount: 0,
+    currentStock: stocks[0]?.name || stocks[0]?.code || "",
+    currentCode: String(stocks[0]?.code || "").padStart(4, "0"),
+    progressPercent: 0,
+    completedList: [],
+    failedList: [],
+    isCircuitBroken: false,
+    breakReason: ""
+  });
 
   for (let i = 0; i < stocks.length; i++) {
     const item = stocks[i];
@@ -100,6 +153,23 @@ function processStockBatch(apiKey, model, stocks) {
     const name = item.name || code;
     const reportText = item.reportText || "";
     const systemPrompt = item.systemPrompt || "";
+
+    // 💓 2. 逐檔開始心跳回報：通知前端當前正在推導哪一檔股票
+    saveStatusReportToCloudDrive({
+      status: "running",
+      startTime: startTimeStr,
+      lastHeartbeat: new Date().getTime(),
+      totalRequested: stocks.length,
+      completedCount: completedReports.length,
+      failedCount: failedList.length,
+      currentStock: name,
+      currentCode: code,
+      progressPercent: Math.round((completedReports.length / stocks.length) * 100),
+      completedList: completedReports.map(r => ({ code: r.code, name: r.name })),
+      failedList: failedList,
+      isCircuitBroken: false,
+      breakReason: ""
+    });
 
     if (!reportText) {
       failedList.push({ code, name, error: "缺少技術指標戰報文本" });
@@ -176,13 +246,20 @@ function processStockBatch(apiKey, model, stocks) {
     Utilities.sleep(1000);
   }
 
-  // 📝 產出批次狀態報告並儲存至 Drive
+  // 📝 產出批次狀態報告並儲存至 Drive (標記 completed 並釋放執行鎖)
   const statusReport = {
+    status: "completed",
     batchTime: Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss"),
+    startTime: startTimeStr,
+    lastHeartbeat: new Date().getTime(),
     totalRequested: stocks.length,
     completedCount: completedReports.length,
     failedCount: failedList.length,
+    currentStock: "",
+    currentCode: "",
+    progressPercent: 100,
     completedCodes: completedReports.map(r => r.code),
+    completedList: completedReports.map(r => ({ code: r.code, name: r.name })),
     failedList: failedList,
     isCircuitBroken: isCircuitBroken,
     breakReason: breakReason

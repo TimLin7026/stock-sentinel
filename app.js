@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.08');
+        const appVersion = ref('v2.20261026.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5014,6 +5014,13 @@ createApp({
         const batchFilterCategory = ref('全部');
         const selectedBatchStocks = ref([]);
         const isDispatchingBatch = ref(false);
+        const cloudBatchStatus = ref(null);
+        const isCloudBatchRunning = computed(() => {
+            if (!cloudBatchStatus.value) return false;
+            return cloudBatchStatus.value.status === 'running';
+        });
+        const isCheckingCloudBatchStatus = ref(false);
+        let cloudBatchPollTimer = null;
 
         // 判定當前選取的模型是否已不在 Google 官方可用清單中
         const isModelOutOfDate = computed(() => {
@@ -5528,16 +5535,85 @@ createApp({
             }
         };
 
+        // ─── 📊 雲端批次戰報進度與互斥鎖管理 ───
+        const fetchCloudBatchStatus = async () => {
+            if (!googleAccessToken.value) return null;
+            isCheckingCloudBatchStatus.value = true;
+            try {
+                const url = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
+                const res = await fetch(url, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.files && data.files.length > 0) {
+                        const fileId = data.files[0].id;
+                        const cRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                            headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                        });
+                        if (cRes.ok) {
+                            const sData = await cRes.json();
+                            if (sData.status === 'running') {
+                                const now = new Date().getTime();
+                                const last = Number(sData.lastHeartbeat) || 0;
+                                if (now - last > 360000) { // 超過 6 分鐘租約過期
+                                    sData.status = 'timeout';
+                                }
+                            }
+                            cloudBatchStatus.value = sData;
+                            return sData;
+                        }
+                    } else {
+                        cloudBatchStatus.value = null;
+                    }
+                }
+            } catch (e) {
+                console.warn("讀取雲端戰報狀態失敗:", e);
+            } finally {
+                isCheckingCloudBatchStatus.value = false;
+            }
+            return null;
+        };
+
+        const startCloudBatchPolling = () => {
+            stopCloudBatchPolling();
+            fetchCloudBatchStatus();
+            cloudBatchPollTimer = setInterval(async () => {
+                const st = await fetchCloudBatchStatus();
+                if (!st || st.status !== 'running') {
+                    stopCloudBatchPolling();
+                }
+            }, 3000);
+        };
+
+        const stopCloudBatchPolling = () => {
+            if (cloudBatchPollTimer) {
+                clearInterval(cloudBatchPollTimer);
+                cloudBatchPollTimer = null;
+            }
+        };
+
         // 開啟批次派工 Modal
         const openBatchDispatchModal = () => {
             batchFilterBroker.value = '全部';
             batchFilterCategory.value = '全部';
             selectBatchOnlyExpired();
+            fetchCloudBatchStatus().then(st => {
+                if (st && st.status === 'running') {
+                    startCloudBatchPolling();
+                }
+            });
             showBatchDispatchModal.value = true;
         };
 
         // 派工至 Google 雲端背景 (GAS)
         const dispatchBatchToCloudGas = async () => {
+            // 🛑 互斥防呆：若雲端已有任務執行中，拒絕新派工
+            if (isCloudBatchRunning.value) {
+                const cur = cloudBatchStatus.value?.completedCount || 0;
+                const tot = cloudBatchStatus.value?.totalRequested || 0;
+                alert(`⚠️【雲端任務進行中】\n目前已有批次戰報正在背景推導中 (${cur}/${tot} 檔)！\n為避免額度超限與檔案衝突，請稍後推導完成後再派工！`);
+                return;
+            }
+
             if (selectedBatchStocks.value.length === 0) {
                 alert("⚠️ 請至少勾選一檔股票進行派工！");
                 return;
@@ -5630,6 +5706,7 @@ createApp({
                     body: JSON.stringify(payload)
                 });
 
+                startCloudBatchPolling();
                 showBatchDispatchModal.value = false;
                 alert(
                     `🎉【派工成功！已交由 Google 雲端背景執行】\n\n` +
@@ -8681,6 +8758,10 @@ createApp({
             batchFilterCategory,
             selectedBatchStocks,
             isDispatchingBatch,
+            cloudBatchStatus,
+            isCloudBatchRunning,
+            isCheckingCloudBatchStatus,
+            fetchCloudBatchStatus,
             filteredBatchCandidateStocks,
             selectBatchOnlyExpired,
             selectAllBatchStocks,
