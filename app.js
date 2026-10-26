@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.09');
+        const appVersion = ref('v2.20261026.10');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5573,34 +5573,12 @@ createApp({
             return null;
         };
 
-        const startCloudBatchPolling = () => {
-            stopCloudBatchPolling();
-            fetchCloudBatchStatus();
-            cloudBatchPollTimer = setInterval(async () => {
-                const st = await fetchCloudBatchStatus();
-                if (!st || st.status !== 'running') {
-                    stopCloudBatchPolling();
-                }
-            }, 3000);
-        };
-
-        const stopCloudBatchPolling = () => {
-            if (cloudBatchPollTimer) {
-                clearInterval(cloudBatchPollTimer);
-                cloudBatchPollTimer = null;
-            }
-        };
-
         // 開啟批次派工 Modal
         const openBatchDispatchModal = () => {
             batchFilterBroker.value = '全部';
             batchFilterCategory.value = '全部';
             selectBatchOnlyExpired();
-            fetchCloudBatchStatus().then(st => {
-                if (st && st.status === 'running') {
-                    startCloudBatchPolling();
-                }
-            });
+            fetchCloudBatchStatus();
             showBatchDispatchModal.value = true;
         };
 
@@ -5706,7 +5684,7 @@ createApp({
                     body: JSON.stringify(payload)
                 });
 
-                startCloudBatchPolling();
+                fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
                 alert(
                     `🎉【派工成功！已交由 Google 雲端背景執行】\n\n` +
