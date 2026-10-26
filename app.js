@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.16');
+        const appVersion = ref('v2.20261026.17');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5647,9 +5647,9 @@ createApp({
                 if (shouldMergeFirst) {
                     await handleHeaderSyncClick();
                 }
-                // 安全刪除 Google Drive 上的 gem_batch_status.json
+                // 安全刪除 Google Drive 上的 gem_batch_status.json 與 gem_batch_queue.json
                 if (googleAccessToken.value) {
-                    const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
+                    const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=(name='gem_batch_status.json' or name='gem_batch_queue.json') and trashed=false&fields=files(id,name)`;
                     const sSearchRes = await fetch(statusSearchUrl, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
                     if (sSearchRes.ok) {
                         const sData = await sSearchRes.json();
@@ -5780,6 +5780,7 @@ createApp({
                 const payload = {
                     apiKey: apiKey,
                     model: getActiveGeminiModel(),
+                    gasUrl: gasUrl,
                     stocks: payloadStocks
                 };
 
@@ -5796,13 +5797,15 @@ createApp({
 
                 fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
+                const chunkCount = Math.ceil(payloadStocks.length / 5);
+                const chunkNote = chunkCount > 1 ? ` (每組 5 檔，自動切為 ${chunkCount} 梯次接力推導)` : '';
                 alert(
                     `🎉【派工成功！已交由 Google 雲端背景執行】\n\n` +
-                    `• 本次派工：共 ${payloadStocks.length} 檔股票\n` +
+                    `• 本次派工：共 ${payloadStocks.length} 檔股票${chunkNote}\n` +
                     `• 推導清單：${payloadStocks.map(s => s.code).join(', ')}\n\n` +
                     `💡 您現在可以【自由關閉網頁、鎖定螢幕或切換其他 App】！\n` +
-                    `Google 伺服器會在背景完成推導並自動存入 Google Drive。\n\n` +
-                    `隨時可點擊「⚡ 批次戰報」或「雲端同步」查看進度與合流戰報！`
+                    `Google 雲端會在背景每 5 檔自動無縫接力推導，並即時存入 Google Drive。\n\n` +
+                    `隨時可點擊「⚡ 批次戰報」查看進度與合流戰報！`
                 );
             } catch (err) {
                 console.error("批次派工失敗:", err);
@@ -8545,9 +8548,9 @@ createApp({
                         }
                     }
 
-                    // 🧹 徹底閉環清理：合流完成後，連同狀態檔 gem_batch_status.json 一併刪除，並重置本機狀態為閒置
+                    // 🧹 徹底閉環清理：合流完成後，連同狀態檔 gem_batch_status.json 與佇列檔 gem_batch_queue.json 一併刪除，並重置本機狀態為閒置
                     try {
-                        const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
+                        const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=(name='gem_batch_status.json' or name='gem_batch_queue.json') and trashed=false&fields=files(id,name)`;
                         const sSearchRes = await fetch(statusSearchUrl, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
                         if (sSearchRes.ok) {
                             const sData = await sSearchRes.json();

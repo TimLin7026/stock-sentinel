@@ -1800,11 +1800,14 @@
                     <!-- 1. 執行中 (Running) -->
                     <div v-if="isCloudBatchRunning" class="space-y-1.5">
                         <div class="flex items-center justify-between text-xs font-bold text-sky-400">
-                            <span class="flex items-center space-x-1.5">
+                            <span class="flex items-center space-x-1.5 truncate">
                                 <i class="fa-solid fa-spinner fa-spin"></i>
                                 <span>雲端背景推導進行中...</span>
+                                <span v-if="cloudBatchStatus?.totalChunks > 1" class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-normal">
+                                    第 {{ cloudBatchStatus?.currentChunk || 1 }}/{{ cloudBatchStatus?.totalChunks }} 梯次
+                                </span>
                             </span>
-                            <span>{{ cloudBatchStatus?.completedCount || 0 }} / {{ cloudBatchStatus?.totalRequested || 0 }} 檔 ({{ cloudBatchStatus?.progressPercent || 0 }}%)</span>
+                            <span class="shrink-0">{{ cloudBatchStatus?.completedCount || 0 }} / {{ cloudBatchStatus?.totalRequested || 0 }} 檔 ({{ cloudBatchStatus?.progressPercent || 0 }}%)</span>
                         </div>
                         <!-- 進度條 -->
                         <div class="w-full bg-slate-700/40 rounded-full h-2 overflow-hidden">
@@ -2705,6 +2708,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.16"></script>
+    <script src="app.js?v=2.20261026.17"></script>
 </body>
 </html>

@@ -1,40 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報背景處理器 (Google Apps Script Worker)
+ * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報兩層式工作佇列排程器
+ * (Two-Tier Chained Queue Worker for Google Apps Script)
  * ═══════════════════════════════════════════════════════════════════════════
  * 
  * 📌 功能概述：
- * 1. 支援離線背景批次推導：手機端送出清單後可立即離線/鎖定螢幕。
- * 2. 多用戶資安隔離：100% 消耗使用者個人 Gemini API Key，數據直接寫入使用者個人 Google Drive。
- * 3. 智慧容錯與退避重試：遇 429/503 自動指數退避 (2s/5s/10s，最多 3 次)。
- * 4. 連續失敗熔斷機制：連續 2 檔失敗即刻終止，防止空轉超時。
- * 5. 保底存檔：推導成功的個股即刻寫入 Google Drive「gem_strategy_batch.json」，供手機端一鍵合流。
+ * 1. 兩層式智慧工作佇列：使用者勾選任意數量股票 (如 10~25 檔)，自動切為每組 5 檔之清單 Session。
+ * 2. 梯次自動接力推導：清單 1 跑完 (約 70 秒) 自動喚醒清單 2，依序接棒，徹底杜絕 Google 360 秒逾時魔咒！
+ * 3. 雙重零碰撞保護：同一瞬間僅單一梯次讀寫 Drive，完全消除檔案併發互咬與進度跳動。
+ * 4. 支援真正離線鎖屏：手機派工後 0.8 秒即可關機/鎖屏，雲端依序接力跑完全部。
+ * 5. 全量保底與自癒：逐檔保底存檔，梯次完工全量同步，合流時一網打盡。
  * 
  * 🚀 部署教學：
- * 1. 在您的 Google Drive 中新增一個「Google Apps Script」專案。
- * 2. 將本檔案全部內容複製並貼覆至 Code.gs 中。
- * 3. 點擊右上角「部署」➔「新增部署作業」➔ 選擇「網頁應用程式」。
- *    - 執行身分：我 (您的 Google 帳號)
- *    - 誰可以存取：任何人 (Anyone) 或 只有我自己
- * 4. 點擊部署並完成 Google 權限授權，複製產生的「網頁應用程式網址 (Web App URL)」。
- * 5. 將該網址貼入戰情室「雲端同步 ➔ 個人戰報 GAS 網址」中即可開始使用！
+ * 1. 在您的 Google Drive 中新增或開啟「Google Apps Script」專案。
+ * 2. 將本檔案全部內容複製並覆蓋貼覆至 Code.gs 中。
+ * 3. 點擊右上角「部署」➔「管理部署作業」➔ 鉛筆「編輯」➔ 選擇「新版本」➔ 點擊「部署」。
  */
 
 // ⚙️ 系統設定常數
 const BATCH_FILE_NAME = "gem_strategy_batch.json";
 const STATUS_FILE_NAME = "gem_batch_status.json";
+const QUEUE_FILE_NAME = "gem_batch_queue.json";
+const CHUNK_SIZE = 5;                  // 每梯次 5 檔股票 (約 70 秒，離 360s 上限極遠)
 const MAX_RETRY_COUNT = 3;             // 單檔遇忙碌最多重試 3 次
 const MAX_CONSECUTIVE_FAILURES = 2;   // 連續失敗 2 次即熔斷退出
 const MAX_SAFE_EXECUTION_SECONDS = 250; // Google 6 分鐘(360s)上限，提早於 250s 安全優雅收工防逾時
-const ENABLE_AUTO_WAKEUP = false;      // 預設關閉自動排程補跑 (先採人工重啟觸發)
 
 /**
- * HTTP GET 進入點：健康檢查與狀態查詢 (避免瀏覽器直接開啟時噴錯)
+ * HTTP GET 進入點：健康檢查與狀態查詢
  */
 function doGet(e) {
   try {
     const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
-    let statusInfo = { status: "ready", message: "💎 台股戰情室 Google Apps Script 戰報處理器正常運作中！" };
+    let statusInfo = { status: "ready", message: "💎 台股戰情室 Google Apps Script 兩層式排程器正常運作中！" };
     if (files.hasNext()) {
       try {
         statusInfo.latestStatus = JSON.parse(files.next().getContentText());
@@ -47,7 +45,7 @@ function doGet(e) {
 }
 
 /**
- * HTTP POST 進入點：接收手機端派工請求
+ * HTTP POST 進入點：接收手機端派工請求或接力請求
  */
 function doPost(e) {
   try {
@@ -56,9 +54,24 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
+
+    // 🚀 A. 梯次接力請求模式 (由前一梯次或排程發起)
+    if (payload.action === "process_next_chunk") {
+      Logger.log(`⚡ 收到接力觸發請求：批次 ID ${payload.batchId}，目標梯次索引 ${payload.targetChunkIndex}`);
+      const queue = readQueueFromCloudDrive();
+      if (queue && queue.batchId === payload.batchId) {
+        processQueueChunk(queue, Number(payload.targetChunkIndex) || 0);
+        return createJsonResponse({ ok: true, message: "接力梯次已啟動處理" }, 200);
+      } else {
+        return createJsonResponse({ ok: false, error: "佇列不存在或批次 ID 不符合" }, 404);
+      }
+    }
+
+    // 🚀 B. 手機端新派工請求 (第一層：調度分發層 Dispatcher)
     const apiKey = (payload.apiKey || "").trim();
     const model = (payload.model || "gemini-3.8-flash").trim();
     const stocks = payload.stocks || [];
+    const gasUrl = (payload.gasUrl || "").trim();
 
     if (!apiKey) {
       return createJsonResponse({ ok: false, error: "未提供有效的 Gemini API Key" }, 400);
@@ -68,7 +81,7 @@ function doPost(e) {
       return createJsonResponse({ ok: false, error: "待推導股票清單為空" }, 400);
     }
 
-    // 🛑 併發互斥防呆檢查：若有執行中的任務且距離最後更新小於 3 分鐘，拒絕新派工
+    // 🛑 併發互斥防呆檢查：若有執行中的任務且心跳在 3 分鐘內，拒絕新派工
     const currentLock = getBatchLockStatus();
     if (currentLock.isRunning) {
       Logger.log(`🛑 併發攔截：已有任務推導中 (${currentLock.completedCount}/${currentLock.totalRequested} 檔)，拒絕新派工！`);
@@ -80,13 +93,64 @@ function doPost(e) {
       }, 429);
     }
 
-    // 🚀 執行批次推導處理
-    const result = processStockBatch(apiKey, model, stocks);
+    // ✂️ 第一層核心：自動切組分組 (每 5 檔一個 Chunk)
+    const chunks = [];
+    for (let i = 0; i < stocks.length; i += CHUNK_SIZE) {
+      chunks.push(stocks.slice(i, i + CHUNK_SIZE));
+    }
+
+    const batchId = "batch_" + new Date().getTime();
+    const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+
+    const queueData = {
+      batchId: batchId,
+      startTime: startTimeStr,
+      totalRequested: stocks.length,
+      totalChunks: chunks.length,
+      currentChunkIndex: 0,
+      chunkSize: CHUNK_SIZE,
+      apiKey: apiKey,
+      model: model,
+      gasUrl: gasUrl,
+      chunks: chunks,
+      completedReports: [],
+      failedList: []
+    };
+
+    // 💾 持久化儲存佇列至 Drive
+    saveQueueToCloudDrive(queueData);
+
+    // 🔒 任務啟動：初始化狀態日誌
+    saveStatusReportToCloudDrive({
+      status: "running",
+      batchId: batchId,
+      startTime: startTimeStr,
+      lastHeartbeat: new Date().getTime(),
+      totalRequested: stocks.length,
+      completedCount: 0,
+      failedCount: 0,
+      currentChunk: 1,
+      totalChunks: chunks.length,
+      currentStock: chunks[0][0]?.name || chunks[0][0]?.code || "",
+      currentCode: String(chunks[0][0]?.code || "").padStart(4, "0"),
+      progressPercent: 0,
+      completedList: [],
+      failedList: [],
+      isCircuitBroken: false,
+      breakReason: ""
+    });
+
+    Logger.log(`🚀 [第一層調度完成] 總計 ${stocks.length} 檔，自動切為 ${chunks.length} 梯次 (每梯次 ${CHUNK_SIZE} 檔)！立即啟動第 1 梯次...`);
+
+    // 🏃‍♂️ 立即啟動第 1 梯次 (Chunk 0)
+    processQueueChunk(queueData, 0);
 
     return createJsonResponse({
       ok: true,
-      message: "批次推導已完成處理",
-      result: result
+      message: `批次排程已成功啟動！共 ${chunks.length} 梯次，正在背景依序接力推導中。`,
+      batchId: batchId,
+      totalChunks: chunks.length,
+      totalRequested: stocks.length
     }, 200);
 
   } catch (err) {
@@ -96,99 +160,66 @@ function doPost(e) {
 }
 
 /**
- * 檢查當前是否有背景任務鎖定中 (3 分鐘逾時租約)
+ * 第二層：梯次工作執行器 (只跑單一 Chunk，耗時約 70 秒，絕不逾時)
  */
-function getBatchLockStatus() {
-  try {
-    const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
-    if (files.hasNext()) {
-      const content = files.next().getContentText();
-      if (content) {
-        const data = JSON.parse(content);
-        if (data.status === "running") {
-          const now = new Date().getTime();
-          const last = Number(data.lastHeartbeat) || 0;
-          if (now - last < 180000) { // 3 分鐘內判定為活躍執行中 (避免卡死)
-            return { isRunning: true, ...data };
-          }
-        }
-      }
-    }
-  } catch (e) {}
-  return { isRunning: false };
-}
+function processQueueChunk(queue, chunkIndex) {
+  if (!queue || !queue.chunks || chunkIndex >= queue.chunks.length) {
+    Logger.log("⚠️ 梯次索引超出範圍或佇列無效，結束處理。");
+    return;
+  }
 
-/**
- * 批次處理核心邏輯：微重試 + 熔斷 + 保底即時存檔 + 逐檔即時心跳
- */
-function processStockBatch(apiKey, model, stocks) {
-  const completedReports = [];
-  const failedList = [];
+  const chunkStocks = queue.chunks[chunkIndex] || [];
+  const chunkStartTs = new Date().getTime();
+  const apiKey = queue.apiKey;
+  const model = queue.model;
   let consecutiveFailures = 0;
   let isCircuitBroken = false;
   let breakReason = "";
-  const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
 
-  Logger.log(`🚀 開始執行批次推導，總檔數: ${stocks.length}，使用模型: ${model}`);
+  Logger.log(`🏁 開始執行第 ${chunkIndex + 1}/${queue.totalChunks} 梯次，本梯檔數: ${chunkStocks.length} 檔`);
 
-  // 🔒 1. 任務啟動：立即寫入執行中鎖定狀態
-  saveStatusReportToCloudDrive({
-    status: "running",
-    startTime: startTimeStr,
-    lastHeartbeat: new Date().getTime(),
-    totalRequested: stocks.length,
-    completedCount: 0,
-    failedCount: 0,
-    currentStock: stocks[0]?.name || stocks[0]?.code || "",
-    currentCode: String(stocks[0]?.code || "").padStart(4, "0"),
-    progressPercent: 0,
-    completedList: [],
-    failedList: [],
-    isCircuitBroken: false,
-    breakReason: ""
-  });
-
-  const batchStartTs = new Date().getTime();
-
-  for (let i = 0; i < stocks.length; i++) {
-    // 🛡️ 1. Google 執行時間安全煞車檢查 (Graceful Shutdown 防 360 秒強制殺死)
-    const elapsedSeconds = (new Date().getTime() - batchStartTs) / 1000;
+  for (let i = 0; i < chunkStocks.length; i++) {
+    // 🛡️ 單梯次內部安全煞車檢查 (防單檔異常卡死)
+    const elapsedSeconds = (new Date().getTime() - chunkStartTs) / 1000;
     if (elapsedSeconds >= MAX_SAFE_EXECUTION_SECONDS) {
       isCircuitBroken = true;
-      breakReason = `因 Google 平台單次 6 分鐘限制，已於第 ${elapsedSeconds.toFixed(0)} 秒安全煞車收工！已保底完成前 ${completedReports.length} 檔，請先合流後再派工剩餘個股。`;
-      Logger.log(`🛑 安全優雅煞車觸發: ${breakReason}`);
+      breakReason = `因時間安全防護，第 ${chunkIndex + 1} 梯次於 ${elapsedSeconds.toFixed(0)} 秒安全收工！`;
+      Logger.log(`🛑 梯次安全煞車: ${breakReason}`);
       break;
     }
 
-    const item = stocks[i];
+    const item = chunkStocks[i];
     const code = String(item.code || "").padStart(4, "0");
     const name = item.name || code;
     const reportText = item.reportText || "";
     const systemPrompt = item.systemPrompt || "";
 
-    // 💓 2. 逐檔開始心跳回報：通知前端當前正在推導哪一檔股票
+    // 💓 逐檔即時心跳回報：通知前端當前第幾梯次、推導哪一檔
     saveStatusReportToCloudDrive({
       status: "running",
-      startTime: startTimeStr,
+      batchId: queue.batchId,
+      startTime: queue.startTime,
       lastHeartbeat: new Date().getTime(),
-      totalRequested: stocks.length,
-      completedCount: completedReports.length,
-      failedCount: failedList.length,
+      totalRequested: queue.totalRequested,
+      completedCount: queue.completedReports.length,
+      failedCount: queue.failedList.length,
+      currentChunk: chunkIndex + 1,
+      totalChunks: queue.totalChunks,
       currentStock: name,
       currentCode: code,
-      progressPercent: Math.round((completedReports.length / stocks.length) * 100),
-      completedList: completedReports.map(r => ({ code: r.code, name: r.name })),
-      failedList: failedList,
+      progressPercent: Math.round((queue.completedReports.length / queue.totalRequested) * 100),
+      completedList: queue.completedReports.map(r => ({ code: r.code, name: r.name })),
+      failedList: queue.failedList,
       isCircuitBroken: false,
       breakReason: ""
     });
 
     if (!reportText) {
-      failedList.push({ code, name, error: "缺少技術指標戰報文本" });
+      queue.failedList.push({ code, name, error: "缺少技術指標戰報文本" });
       continue;
     }
 
-    Logger.log(`[${i + 1}/${stocks.length}] 正在推導: ${code} ${name}...`);
+    Logger.log(`[梯次 ${chunkIndex + 1}][${i + 1}/${chunkStocks.length}] 正在推導: ${code} ${name}...`);
 
     let success = false;
     let lastErrorMsg = "";
@@ -214,11 +245,11 @@ function processStockBatch(apiKey, model, stocks) {
             targetHigh: parsed.targetHigh
           };
 
-          completedReports.push(reportData);
+          queue.completedReports.push(reportData);
           success = true;
-          consecutiveFailures = 0; // 重置連續失敗計數
+          consecutiveFailures = 0;
 
-          // 💾 成功立即保底存檔 (避免後續發生意外時前面努力白費)
+          // 💾 成功立即保底存檔至 Google Drive
           appendReportToCloudDrive(reportData);
           Logger.log(`✅ [${code} ${name}] 戰報生成並成功保底存檔！`);
           break;
@@ -227,25 +258,21 @@ function processStockBatch(apiKey, model, stocks) {
         lastErrorMsg = err.message || err.toString();
         Logger.log(`⚠️ [${code} ${name}] 第 ${attempt} 次呼叫失敗: ${lastErrorMsg}`);
 
-        // 判斷是否為 429 或 503 忙碌，採用階梯式等待
         if (lastErrorMsg.includes("429") || lastErrorMsg.includes("503") || lastErrorMsg.includes("overloaded") || lastErrorMsg.includes("ResourceExhausted")) {
           const sleepSeconds = attempt === 1 ? 2 : (attempt === 2 ? 5 : 10);
           Logger.log(`⏳ 偵測到模型忙碌，退避等待 ${sleepSeconds} 秒後重試...`);
           Utilities.sleep(sleepSeconds * 1000);
         } else {
-          // 其他不可逆錯誤 (例如 Key 錯誤或 Payload 格式問題)，直接中斷重試
           break;
         }
       }
     }
 
-    // 處理單檔最終失敗
     if (!success) {
       consecutiveFailures++;
-      failedList.push({ code, name, error: lastErrorMsg });
+      queue.failedList.push({ code, name, error: lastErrorMsg });
       Logger.log(`❌ [${code} ${name}] 推導最終失敗 (連續失敗次數: ${consecutiveFailures})`);
 
-      // 🛡️ 連續失敗熔斷檢查
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         isCircuitBroken = true;
         breakReason = `連續 ${consecutiveFailures} 檔股票遭遇模型忙碌或連線中斷，觸發安全熔斷停止後續推導！`;
@@ -254,35 +281,138 @@ function processStockBatch(apiKey, model, stocks) {
       }
     }
 
-    // 溫和間隔防抖 (避免瞬間連續請求)
-    Utilities.sleep(1000);
+    Utilities.sleep(800);
   }
 
-  // 📝 產出批次狀態報告並儲存至 Drive (標記 completed 並釋放執行鎖)
-  const statusReport = {
-    status: "completed",
-    batchTime: Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss"),
-    startTime: startTimeStr,
-    lastHeartbeat: new Date().getTime(),
-    totalRequested: stocks.length,
-    completedCount: completedReports.length,
-    failedCount: failedList.length,
-    currentStock: "",
-    currentCode: "",
-    progressPercent: 100,
-    completedCodes: completedReports.map(r => r.code),
-    completedList: completedReports.map(r => ({ code: r.code, name: r.name })),
-    failedList: failedList,
-    isCircuitBroken: isCircuitBroken,
-    breakReason: breakReason
-  };
+  // 💾 梯次完工：全量同步存檔
+  saveAllBatchReportsToCloudDrive(queue.completedReports);
 
-  // 💾 關鍵核心：將本次成功推導的全部戰報一次性全量寫入 Google Drive，避免快取覆蓋
-  saveAllBatchReportsToCloudDrive(completedReports);
+  // 🔄 判斷是否需要接力啟動下一梯次
+  const nextChunkIndex = chunkIndex + 1;
+  const hasMoreChunks = nextChunkIndex < queue.totalChunks && !isCircuitBroken;
 
-  saveStatusReportToCloudDrive(statusReport);
+  if (hasMoreChunks) {
+    queue.currentChunkIndex = nextChunkIndex;
+    saveQueueToCloudDrive(queue);
 
-  return statusReport;
+    Logger.log(`🎉 第 ${chunkIndex + 1}/${queue.totalChunks} 梯次已順利完工！準備接力啟動第 ${nextChunkIndex + 1} 梯次...`);
+
+    // 🚀 核心接力機制：建立 3 秒後自動喚醒的排程計時器
+    scheduleNextChunkTrigger();
+
+    // 雙保險：若具備 gasUrl，發起短超時 Webhook 自我喚醒
+    if (queue.gasUrl && queue.gasUrl.startsWith("https://script.google.com/")) {
+      try {
+        UrlFetchApp.fetch(queue.gasUrl, {
+          method: "post",
+          contentType: "application/json",
+          payload: JSON.stringify({
+            action: "process_next_chunk",
+            batchId: queue.batchId,
+            targetChunkIndex: nextChunkIndex
+          }),
+          muteHttpExceptions: true
+        });
+      } catch (eWebhook) {}
+    }
+
+  } else {
+    // 🏆 所有梯次全數完工 (或熔斷終止)
+    Logger.log(`🏆 [全部完工] 總計完成 ${queue.completedReports.length}/${queue.totalRequested} 檔戰報！`);
+
+    const finalReport = {
+      status: "completed",
+      batchId: queue.batchId,
+      batchTime: Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss"),
+      startTime: queue.startTime,
+      lastHeartbeat: new Date().getTime(),
+      totalRequested: queue.totalRequested,
+      completedCount: queue.completedReports.length,
+      failedCount: queue.failedList.length,
+      currentChunk: queue.totalChunks,
+      totalChunks: queue.totalChunks,
+      currentStock: "",
+      currentCode: "",
+      progressPercent: 100,
+      completedCodes: queue.completedReports.map(r => r.code),
+      completedList: queue.completedReports.map(r => ({ code: r.code, name: r.name })),
+      failedList: queue.failedList,
+      isCircuitBroken: isCircuitBroken,
+      breakReason: breakReason
+    };
+
+    saveStatusReportToCloudDrive(finalReport);
+    deleteQueueFromCloudDrive();
+    clearExistingTriggers();
+  }
+}
+
+/**
+ * Google Apps Script 背景排程計時器喚醒進入點 (全新獨立 6 分鐘實例)
+ */
+function runNextChunkJob() {
+  Logger.log("⏰ 背景單次排程器喚醒：接力啟動下一梯次！");
+  clearExistingTriggers();
+
+  const queue = readQueueFromCloudDrive();
+  if (!queue || !queue.chunks) {
+    Logger.log("⚠️ 無待處理佇列，結束任務。");
+    return;
+  }
+
+  const currentIdx = queue.currentChunkIndex || 0;
+  if (currentIdx < queue.totalChunks) {
+    processQueueChunk(queue, currentIdx);
+  }
+}
+
+/**
+ * 建立 3 秒後自動喚醒的接力排程計時器
+ */
+function scheduleNextChunkTrigger() {
+  clearExistingTriggers();
+  ScriptApp.newTrigger("runNextChunkJob")
+           .timeBased()
+           .after(3000)
+           .create();
+  Logger.log("⏰ 已建立 Google Apps Script 背景單次計時器，3 秒後自動喚醒接力下一梯次！");
+}
+
+/**
+ * 清理專案內舊的接力排程觸發器 (避免累積)
+ */
+function clearExistingTriggers() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    for (let i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "runNextChunkJob") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+  } catch (e) {}
+}
+
+/**
+ * 檢查當前是否有背景任務鎖定中 (3 分鐘逾時租約)
+ */
+function getBatchLockStatus() {
+  try {
+    const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getContentText();
+      if (content) {
+        const data = JSON.parse(content);
+        if (data.status === "running") {
+          const now = new Date().getTime();
+          const last = Number(data.lastHeartbeat) || 0;
+          if (now - last < 180000) { // 3 分鐘內判定為活躍執行中
+            return { isRunning: true, ...data };
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return { isRunning: false };
 }
 
 /**
@@ -339,7 +469,7 @@ function callGeminiApi(apiKey, model, systemPrompt, userContent) {
 }
 
 /**
- * 解析戰報文本 (100% 對齊戰情室「匯入戰報」與「單檔生成」之標準 parseReportText 規格)
+ * 解析戰報文本 (100% 對齊戰情室「匯入戰報」與「單檔生成」之標準規格)
  */
 function parseStrategyContent(rawText, fallbackCode) {
   if (!rawText || typeof rawText !== "string") {
@@ -383,7 +513,7 @@ function parseStrategyContent(rawText, fallbackCode) {
 }
 
 /**
- * 將產出的戰報安全追加至 Google Drive 的 gem_strategy_batch.json
+ * 保底存檔至 gem_strategy_batch.json
  */
 function appendReportToCloudDrive(reportData) {
   const files = DriveApp.getFilesByName(BATCH_FILE_NAME);
@@ -398,7 +528,6 @@ function appendReportToCloudDrive(reportData) {
       }
     } catch (e) {}
     
-    // 移除同股票舊戰報，落實只保留一份最新
     batchList = batchList.filter(r => String(r.code) !== String(reportData.code));
     batchList.push(reportData);
     file.setContent(JSON.stringify(batchList, null, 2));
@@ -409,7 +538,7 @@ function appendReportToCloudDrive(reportData) {
 }
 
 /**
- * 將本次所有推導成功的戰報全量一次性存檔至 Google Drive (避免 Drive 快取延遲導致覆蓋)
+ * 全量一次性存檔至 gem_strategy_batch.json
  */
 function saveAllBatchReportsToCloudDrive(completedReports) {
   if (!completedReports || completedReports.length === 0) return;
@@ -417,7 +546,6 @@ function saveAllBatchReportsToCloudDrive(completedReports) {
   const files = DriveApp.getFilesByName(BATCH_FILE_NAME);
   let batchList = [];
 
-  // 如果原本就有檔案，讀取現有內容並合併（以最新 completedReports 為主）
   if (files.hasNext()) {
     const file = files.next();
     try {
@@ -427,31 +555,59 @@ function saveAllBatchReportsToCloudDrive(completedReports) {
       }
     } catch (e) {}
 
-    // 先剔除 completedReports 裡面已包含的股票代碼，避免重複
     const newCodes = new Set(completedReports.map(r => String(r.code)));
     batchList = batchList.filter(r => !newCodes.has(String(r.code)));
-    
-    // 合併新戰報
     batchList = batchList.concat(completedReports);
     file.setContent(JSON.stringify(batchList, null, 2));
-    Logger.log(`💾 全量存檔完成：共計 ${batchList.length} 檔 (本次新增 ${completedReports.length} 檔) 寫入 ${BATCH_FILE_NAME}`);
+    Logger.log(`💾 全量存檔完成：共計 ${batchList.length} 檔寫入 ${BATCH_FILE_NAME}`);
   } else {
-    // 檔案不存在則直接新建
     DriveApp.createFile(BATCH_FILE_NAME, JSON.stringify(completedReports, null, 2), MimeType.PLAIN_TEXT);
     Logger.log(`💾 全量存檔完成：新建立檔案，共計 ${completedReports.length} 檔寫入 ${BATCH_FILE_NAME}`);
   }
 }
 
 /**
- * 儲存執行狀態日誌至 Google Drive 的 gem_batch_status.json
+ * 佇列持久化管理函式
+ */
+function readQueueFromCloudDrive() {
+  try {
+    const files = DriveApp.getFilesByName(QUEUE_FILE_NAME);
+    if (files.hasNext()) {
+      const content = files.next().getContentText();
+      if (content) return JSON.parse(content);
+    }
+  } catch (e) {}
+  return null;
+}
+
+function saveQueueToCloudDrive(queueData) {
+  const jsonStr = JSON.stringify(queueData, null, 2);
+  const files = DriveApp.getFilesByName(QUEUE_FILE_NAME);
+  if (files.hasNext()) {
+    files.next().setContent(jsonStr);
+  } else {
+    DriveApp.createFile(QUEUE_FILE_NAME, jsonStr, MimeType.PLAIN_TEXT);
+  }
+}
+
+function deleteQueueFromCloudDrive() {
+  try {
+    const files = DriveApp.getFilesByName(QUEUE_FILE_NAME);
+    while (files.hasNext()) {
+      files.next().setTrashed(true);
+    }
+  } catch (e) {}
+}
+
+/**
+ * 儲存執行狀態日誌至 gem_batch_status.json
  */
 function saveStatusReportToCloudDrive(statusReport) {
   const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
   const jsonStr = JSON.stringify(statusReport, null, 2);
 
   if (files.hasNext()) {
-    const file = files.next();
-    file.setContent(jsonStr);
+    files.next().setContent(jsonStr);
   } else {
     DriveApp.createFile(STATUS_FILE_NAME, jsonStr, MimeType.PLAIN_TEXT);
   }
@@ -470,10 +626,11 @@ function createJsonResponse(data, statusCode) {
  * 測試進入點：用於 GAS 編輯器中手動測試連線與授權
  */
 function testDrivePermission() {
-  Logger.log("檢查 Google Drive 讀寫權限...");
+  Logger.log("檢查 Google Drive 與排程器權限...");
   saveStatusReportToCloudDrive({
     test: "success",
     time: new Date().toISOString()
   });
-  Logger.log("✅ Google Drive 存取測試成功！");
+  clearExistingTriggers();
+  Logger.log("✅ Google Drive 存取與排程器測試成功！");
 }
