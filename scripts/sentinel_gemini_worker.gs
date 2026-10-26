@@ -25,6 +25,7 @@ const BATCH_FILE_NAME = "gem_strategy_batch.json";
 const STATUS_FILE_NAME = "gem_batch_status.json";
 const MAX_RETRY_COUNT = 3;             // 單檔遇忙碌最多重試 3 次
 const MAX_CONSECUTIVE_FAILURES = 2;   // 連續失敗 2 次即熔斷退出
+const MAX_SAFE_EXECUTION_SECONDS = 250; // Google 6 分鐘(360s)上限，提早於 250s 安全優雅收工防逾時
 const ENABLE_AUTO_WAKEUP = false;      // 預設關閉自動排程補跑 (先採人工重啟觸發)
 
 /**
@@ -67,7 +68,7 @@ function doPost(e) {
       return createJsonResponse({ ok: false, error: "待推導股票清單為空" }, 400);
     }
 
-    // 🛑 併發互斥防呆檢查：若有執行中的任務且距離最後更新小於 6 分鐘，拒絕新派工
+    // 🛑 併發互斥防呆檢查：若有執行中的任務且距離最後更新小於 3 分鐘，拒絕新派工
     const currentLock = getBatchLockStatus();
     if (currentLock.isRunning) {
       Logger.log(`🛑 併發攔截：已有任務推導中 (${currentLock.completedCount}/${currentLock.totalRequested} 檔)，拒絕新派工！`);
@@ -95,7 +96,7 @@ function doPost(e) {
 }
 
 /**
- * 檢查當前是否有背景任務鎖定中 (6 分鐘逾時租約)
+ * 檢查當前是否有背景任務鎖定中 (3 分鐘逾時租約)
  */
 function getBatchLockStatus() {
   try {
@@ -107,7 +108,7 @@ function getBatchLockStatus() {
         if (data.status === "running") {
           const now = new Date().getTime();
           const last = Number(data.lastHeartbeat) || 0;
-          if (now - last < 360000) { // 6 分鐘內判定為活躍執行中
+          if (now - last < 180000) { // 3 分鐘內判定為活躍執行中 (避免卡死)
             return { isRunning: true, ...data };
           }
         }
@@ -147,7 +148,18 @@ function processStockBatch(apiKey, model, stocks) {
     breakReason: ""
   });
 
+  const batchStartTs = new Date().getTime();
+
   for (let i = 0; i < stocks.length; i++) {
+    // 🛡️ 1. Google 執行時間安全煞車檢查 (Graceful Shutdown 防 360 秒強制殺死)
+    const elapsedSeconds = (new Date().getTime() - batchStartTs) / 1000;
+    if (elapsedSeconds >= MAX_SAFE_EXECUTION_SECONDS) {
+      isCircuitBroken = true;
+      breakReason = `因 Google 平台單次 6 分鐘限制，已於第 ${elapsedSeconds.toFixed(0)} 秒安全煞車收工！已保底完成前 ${completedReports.length} 檔，請先合流後再派工剩餘個股。`;
+      Logger.log(`🛑 安全優雅煞車觸發: ${breakReason}`);
+      break;
+    }
+
     const item = stocks[i];
     const code = String(item.code || "").padStart(4, "0");
     const name = item.name || code;

@@ -1812,18 +1812,45 @@
                                  :style="{ width: `${cloudBatchStatus?.progressPercent || 0}%` }"></div>
                         </div>
                         <div class="flex items-center justify-between text-[11px] text-slate-400">
-                            <span v-if="cloudBatchStatus?.currentStock" class="truncate">
+                            <span v-if="cloudBatchStatus?.currentStock" class="truncate max-w-[130px]">
                                 🔄 正在分析：<strong class="text-sky-300 font-semibold">{{ cloudBatchStatus.currentStock }}</strong>
                             </span>
                             <span v-else>正在排程等待中...</span>
-                            <button @click="fetchCloudBatchStatus(true)" class="text-sky-400 hover:text-sky-300 text-[11px] font-bold flex items-center space-x-1 px-2 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 transition">
-                                <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
-                                <span>刷新進度</span>
-                            </button>
+                            <div class="flex items-center space-x-1.5">
+                                <button @click="forceResetCloudBatchLock(true)" class="text-rose-400 hover:text-rose-300 text-[11px] font-bold flex items-center space-x-1 px-1.5 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 transition" title="強制解鎖並嘗試救援現存戰報">
+                                    <i class="fa-solid fa-ban"></i>
+                                    <span>強制解鎖</span>
+                                </button>
+                                <button @click="fetchCloudBatchStatus(true)" class="text-sky-400 hover:text-sky-300 text-[11px] font-bold flex items-center space-x-1 px-1.5 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 transition">
+                                    <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                                    <span>刷新</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- 2. 完成狀態 (Completed) -->
+                    <!-- 2. 逾時救援狀態 (Timeout Rescue) -->
+                    <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'timeout'" class="space-y-1.5">
+                        <div class="flex items-center justify-between text-xs font-bold text-amber-400">
+                            <span class="flex items-center space-x-1.5">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span>雲端推導中斷/逾時 (保底已產出 {{ cloudBatchStatus.completedCount || 0 }} 檔)</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-400">
+                            <span class="truncate max-w-[130px]">心跳超過 3 分鐘無回應</span>
+                            <div class="flex items-center space-x-1.5">
+                                <button @click="forceResetCloudBatchLock(false)" class="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 transition">
+                                    重置閒置
+                                </button>
+                                <button @click="handleHeaderSyncClick" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-600 hover:bg-amber-500 text-white shadow transition active:scale-95">
+                                    📥 救援合流戰報
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. 完成狀態 (Completed) -->
                     <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0"
                          class="flex items-center justify-between text-xs">
                         <div class="flex items-center space-x-2 text-emerald-400 font-bold">
@@ -2678,6 +2705,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.15"></script>
+    <script src="app.js?v=2.20261026.16"></script>
 </body>
 </html>

@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.15');
+        const appVersion = ref('v2.20261026.16');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5601,7 +5601,7 @@ createApp({
                             if (sData.status === 'running') {
                                 const now = new Date().getTime();
                                 const last = Number(sData.lastHeartbeat) || 0;
-                                if (now - last > 360000) { // 超過 6 分鐘租約過期
+                                if (now - last > 180000) { // 超過 3 分鐘(180秒)無心跳判定為逾時中斷
                                     sData.status = 'timeout';
                                 }
                             }
@@ -5611,6 +5611,8 @@ createApp({
                                     showToast(`⏳ 雲端推導中 (${sData.completedCount || 0}/${sData.totalRequested || 0} 檔)`, 2000);
                                 } else if (sData.status === 'completed') {
                                     showToast(`🎉 雲端推導完成 (${sData.completedCount || 0} 檔)`, 2500);
+                                } else if (sData.status === 'timeout') {
+                                    showToast(`⚠️ 雲端推導逾時中斷，請點擊「合流」救援已完成戰報！`, 3000);
                                 } else {
                                     showToast('🟢 雲端目前閒置中', 2000);
                                 }
@@ -5633,6 +5635,41 @@ createApp({
                 isCheckingCloudBatchStatus.value = false;
             }
             return null;
+        };
+
+        // 🛑 強制解除雲端批次鎖定並救援已完成戰報
+        const forceResetCloudBatchLock = async (shouldMergeFirst = true) => {
+            if (!confirm("是否確定強制解除雲端鎖定？\n\n系統將自動合流已產出的保底戰報，並將雲端推導狀態重置為閒置，以解開派工鎖定。")) {
+                return;
+            }
+            try {
+                showToast("🧹 正在解除雲端鎖定並救援現存戰報...", 2500);
+                if (shouldMergeFirst) {
+                    await handleHeaderSyncClick();
+                }
+                // 安全刪除 Google Drive 上的 gem_batch_status.json
+                if (googleAccessToken.value) {
+                    const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
+                    const sSearchRes = await fetch(statusSearchUrl, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
+                    if (sSearchRes.ok) {
+                        const sData = await sSearchRes.json();
+                        if (sData.files && sData.files.length > 0) {
+                            for (const sf of sData.files) {
+                                await fetch(`https://www.googleapis.com/drive/v3/files/${sf.id}`, {
+                                    method: 'DELETE',
+                                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                }).catch(() => {});
+                            }
+                        }
+                    }
+                }
+                cloudBatchStatus.value = null;
+                showToast("🟢 雲端鎖定已成功強制解除，恢復為可派工狀態！", 3000);
+            } catch (err) {
+                console.error("強制解除鎖定失敗:", err);
+                cloudBatchStatus.value = null;
+                showToast("⚠️ 已重置本地狀態為閒置", 2500);
+            }
         };
 
         // 開啟批次派工 Modal
@@ -8849,6 +8886,7 @@ createApp({
             isCloudBatchRunning,
             isCheckingCloudBatchStatus,
             fetchCloudBatchStatus,
+            forceResetCloudBatchLock,
             filteredBatchCandidateStocks,
             selectBatchOnlyExpired,
             selectAllBatchStocks,

@@ -202,6 +202,8 @@ def run_git_push(commit_msg):
         # 也把新增的腳本加入 git
         if os.path.exists(os.path.join(BASE_DIR, "publish_bump.py")):
             subprocess.run(["git", "add", "publish_bump.py"], cwd=BASE_DIR, check=True)
+        if os.path.exists(os.path.join(BASE_DIR, "scripts", "sentinel_gemini_worker.gs")):
+            subprocess.run(["git", "add", "scripts/sentinel_gemini_worker.gs"], cwd=BASE_DIR, check=True)
             
         full_msg = f"{commit_msg}"
         subprocess.run(["git", "commit", "-m", full_msg], cwd=BASE_DIR, check=True)
