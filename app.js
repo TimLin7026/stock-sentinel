@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261022.16');
+        const appVersion = ref('v2.20261026.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2782,6 +2782,34 @@ createApp({
                 } catch (e5) {
                     console.warn("[MIGRATE] cleanup duplicate watch warning:", e5);
                 }
+
+                // 6. 📜 策略戰報歷史除垢自癒：每檔個股只保留一份最新戰報，其餘歷史舊戰報全部清除並補寫墓碑
+                try {
+                    const multiStratStocks = db.exec(`
+                        SELECT 股票代號, COUNT(*) as cnt FROM gem_strategy 
+                        GROUP BY 股票代號 HAVING cnt > 1
+                    `);
+                    if (multiStratStocks.length > 0 && multiStratStocks[0].values) {
+                        const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                        db.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                        multiStratStocks[0].values.forEach(row => {
+                            const sc = String(row[0]).padStart(4, '0');
+                            const allReports = db.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? ORDER BY 記錄時間 DESC", [sc]);
+                            if (allReports.length > 0 && allReports[0].values && allReports[0].values.length > 1) {
+                                const oldRows = allReports[0].values.slice(1);
+                                oldRows.forEach(orow => {
+                                    const oldRt = String(orow[0]);
+                                    const oldUk = String(sc).padStart(4, '0') + '|' + oldRt;
+                                    db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
+                                    db.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [sc, oldRt]);
+                                });
+                                console.log(`📜 [戰報歷史除垢] 個股 ${sc} 原有 ${allReports[0].values.length} 筆戰報，已自動收斂只留最新 1 筆，清理 ${oldRows.length} 筆舊戰報並補登墓碑。`);
+                            }
+                        });
+                    }
+                } catch (e6) {
+                    console.warn("[MIGRATE] cleanup redundant strategies warning:", e6);
+                }
             } catch (err) {
                 console.warn("[MIGRATE] Overall migration error:", err);
             }
@@ -4846,12 +4874,38 @@ createApp({
             const nowTime = getNowDateTimeStr() + ':00';
 
             try {
+                // 1. 先安全寫入最新戰報
                 dbInstance.run(
                     "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
                 );
 
-                // 銷除墓碑
+                // 2. 驗證新戰報已確實寫入成功
+                const verifyCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [normalizedCode, nowTime]);
+                if (!verifyCheck.length || !verifyCheck[0].values.length) {
+                    throw new Error("新戰報寫入驗證失敗，中止清理舊戰報以維護資料安全！");
+                }
+
+                // 3. 確認新戰報安全落地後，查詢該股除了最新這筆以外的所有舊戰報並登錄墓碑
+                try {
+                    const oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                    if (oldReports.length > 0 && oldReports[0].values.length > 0) {
+                        const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                        dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                        oldReports[0].values.forEach(r => {
+                            const oldRt = String(r[0]);
+                            const oldUk = makeStrategyUniqueKey(normalizedCode, oldRt);
+                            dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
+                        });
+                        // 4. 刪除該股舊戰報，落實「只保留一份最新戰報」
+                        dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                        console.log(`🧹 [手動戰報收斂] 個股 ${normalizedCode} 新戰報已寫入，已安全清理 ${oldReports[0].values.length} 筆舊戰報並登錄墓碑。`);
+                    }
+                } catch (eOld) {
+                    console.warn("清理舊戰報警告:", eOld);
+                }
+
+                // 5. 銷除最新戰報可能遺留之歷史刪除墓碑
                 try {
                     dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'gem_strategy' AND unique_key = ?", [makeStrategyUniqueKey(normalizedCode, nowTime)]);
                 } catch (e) {}
@@ -5281,12 +5335,38 @@ createApp({
                 const normalizedCode = String(targetCode).padStart(4, '0');
                 const nowTime = getNowDateTimeStr() + ':00';
 
+                // 1. 先安全寫入最新戰報
                 dbInstance.run(
                     "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
                 );
 
-                // 銷除墓碑
+                // 2. 驗證新戰報已確實寫入成功
+                const verifyCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [normalizedCode, nowTime]);
+                if (!verifyCheck.length || !verifyCheck[0].values.length) {
+                    throw new Error("新戰報寫入驗證失敗，中止清理舊戰報以維護資料安全！");
+                }
+
+                // 3. 確認新戰報安全落地後，查詢該股除了最新這筆以外的所有舊戰報並登錄墓碑
+                try {
+                    const oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                    if (oldReports.length > 0 && oldReports[0].values.length > 0) {
+                        const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                        dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                        oldReports[0].values.forEach(r => {
+                            const oldRt = String(r[0]);
+                            const oldUk = makeStrategyUniqueKey(normalizedCode, oldRt);
+                            dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
+                        });
+                        // 4. 刪除該股舊戰報，落實「只保留一份最新戰報」
+                        dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                        console.log(`🧹 [富貴戰報收斂] 個股 ${normalizedCode} 新戰報已寫入，已安全清理 ${oldReports[0].values.length} 筆舊戰報並登錄墓碑。`);
+                    }
+                } catch (eOld) {
+                    console.warn("清理舊戰報警告:", eOld);
+                }
+
+                // 5. 銷除最新戰報可能遺留之歷史刪除墓碑
                 try {
                     dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'gem_strategy' AND unique_key = ?", [makeStrategyUniqueKey(normalizedCode, nowTime)]);
                 } catch (e) {}
