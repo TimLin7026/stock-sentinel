@@ -694,10 +694,12 @@
                     </button>
                     <!-- ⚡ 富貴戰報雲端批次派工按鈕 -->
                     <button @click="openBatchDispatchModal"
-                            class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border shadow-sm transition active:scale-95 bg-gradient-to-r from-amber-500 to-indigo-600 text-white border-amber-400/30"
+                            class="relative flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border shadow-sm transition active:scale-95 bg-gradient-to-r from-amber-500 to-indigo-600 text-white border-amber-400/30"
                             title="開啟富貴戰報雲端批次派工 (離線背景執行)">
-                        <span class="text-xs">⚡</span>
+                        <span class="text-xs" :class="isCloudBatchRunning ? 'animate-bounce' : ''">⚡</span>
                         <span class="whitespace-nowrap font-medium">批次戰報</span>
+                        <span v-if="isCloudBatchRunning" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping ml-0.5" title="推導進行中"></span>
+                        <span v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0" class="w-2 h-2 rounded-full bg-amber-300 ml-0.5" title="有完成戰報可合流"></span>
                     </button>
                     <a href="https://gemini.google.com/gem/1e54BS1_dFM3cVc7r0hZYAxujmT18R5tQ?usp=sharing" 
                        target="_blank" 
@@ -1778,41 +1780,77 @@
                     </button>
                 </div>
 
-                <!-- 📊 雲端推導即時進度儀表板 (互斥執行中狀態) -->
-                <div v-if="isCloudBatchRunning" class="p-3 rounded-2xl border bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 border-sky-500/30">
-                    <div class="flex items-center justify-between text-xs font-bold text-sky-400 mb-1.5">
-                        <span class="flex items-center space-x-1.5">
-                            <i class="fa-solid fa-spinner fa-spin"></i>
-                            <span>雲端背景推導進行中...</span>
-                        </span>
-                        <span>{{ cloudBatchStatus?.completedCount || 0 }} / {{ cloudBatchStatus?.totalRequested || 0 }} 檔 ({{ cloudBatchStatus?.progressPercent || 0 }}%)</span>
+                <!-- 📊 雲端推導即時進度儀表板 (常駐顯示) -->
+                <div class="p-3 rounded-2xl border transition-all"
+                     :class="isCloudBatchRunning 
+                        ? 'bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 border-sky-500/40 shadow-sm'
+                        : (cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0
+                            ? 'bg-emerald-500/10 border-emerald-500/40'
+                            : (theme === 'dark' ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'))">
+                    
+                    <!-- 1. 執行中 (Running) -->
+                    <div v-if="isCloudBatchRunning" class="space-y-1.5">
+                        <div class="flex items-center justify-between text-xs font-bold text-sky-400">
+                            <span class="flex items-center space-x-1.5">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <span>雲端背景推導進行中...</span>
+                            </span>
+                            <span>{{ cloudBatchStatus?.completedCount || 0 }} / {{ cloudBatchStatus?.totalRequested || 0 }} 檔 ({{ cloudBatchStatus?.progressPercent || 0 }}%)</span>
+                        </div>
+                        <!-- 進度條 -->
+                        <div class="w-full bg-slate-700/40 rounded-full h-2 overflow-hidden">
+                            <div class="bg-gradient-to-r from-sky-400 to-indigo-500 h-2 rounded-full transition-all duration-500" 
+                                 :style="{ width: `${cloudBatchStatus?.progressPercent || 0}%` }"></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-slate-400">
+                            <span v-if="cloudBatchStatus?.currentStock" class="truncate">
+                                🔄 正在分析：<strong class="text-sky-300 font-semibold">{{ cloudBatchStatus.currentStock }}</strong>
+                            </span>
+                            <span v-else>正在排程等待中...</span>
+                            <button @click="fetchCloudBatchStatus(true)" class="text-sky-400 hover:text-sky-300 text-[11px] font-bold flex items-center space-x-1 px-2 py-0.5 rounded bg-sky-500/10 hover:bg-sky-500/20 transition">
+                                <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                                <span>刷新進度</span>
+                            </button>
+                        </div>
                     </div>
-                    <!-- 進度條 -->
-                    <div class="w-full bg-slate-700/40 rounded-full h-2 overflow-hidden mb-1.5">
-                        <div class="bg-gradient-to-r from-sky-400 to-indigo-500 h-2 rounded-full transition-all duration-500" 
-                             :style="{ width: `${cloudBatchStatus?.progressPercent || 0}%` }"></div>
+
+                    <!-- 2. 完成狀態 (Completed) -->
+                    <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0"
+                         class="flex items-center justify-between text-xs">
+                        <div class="flex items-center space-x-2 text-emerald-400 font-bold">
+                            <i class="fa-solid fa-circle-check text-base"></i>
+                            <div>
+                                <div>前次雲端推導完成 ({{ cloudBatchStatus.completedCount }} 檔)</div>
+                                <div class="text-[10px] text-slate-400 font-normal">可隨時點擊合流更新至手機</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button @click="fetchCloudBatchStatus(true)" class="p-1 text-slate-400 hover:text-slate-200 text-xs" title="重新檢查狀態">
+                                <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                            </button>
+                            <button @click="handleHeaderSyncClick" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow transition active:scale-95">
+                                📥 一鍵合流戰報
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex items-center justify-between text-[11px] text-slate-400">
-                        <span v-if="cloudBatchStatus?.currentStock" class="truncate">
-                            🔄 正在分析：<strong class="text-sky-300 font-semibold">{{ cloudBatchStatus.currentStock }}</strong>
-                        </span>
-                        <span v-else>正在排程等待中...</span>
-                        <button @click="fetchCloudBatchStatus" class="text-sky-400 hover:text-sky-300 text-[10px] underline ml-2 whitespace-nowrap">
-                            <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i> 刷新進度
+
+                    <!-- 3. 閒置狀態 (Idle / 預設) -->
+                    <div v-else class="flex items-center justify-between text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <div>
+                                <span :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'" class="font-bold">雲端推導狀態：</span>
+                                <span class="text-emerald-500 font-semibold">閒置中 (可隨時派工)</span>
+                            </div>
+                        </div>
+                        <button @click="fetchCloudBatchStatus(true)" 
+                                :class="theme === 'dark' ? 'bg-slate-700/80 hover:bg-slate-700 text-slate-300' : 'bg-slate-200/80 hover:bg-slate-200 text-slate-700'"
+                                class="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center space-x-1 transition active:scale-95">
+                            <i class="fa-solid fa-rotate" :class="isCheckingCloudBatchStatus ? 'fa-spin' : ''"></i>
+                            <span>{{ isCheckingCloudBatchStatus ? '查詢中...' : '查詢進度' }}</span>
                         </button>
                     </div>
-                </div>
 
-                <!-- 🎉 雲端推導全數完成卡片 (提醒合流) -->
-                <div v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0" 
-                     class="p-2.5 rounded-2xl border bg-emerald-500/10 border-emerald-500/30 flex items-center justify-between text-xs">
-                    <div class="flex items-center space-x-2 text-emerald-400 font-bold">
-                        <i class="fa-solid fa-circle-check text-base"></i>
-                        <span>前次雲端推導完成 ({{ cloudBatchStatus.completedCount }} 檔)</span>
-                    </div>
-                    <button @click="handleHeaderSyncClick" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow transition">
-                        📥 一鍵合流戰報
-                    </button>
                 </div>
 
                 <!-- 快速過濾列 (證券商 + 名冊類別) -->

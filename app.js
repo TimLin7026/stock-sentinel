@@ -5536,8 +5536,13 @@ createApp({
         };
 
         // ─── 📊 雲端批次戰報進度與互斥鎖管理 ───
-        const fetchCloudBatchStatus = async () => {
-            if (!googleAccessToken.value) return null;
+        const fetchCloudBatchStatus = async (userTriggered = false) => {
+            if (!googleAccessToken.value) {
+                if (userTriggered) {
+                    showToast('⚠️ 請先登入 Google 雲端帳號以同步狀態', 2500);
+                }
+                return null;
+            }
             isCheckingCloudBatchStatus.value = true;
             try {
                 const url = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
@@ -5559,14 +5564,29 @@ createApp({
                                 }
                             }
                             cloudBatchStatus.value = sData;
+                            if (userTriggered) {
+                                if (sData.status === 'running') {
+                                    showToast(`⏳ 雲端推導中 (${sData.completedCount || 0}/${sData.totalRequested || 0} 檔)`, 2000);
+                                } else if (sData.status === 'completed') {
+                                    showToast(`🎉 雲端推導完成 (${sData.completedCount || 0} 檔)`, 2500);
+                                } else {
+                                    showToast('🟢 雲端目前閒置中', 2000);
+                                }
+                            }
                             return sData;
                         }
                     } else {
                         cloudBatchStatus.value = null;
+                        if (userTriggered) {
+                            showToast('🟢 雲端目前閒置中 (無進行中任務)', 2000);
+                        }
                     }
                 }
             } catch (e) {
                 console.warn("讀取雲端戰報狀態失敗:", e);
+                if (userTriggered) {
+                    showToast('⚠️ 查詢雲端進度失敗，請檢查網路連線', 2500);
+                }
             } finally {
                 isCheckingCloudBatchStatus.value = false;
             }
