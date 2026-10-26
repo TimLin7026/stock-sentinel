@@ -40,6 +40,10 @@ jobs:
         run: |
           python scripts/market_worker.py --target-date="${{ github.event.inputs.target_date }}" --scan-days="${{ github.event.inputs.scan_days }}"
 
+      - name: 🔄 拉取遠端最新變更 (防撞防衝突)
+        run: |
+          git pull --rebase origin main || true
+
       - name: 💾 自動提交並推播快照、歷史庫與健康報表至 GitHub
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
