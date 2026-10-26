@@ -692,6 +692,13 @@
                         <span class="text-xs">⚠️</span>
                         <span class="whitespace-nowrap">過期</span>
                     </button>
+                    <!-- ⚡ 富貴戰報雲端批次派工按鈕 -->
+                    <button @click="openBatchDispatchModal"
+                            class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border shadow-sm transition active:scale-95 bg-gradient-to-r from-amber-500 to-indigo-600 text-white border-amber-400/30"
+                            title="開啟富貴戰報雲端批次派工 (離線背景執行)">
+                        <span class="text-xs">⚡</span>
+                        <span class="whitespace-nowrap font-medium">批次戰報</span>
+                    </button>
                     <a href="https://gemini.google.com/gem/1e54BS1_dFM3cVc7r0hZYAxujmT18R5tQ?usp=sharing" 
                        target="_blank" 
                        class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1.5 border shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border-indigo-400/30"
@@ -1492,6 +1499,19 @@
                                                    :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
                                                    class="w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
                                         </div>
+                                        <!-- ☁️ 個人戰報 GAS 網址 (支援離線背景批次推導) -->
+                                        <div class="pt-2 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <label class="block text-[11px] font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">個人戰報 GAS 網址 (背景批次)：</label>
+                                                <span class="text-[9px] text-indigo-400 font-medium">支援離線鎖屏推導 🚀</span>
+                                            </div>
+                                            <input v-model="geminiGasUrl" type="text" placeholder="貼上 Google Apps Script 網頁應用程式網址 (https://script.google.com/...)" 
+                                                   :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                                   class="w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                                            <div class="mt-1 text-[9px] text-slate-400">
+                                                💡 派工給個人專屬 GAS 執行，不消耗手機電力與 Session，自由關閉網頁背景跑完。
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="text-[9px] text-slate-400 leading-relaxed">
                                         💡 金鑰僅儲存於您當前設備本地（不共用、零外洩），每位使用者享有 Google 官方每日龐大免費配額。
@@ -1713,6 +1733,141 @@
             </div>
         </div>
 
+        <!-- ========================================== -->
+        <!-- ⚡ 富貴戰報雲端批次派工 Modal 彈窗 -->
+        <!-- ========================================== -->
+        <div v-if="showBatchDispatchModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'" 
+                 class="border w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 space-y-3.5 shadow-2xl animate-fade-in max-h-[90vh] flex flex-col">
+                <!-- 頂部標題與關閉按鈕 -->
+                <div :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'" class="flex justify-between items-center border-b pb-3 flex-shrink-0">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xl">⚡</span>
+                        <div>
+                            <h3 :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="text-base font-bold flex items-center">
+                                富貴戰報雲端批次派工
+                            </h3>
+                            <div class="text-[10px] text-slate-400">Google 雲端背景平行推導 · 支援離線鎖屏</div>
+                        </div>
+                    </div>
+                    <button @click="showBatchDispatchModal = false" class="text-slate-400 hover:text-slate-600 p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- 快速過濾列 (證券商 + 名冊類別) -->
+                <div class="space-y-2 flex-shrink-0">
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-1">證券商過濾：</label>
+                            <select v-model="batchFilterBroker" 
+                                    :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
+                                    class="w-full border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
+                                <option value="全部">全部券商 / 關注</option>
+                                <option v-for="b in availableBrokers.filter(x => x !== '全部')" :key="b" :value="b">{{ b }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-1">名冊類別：</label>
+                            <select v-model="batchFilterCategory" 
+                                    :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'"
+                                    class="w-full border rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
+                                <option value="全部">全部股票</option>
+                                <option value="庫存">僅庫存持有股</option>
+                                <option value="特別關注">僅特別關注 (⭐)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 快速勾選按鈕組 -->
+                    <div class="flex items-center justify-between pt-1">
+                        <div class="flex items-center space-x-1.5">
+                            <button @click="selectBatchOnlyExpired" 
+                                    class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-600/20 text-amber-400 border border-amber-500/40 hover:bg-amber-600/30 transition">
+                                ⚡ 僅勾選過期 (預設)
+                            </button>
+                            <button @click="selectAllBatchStocks" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                    class="px-2 py-1 rounded-lg text-[11px] font-semibold transition">
+                                全選
+                            </button>
+                            <button @click="clearAllBatchStocks" 
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                    class="px-2 py-1 rounded-lg text-[11px] font-semibold transition">
+                                全取消
+                            </button>
+                        </div>
+                        <span class="text-[11px] text-slate-400">
+                            已選 <b class="text-indigo-400 font-bold">{{ selectedBatchStocks.length }}</b> 檔
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 待選個股清單 (可捲動區) -->
+                <div class="flex-1 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 min-h-[200px] max-h-[360px]">
+                    <div v-for="stk in filteredBatchCandidateStocks" :key="stk.code + '_' + (stk.broker || '關注')"
+                         @click="toggleBatchStock(stk.code)"
+                         :class="selectedBatchStocks.includes(stk.code) 
+                             ? (theme === 'dark' ? 'bg-indigo-950/40 border-indigo-500/60' : 'bg-indigo-50/80 border-indigo-400') 
+                             : (theme === 'dark' ? 'bg-slate-950/40 border-slate-800 hover:bg-slate-800/40' : 'bg-white border-slate-200 hover:bg-slate-50')"
+                         class="p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition select-none">
+                        <div class="flex items-center space-x-2.5">
+                            <!-- 核取方塊 -->
+                            <input type="checkbox" :checked="selectedBatchStocks.includes(stk.code)" 
+                                   @click.stop="toggleBatchStock(stk.code)"
+                                   class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <div>
+                                <div class="font-bold text-xs flex items-center space-x-1.5">
+                                    <span>{{ stk.code }} {{ stk.name }}</span>
+                                    <span v-if="stk.focusStatus === '是'" class="text-amber-400 text-[10px]">⭐</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 flex items-center space-x-1.5">
+                                    <span>{{ stk.broker || '關注' }}</span>
+                                    <span v-if="stk.shares > 0">· {{ stk.shares }}股</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 戰報狀態標籤 -->
+                        <div class="text-right">
+                            <span v-if="stk.isReportExpired" 
+                                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                🔴 戰報過期 {{ stk.lastReportDate ? `(${stk.lastReportDate})` : '(無戰報)' }}
+                            </span>
+                            <span v-else 
+                                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                🟢 戰報最新 ({{ stk.lastReportDate }})
+                            </span>
+                        </div>
+                    </div>
+
+                    <div v-if="filteredBatchCandidateStocks.length === 0" class="text-center py-8 text-slate-400 text-xs">
+                        目前條件下無符合之股票
+                    </div>
+                </div>
+
+                <!-- 底部派工與提示 -->
+                <div class="pt-3 border-t flex-shrink-0 space-y-2" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                    <div class="text-[10px] text-slate-400 leading-tight flex items-center justify-between">
+                        <span>💡 建議單批 3~5 檔，派工後請自由關閉網頁/鎖屏離線。</span>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button @click="showBatchDispatchModal = false" 
+                                :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'"
+                                class="w-1/3 py-2 rounded-xl text-xs font-bold transition">
+                            取消
+                        </button>
+                        <button @click="dispatchBatchToCloudGas" 
+                                :disabled="selectedBatchStocks.length === 0 || isDispatchingBatch"
+                                class="w-2/3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md disabled:opacity-40 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white">
+                            <i class="fa-solid" :class="isDispatchingBatch ? 'fa-spinner fa-spin' : 'fa-rocket'"></i>
+                            <span>{{ isDispatchingBatch ? '正在派工傳輸中...' : `🚀 派工至 Google 雲端背景 (${selectedBatchStocks.length} 檔)` }}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- ========================================== -->
         <!-- 🧠 匯入戰情報告 Modal 彈窗 -->

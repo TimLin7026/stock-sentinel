@@ -24,5 +24,8 @@
 *.db
 scripts/*.db
 !scripts/market_history.db
+__pycache__/
+scripts/__pycache__/
+*.pyc
 
 !requirements.txt

@@ -428,9 +428,10 @@ createApp({
 
         // ─── 💎 Gemini 設定隨 SQLite db_meta 雙向雲端同步輔助模組 ───
         const readGeminiSettingsFromDbPure = (db) => {
-            if (!db) return { apiKey: '', model: '' };
+            if (!db) return { apiKey: '', model: '', gasUrl: '' };
             let apiKey = '';
             let model = '';
+            let gasUrl = '';
             try {
                 const resKey = db.exec("SELECT value FROM db_meta WHERE key = 'gemini_api_key'");
                 if (resKey.length > 0 && resKey[0].values && resKey[0].values[0]) {
@@ -443,10 +444,16 @@ createApp({
                     model = String(resModel[0].values[0][0] || '').trim();
                 }
             } catch (e) {}
-            return { apiKey, model };
+            try {
+                const resGas = db.exec("SELECT value FROM db_meta WHERE key = 'gemini_gas_url'");
+                if (resGas.length > 0 && resGas[0].values && resGas[0].values[0]) {
+                    gasUrl = String(resGas[0].values[0][0] || '').trim();
+                }
+            } catch (e) {}
+            return { apiKey, model, gasUrl };
         };
 
-        const writeGeminiSettingsToDbPure = (db, apiKey, model) => {
+        const writeGeminiSettingsToDbPure = (db, apiKey, model, gasUrl) => {
             if (!db) return;
             try {
                 db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
@@ -464,6 +471,14 @@ createApp({
                         db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('gemini_model', ?)", [cleanModel]);
                     } else {
                         db.run("DELETE FROM db_meta WHERE key = 'gemini_model'");
+                    }
+                }
+                if (gasUrl !== undefined && gasUrl !== null) {
+                    const cleanGas = String(gasUrl || '').trim();
+                    if (cleanGas) {
+                        db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('gemini_gas_url', ?)", [cleanGas]);
+                    } else {
+                        db.run("DELETE FROM db_meta WHERE key = 'gemini_gas_url'");
                     }
                 }
             } catch (e) {
@@ -2958,6 +2973,7 @@ createApp({
                     const dbGemini = readGeminiSettingsFromDbPure(dbInstance);
                     const localKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
                     const localModel = (geminiModelSelection.value || localStorage.getItem('sentinel_gemini_model') || '').trim();
+                    const localGas = (geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '').trim();
 
                     // 1. 金鑰智慧合流：若 DB 內有金鑰，優先繼承至本機；若 DB 為空但本機已有，則反向補入 DB
                     if (dbGemini.apiKey) {
@@ -2967,7 +2983,7 @@ createApp({
                             console.log("💎 已成功從資料庫繼承 Gemini API Key！");
                         }
                     } else if (localKey) {
-                        writeGeminiSettingsToDbPure(dbInstance, localKey, null);
+                        writeGeminiSettingsToDbPure(dbInstance, localKey, null, null);
                     }
 
                     // 2. 偏好模型智慧合流：若 DB 內有模型記錄，繼承至選單；若 DB 為空但本機有，反向補入 DB
@@ -2978,7 +2994,18 @@ createApp({
                             console.log(`💎 已成功從資料庫繼承 Gemini 偏好模型: ${dbGemini.model}`);
                         }
                     } else if (localModel) {
-                        writeGeminiSettingsToDbPure(dbInstance, null, localModel);
+                        writeGeminiSettingsToDbPure(dbInstance, null, localModel, null);
+                    }
+
+                    // 3. 個人 GAS 網址智慧合流：若 DB 內有網址，優先繼承至本機；若 DB 為空但本機有，反向補入 DB
+                    if (dbGemini.gasUrl) {
+                        if (!localGas || localGas !== dbGemini.gasUrl) {
+                            geminiGasUrl.value = dbGemini.gasUrl;
+                            localStorage.setItem('sentinel_gemini_gas_url', dbGemini.gasUrl);
+                            console.log("💎 已成功從資料庫繼承個人戰報 GAS 網址！");
+                        }
+                    } else if (localGas) {
+                        writeGeminiSettingsToDbPure(dbInstance, null, null, localGas);
                     }
                 } catch (eGem) {
                     console.warn("載入資料庫時讀取 Gemini 設定警告:", eGem);
@@ -4961,6 +4988,12 @@ createApp({
         const currentGeneratingGeminiStock = ref(null); // 🛡️ 全域互斥鎖：記錄當前正在產出戰報的股票 { code, name }
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
+        const geminiGasUrl = ref(localStorage.getItem('sentinel_gemini_gas_url') || '');
+        const showBatchDispatchModal = ref(false);
+        const batchFilterBroker = ref('全部');
+        const batchFilterCategory = ref('全部');
+        const selectedBatchStocks = ref([]);
+        const isDispatchingBatch = ref(false);
 
         // 判定當前選取的模型是否已不在 Google 官方可用清單中
         const isModelOutOfDate = computed(() => {
@@ -5090,10 +5123,17 @@ createApp({
             const activeM = getActiveGeminiModel();
             localStorage.setItem('sentinel_gemini_model', activeM);
 
+            const cleanGas = (geminiGasUrl.value || '').trim();
+            if (cleanGas) {
+                localStorage.setItem('sentinel_gemini_gas_url', cleanGas);
+            } else {
+                localStorage.removeItem('sentinel_gemini_gas_url');
+            }
+
             // 🛡️ 同步雙寫至 SQLite db_meta，支援隨 DB 跨設備漫遊
             if (dbInstance) {
                 try {
-                    writeGeminiSettingsToDbPure(dbInstance, cleanKey, activeM);
+                    writeGeminiSettingsToDbPure(dbInstance, cleanKey, activeM, cleanGas);
                     await saveDbToIndexedDb();
                     hasUnsyncedChanges.value = true;
                 } catch (eDb) {
@@ -5101,7 +5141,7 @@ createApp({
                 }
             }
 
-            showToast('✅ Gemini 設定已儲存，並已綁定本地資料庫（可隨 DB 跨設備同步）！', 3000);
+            showToast('✅ Gemini 與個人戰報 GAS 設定已儲存，並已綁定本地資料庫（可隨 DB 跨設備同步）！', 3000);
         };
 
         const testGeminiConnection = async () => {
@@ -5387,6 +5427,203 @@ createApp({
             } finally {
                 stock.isGeneratingGemini = false;
                 currentGeneratingGeminiStock.value = null;
+            }
+        };
+
+        // ─── ⚡ 富貴戰報雲端批次派工模組 (GAS 離線背景執行) ───
+        const filteredBatchCandidateStocks = computed(() => {
+            const rawList = stocks.value || [];
+            // 代碼去重彙整
+            const codeMap = new Map();
+            rawList.forEach(s => {
+                if (!s.code) return;
+                const c = String(s.code).padStart(4, '0');
+                if (!codeMap.has(c)) {
+                    codeMap.set(c, {
+                        code: c,
+                        name: s.name || c,
+                        broker: s.broker || '關注',
+                        shares: Number(s.shares) || 0,
+                        focusStatus: s.focusStatus || '否',
+                        isReportFresh: Boolean(s.isReportFresh),
+                        isReportExpired: !s.isReportFresh,
+                        lastReportDate: s.reportDate !== '最新' && s.reportDate !== '---' ? s.reportDate : ''
+                    });
+                } else {
+                    const existing = codeMap.get(c);
+                    if (s.shares > 0) existing.shares += Number(s.shares);
+                    if (s.focusStatus === '買' || s.focusStatus === '賣' || s.focusStatus === '是') existing.focusStatus = s.focusStatus;
+                    if (existing.broker === '關注' && s.broker && s.broker !== '關注') existing.broker = s.broker;
+                }
+            });
+
+            let candidates = Array.from(codeMap.values());
+
+            // 1. 證券商過濾
+            if (batchFilterBroker.value !== '全部') {
+                candidates = candidates.filter(s => s.broker === batchFilterBroker.value);
+            }
+
+            // 2. 名冊類別過濾 (全部 / 庫存 / 特別關注)
+            if (batchFilterCategory.value === '庫存') {
+                candidates = candidates.filter(s => s.shares > 0);
+            } else if (batchFilterCategory.value === '特別關注') {
+                candidates = candidates.filter(s => s.focusStatus === '買' || s.focusStatus === '賣' || s.focusStatus === '是');
+            }
+
+            // 排序：過期者優先，同類依代號由小到大
+            return candidates.sort((a, b) => {
+                if (a.isReportExpired !== b.isReportExpired) {
+                    return a.isReportExpired ? -1 : 1;
+                }
+                return a.code.localeCompare(b.code);
+            });
+        });
+
+        // 僅勾選過期 (預設)
+        const selectBatchOnlyExpired = () => {
+            const expiredCodes = filteredBatchCandidateStocks.value
+                .filter(s => s.isReportExpired)
+                .map(s => s.code);
+            selectedBatchStocks.value = [...expiredCodes];
+        };
+
+        // 全選
+        const selectAllBatchStocks = () => {
+            selectedBatchStocks.value = filteredBatchCandidateStocks.value.map(s => s.code);
+        };
+
+        // 全取消
+        const clearAllBatchStocks = () => {
+            selectedBatchStocks.value = [];
+        };
+
+        // 切換單檔勾選
+        const toggleBatchStock = (code) => {
+            const idx = selectedBatchStocks.value.indexOf(code);
+            if (idx >= 0) {
+                selectedBatchStocks.value.splice(idx, 1);
+            } else {
+                selectedBatchStocks.value.push(code);
+            }
+        };
+
+        // 開啟批次派工 Modal
+        const openBatchDispatchModal = () => {
+            batchFilterBroker.value = '全部';
+            batchFilterCategory.value = '全部';
+            selectBatchOnlyExpired();
+            showBatchDispatchModal.value = true;
+        };
+
+        // 派工至 Google 雲端背景 (GAS)
+        const dispatchBatchToCloudGas = async () => {
+            if (selectedBatchStocks.value.length === 0) {
+                alert("⚠️ 請至少勾選一檔股票進行派工！");
+                return;
+            }
+
+            let gasUrl = (geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '').trim();
+            if (!gasUrl) {
+                const inputUrl = prompt(
+                    "☁️ 請設定您的個人戰報 Google Apps Script (GAS) 網址：\n\n" +
+                    "請貼上您部署好的 Web 應用程式網址 (https://script.google.com/...)：\n" +
+                    "(此設定僅儲存在您的設備與雲端資料庫，不會公開分享)"
+                );
+                if (inputUrl && inputUrl.trim()) {
+                    gasUrl = inputUrl.trim();
+                    geminiGasUrl.value = gasUrl;
+                    localStorage.setItem('sentinel_gemini_gas_url', gasUrl);
+                    if (dbInstance) {
+                        try {
+                            writeGeminiSettingsToDbPure(dbInstance, null, null, gasUrl);
+                            await saveDbToIndexedDb();
+                            hasUnsyncedChanges.value = true;
+                        } catch (e) {}
+                    }
+                } else {
+                    return;
+                }
+            }
+
+            let apiKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
+            if (!apiKey) {
+                const inputKey = prompt(
+                    "💎 請設定您的個人 Google Gemini API Key：\n\n" +
+                    "請貼上您的 AI Studio API Key (AIzaSy...)：\n" +
+                    "(金鑰僅傳送給您個人的 GAS，100% 消耗個人免費額度)"
+                );
+                if (inputKey && inputKey.trim()) {
+                    apiKey = inputKey.trim();
+                    geminiApiKey.value = apiKey;
+                    localStorage.setItem('sentinel_gemini_api_key', apiKey);
+                    if (dbInstance) {
+                        try {
+                            writeGeminiSettingsToDbPure(dbInstance, apiKey, null, null);
+                            await saveDbToIndexedDb();
+                            hasUnsyncedChanges.value = true;
+                        } catch (e) {}
+                    }
+                } else {
+                    return;
+                }
+            }
+
+            isDispatchingBatch.value = true;
+            showToast(`🚀 正在組裝 ${selectedBatchStocks.value.length} 檔技術指標並派工至 Google 雲端...`, 4000);
+
+            try {
+                // 1. 取得系統提示詞
+                const systemPrompt = await fetchGeminiPrompt();
+
+                // 2. 逐檔組裝指標報告
+                const payloadStocks = [];
+                for (const code of selectedBatchStocks.value) {
+                    const matchedStock = (stocks.value || []).find(s => String(s.code).padStart(4, '0') === code);
+                    const stockObj = matchedStock || { code: code, name: stockDictMap.value[code] || code };
+                    const reportText = await buildStock10DayReport(stockObj);
+                    if (reportText) {
+                        payloadStocks.push({
+                            code: code,
+                            name: stockObj.name || code,
+                            reportText: reportText,
+                            systemPrompt: systemPrompt
+                        });
+                    }
+                }
+
+                if (payloadStocks.length === 0) {
+                    throw new Error("無法重組所選個股的技術指標文本，請確認歷史行情已載入！");
+                }
+
+                // 3. 發送至 GAS Web App (採用 text/plain + no-cors 防止跨域預檢失敗)
+                const payload = {
+                    apiKey: apiKey,
+                    model: getActiveGeminiModel(),
+                    stocks: payloadStocks
+                };
+
+                await fetch(gasUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+
+                showBatchDispatchModal.value = false;
+                alert(
+                    `🎉【派工成功！已交由 Google 雲端背景執行】\n\n` +
+                    `• 本次派工：共 ${payloadStocks.length} 檔股票\n` +
+                    `• 推導清單：${payloadStocks.map(s => s.code).join(', ')}\n\n` +
+                    `💡 您現在可以【自由關閉網頁、鎖定螢幕或切換其他 App】！\n` +
+                    `Google 伺服器會在背景完成八大章節推導並自動存入 Google Drive。\n\n` +
+                    `稍後回到戰情室點擊「雲端同步」即可一鍵合流最新戰報！`
+                );
+            } catch (err) {
+                console.error("批次派工失敗:", err);
+                alert("❌ 批次派工失敗：" + err.message);
+            } finally {
+                isDispatchingBatch.value = false;
             }
         };
 
@@ -7997,6 +8234,53 @@ createApp({
                 dbInstance.close();
                 dbInstance = cloudDb;
 
+                // 💎 5. 檢查並合流 Google Drive 上由 GAS 背景批次產出之最新戰報 (gem_strategy_batch.json)
+                let batchMergedCount = 0;
+                try {
+                    const batchSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_strategy_batch.json' and trashed=false&fields=files(id,name)`;
+                    const batchSearchRes = await fetch(batchSearchUrl, {
+                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                    });
+                    if (batchSearchRes.ok) {
+                        const batchData = await batchSearchRes.json();
+                        if (batchData.files && batchData.files.length > 0) {
+                            const bFile = batchData.files[0];
+                            const bContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}?alt=media`, {
+                                headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                            });
+                            if (bContentRes.ok) {
+                                const bReports = await bContentRes.json();
+                                if (Array.isArray(bReports) && bReports.length > 0) {
+                                    bReports.forEach(rep => {
+                                        const rCode = String(rep.code).padStart(4, '0');
+                                        const rTime = rep.recordTime || (getNowDateTimeStr() + ':00');
+                                        dbInstance.run(
+                                            "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                            [rTime, rCode, rep.raw || '', rep.buyLow || 0, rep.buyHigh || 0, rep.defense || 0, rep.targetLow || 0, rep.targetHigh || 0, rep.summary || '']
+                                        );
+                                        // 驗證寫入成功後，安全清理該股舊戰報，落實每檔只留一份最新
+                                        try {
+                                            dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [rCode, rTime]);
+                                        } catch (eClean) {}
+                                        batchMergedCount++;
+                                    });
+                                    console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報！`);
+
+                                    // 合流完成後，安全刪除 Drive 上的暫存檔案避免重複處理
+                                    try {
+                                        await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}`, {
+                                            method: 'DELETE',
+                                            headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                        });
+                                    } catch (eDel) {}
+                                }
+                            }
+                        }
+                    }
+                } catch (eBatch) {
+                    console.warn("合流 GAS 背景戰報警告:", eBatch);
+                }
+
                 await saveDbToIndexedDb();
                 const finalBuf = dbInstance.export();
                 await loadDatabaseFromArrayBuffer(finalBuf.buffer, '全量鏡像合流');
@@ -8014,7 +8298,8 @@ createApp({
                 const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
                 const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
 
-                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
+                const batchNote = batchMergedCount > 0 ? `\n• 雲端戰報：已自動合流 ${batchMergedCount} 檔最新富貴戰報！` : '';
+                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
@@ -8304,6 +8589,19 @@ createApp({
             copyStock10DayReport,
             geminiApiKey,
             showGeminiKey,
+            geminiGasUrl,
+            showBatchDispatchModal,
+            batchFilterBroker,
+            batchFilterCategory,
+            selectedBatchStocks,
+            isDispatchingBatch,
+            filteredBatchCandidateStocks,
+            selectBatchOnlyExpired,
+            selectAllBatchStocks,
+            clearAllBatchStocks,
+            toggleBatchStock,
+            openBatchDispatchModal,
+            dispatchBatchToCloudGas,
             availableGeminiModels,
             isFetchingModels,
             fetchAvailableGeminiModels,
