@@ -1512,9 +1512,18 @@
                                                     <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
                                                 </button>
                                             </div>
-                                            <input v-model="geminiGasUrl" type="text" placeholder="貼上 Google Apps Script 網頁應用程式網址 (https://script.google.com/...)" 
-                                                   :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
-                                                   class="w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                                            <div class="flex items-center space-x-1.5">
+                                                <input v-model="geminiGasUrl" type="text" placeholder="貼上 Google Apps Script 網頁應用程式網址 (https://script.google.com/...)" 
+                                                       :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
+                                                       class="w-full border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                                                <button @click="testGasConnection" :disabled="isTestingGas" type="button"
+                                                        class="flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1 border"
+                                                        :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-sky-400 border-slate-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-600 border-sky-200'"
+                                                        title="測試 GAS 網址連線與健康狀態">
+                                                    <i class="fa-solid fa-vial" :class="isTestingGas ? 'fa-spin' : ''"></i>
+                                                    <span>{{ isTestingGas ? '測試中' : '測試' }}</span>
+                                                </button>
+                                            </div>
                                             
                                             <!-- 📖 GAS 4 步驟極速部署引導 -->
                                             <details class="mt-1.5 group">
@@ -2669,6 +2678,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.11"></script>
+    <script src="app.js?v=2.20261026.12"></script>
 </body>
 </html>

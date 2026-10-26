@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.11');
+        const appVersion = ref('v2.20261026.12');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -426,6 +426,18 @@ createApp({
             return merged;
         };
 
+        // ─── 🛡️ Google Apps Script (GAS) 網址防呆萃取自癒模組 ───
+        const sanitizeGasUrl = (url) => {
+            if (!url) return '';
+            const str = String(url).trim();
+            // 自動萃取 Deployment ID (AKfycb...)，防止雙重 https、頭尾雜訊或自動填入污染
+            const match = str.match(/(AKfycb[a-zA-Z0-9_\-]+)/);
+            if (match) {
+                return `https://script.google.com/macros/s/${match[1]}/exec`;
+            }
+            return str;
+        };
+
         // ─── 💎 Gemini 設定隨 SQLite db_meta 雙向雲端同步輔助模組 ───
         const readGeminiSettingsFromDbPure = (db) => {
             if (!db) return { apiKey: '', model: '', gasUrl: '' };
@@ -447,7 +459,7 @@ createApp({
             try {
                 const resGas = db.exec("SELECT value FROM db_meta WHERE key = 'gemini_gas_url'");
                 if (resGas.length > 0 && resGas[0].values && resGas[0].values[0]) {
-                    gasUrl = String(resGas[0].values[0][0] || '').trim();
+                    gasUrl = sanitizeGasUrl(resGas[0].values[0][0]);
                 }
             } catch (e) {}
             return { apiKey, model, gasUrl };
@@ -474,7 +486,7 @@ createApp({
                     }
                 }
                 if (gasUrl !== undefined && gasUrl !== null) {
-                    const cleanGas = String(gasUrl || '').trim();
+                    const cleanGas = sanitizeGasUrl(gasUrl);
                     if (cleanGas) {
                         db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('gemini_gas_url', ?)", [cleanGas]);
                     } else {
@@ -2998,14 +3010,18 @@ createApp({
                     }
 
                     // 3. 個人 GAS 網址智慧合流：若 DB 內有網址，優先繼承至本機；若 DB 為空但本機有，反向補入 DB
-                    if (dbGemini.gasUrl) {
-                        if (!localGas || localGas !== dbGemini.gasUrl) {
-                            geminiGasUrl.value = dbGemini.gasUrl;
-                            localStorage.setItem('sentinel_gemini_gas_url', dbGemini.gasUrl);
+                    const cleanDbGas = sanitizeGasUrl(dbGemini.gasUrl);
+                    const cleanLocalGas = sanitizeGasUrl(localGas);
+                    if (cleanDbGas) {
+                        if (localGas !== cleanDbGas) {
+                            geminiGasUrl.value = cleanDbGas;
+                            localStorage.setItem('sentinel_gemini_gas_url', cleanDbGas);
                             console.log("💎 已成功從資料庫繼承個人戰報 GAS 網址！");
                         }
-                    } else if (localGas) {
-                        writeGeminiSettingsToDbPure(dbInstance, null, null, localGas);
+                    } else if (cleanLocalGas) {
+                        geminiGasUrl.value = cleanLocalGas;
+                        localStorage.setItem('sentinel_gemini_gas_url', cleanLocalGas);
+                        writeGeminiSettingsToDbPure(dbInstance, null, null, cleanLocalGas);
                     }
                 } catch (eGem) {
                     console.warn("載入資料庫時讀取 Gemini 設定警告:", eGem);
@@ -5008,7 +5024,7 @@ createApp({
         const currentGeneratingGeminiStock = ref(null); // 🛡️ 全域互斥鎖：記錄當前正在產出戰報的股票 { code, name }
         const showGeminiKey = ref(false);
         const isTestingGemini = ref(false);
-        const geminiGasUrl = ref(localStorage.getItem('sentinel_gemini_gas_url') || '');
+        const geminiGasUrl = ref(sanitizeGasUrl(localStorage.getItem('sentinel_gemini_gas_url') || ''));
         const showBatchDispatchModal = ref(false);
         const batchFilterBroker = ref('全部');
         const batchFilterCategory = ref('全部');
@@ -5150,7 +5166,8 @@ createApp({
             const activeM = getActiveGeminiModel();
             localStorage.setItem('sentinel_gemini_model', activeM);
 
-            const cleanGas = (geminiGasUrl.value || '').trim();
+            const cleanGas = sanitizeGasUrl(geminiGasUrl.value || '');
+            geminiGasUrl.value = cleanGas;
             if (cleanGas) {
                 localStorage.setItem('sentinel_gemini_gas_url', cleanGas);
             } else {
@@ -5234,6 +5251,31 @@ createApp({
                 }
             } finally {
                 isTestingGemini.value = false;
+            }
+        };
+
+        // ─── 🔍 測試個人戰報 GAS 網址連線狀態 ───
+        const isTestingGas = ref(false);
+        const testGasConnection = async () => {
+            const cleanGas = sanitizeGasUrl(geminiGasUrl.value || '');
+            if (!cleanGas) {
+                alert("⚠️ 請先貼上您的 GAS 網址！");
+                return;
+            }
+            geminiGasUrl.value = cleanGas;
+            isTestingGas.value = true;
+            try {
+                const res = await fetch(cleanGas);
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert(`✅【連線成功！】\n\n• 伺服器狀態：${data.data?.message || '正常運作中'}\n• 部署網址：${cleanGas}\n\n恭喜！您的 GAS 戰報背景伺服器已就緒！`);
+                } else {
+                    alert(`⚠️ 連線收到回應但狀態異常 (HTTP ${res.status})，請確認 GAS 部署權限是否設為「任何人 (Anyone)」！`);
+                }
+            } catch (e) {
+                alert(`❌【連線失敗】\n\n無法連線至您的 GAS 網址！\n可能原因：\n1. 網址無效或被瀏覽器阻擋\n2. GAS 部署權限未設為「任何人 (Anyone)」\n\n詳細錯誤：${e.message}`);
+            } finally {
+                isTestingGas.value = false;
             }
         };
 
@@ -5617,15 +5659,19 @@ createApp({
                 return;
             }
 
-            let gasUrl = (geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '').trim();
-            if (!gasUrl) {
+            let gasUrl = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+            if (!gasUrl || !gasUrl.startsWith('https://script.google.com/macros/s/')) {
                 const inputUrl = prompt(
                     "☁️ 請設定您的個人戰報 Google Apps Script (GAS) 網址：\n\n" +
-                    "請貼上您部署好的 Web 應用程式網址 (https://script.google.com/...)：\n" +
+                    "請貼上您部署好的 Web 應用程式網址 (https://script.google.com/.../exec)：\n" +
                     "(此設定僅儲存在您的設備與雲端資料庫，不會公開分享)"
                 );
                 if (inputUrl && inputUrl.trim()) {
-                    gasUrl = inputUrl.trim();
+                    gasUrl = sanitizeGasUrl(inputUrl.trim());
+                    if (!gasUrl.startsWith('https://script.google.com/macros/s/')) {
+                        alert("❌ 錯誤的 GAS 網址格式！請確認複製的是以 https://script.google.com/macros/s/.../exec 結尾的 Web 應用程式網址。");
+                        return;
+                    }
                     geminiGasUrl.value = gasUrl;
                     localStorage.setItem('sentinel_gemini_gas_url', gasUrl);
                     if (dbInstance) {
@@ -5638,6 +5684,9 @@ createApp({
                 } else {
                     return;
                 }
+            } else {
+                geminiGasUrl.value = gasUrl;
+                localStorage.setItem('sentinel_gemini_gas_url', gasUrl);
             }
 
             let apiKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
@@ -8086,20 +8135,21 @@ createApp({
                     cloudDb.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('custom_brokers', ?)", [JSON.stringify(finalBrokers)]);
                 } catch (e) {}
 
-                // 0.2 合流 Gemini AI 設定 (db_meta.gemini_api_key / gemini_model - 跨設備雙向對齊)
+                // 0.2 合流 Gemini AI 設定 (db_meta.gemini_api_key / gemini_model / gemini_gas_url - 跨設備雙向對齊)
                 try {
                     const lGemini = readGeminiSettingsFromDbPure(dbInstance);
                     const cGemini = readGeminiSettingsFromDbPure(cloudDb);
                     const lsKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
                     const lsModel = (geminiModelSelection.value || localStorage.getItem('sentinel_gemini_model') || '').trim();
+                    const lsGas = (geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '').trim();
 
                     // 1. 金鑰決策：若本地有 Key 優先，若本地無 Key 則繼承雲端 Key
                     const finalKey = lsKey || lGemini.apiKey || cGemini.apiKey || '';
                     if (finalKey) {
                         geminiApiKey.value = finalKey;
                         localStorage.setItem('sentinel_gemini_api_key', finalKey);
-                        writeGeminiSettingsToDbPure(cloudDb, finalKey, null);
-                        writeGeminiSettingsToDbPure(dbInstance, finalKey, null);
+                        writeGeminiSettingsToDbPure(cloudDb, finalKey, null, null);
+                        writeGeminiSettingsToDbPure(dbInstance, finalKey, null, null);
                     }
 
                     // 2. 偏好模型決策：若本地有選取優先，若無則繼承雲端模型
@@ -8107,8 +8157,19 @@ createApp({
                     if (finalModel) {
                         geminiModelSelection.value = finalModel;
                         localStorage.setItem('sentinel_gemini_model', finalModel);
-                        writeGeminiSettingsToDbPure(cloudDb, null, finalModel);
-                        writeGeminiSettingsToDbPure(dbInstance, null, finalModel);
+                        writeGeminiSettingsToDbPure(cloudDb, null, finalModel, null);
+                        writeGeminiSettingsToDbPure(dbInstance, null, finalModel, null);
+                    }
+
+                    // 3. 個人 GAS 網址決策：自動清洗防呆 + 雙向對齊 (支援跨設備無縫漫遊)
+                    const rawGas = lsGas || lGemini.gasUrl || cGemini.gasUrl || '';
+                    const finalGas = sanitizeGasUrl(rawGas);
+                    if (finalGas) {
+                        geminiGasUrl.value = finalGas;
+                        localStorage.setItem('sentinel_gemini_gas_url', finalGas);
+                        writeGeminiSettingsToDbPure(cloudDb, null, null, finalGas);
+                        writeGeminiSettingsToDbPure(dbInstance, null, null, finalGas);
+                        console.log("💎 雙向合流 GAS 網址完成:", finalGas);
                     }
                 } catch (eGemSync) {
                     console.warn("雙向合流 Gemini 設定警告:", eGemSync);
@@ -8751,6 +8812,8 @@ createApp({
             geminiApiKey,
             showGeminiKey,
             geminiGasUrl,
+            isTestingGas,
+            testGasConnection,
             showBatchDispatchModal,
             batchFilterBroker,
             batchFilterCategory,
