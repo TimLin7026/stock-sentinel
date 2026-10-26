@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.03');
+        const appVersion = ref('v2.20261026.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5432,7 +5432,7 @@ createApp({
 
         // ─── ⚡ 富貴戰報雲端批次派工模組 (GAS 離線背景執行) ───
         const filteredBatchCandidateStocks = computed(() => {
-            const rawList = stocks.value || [];
+            const rawList = stockList.value || [];
             // 代碼去重彙整
             const codeMap = new Map();
             rawList.forEach(s => {
@@ -5579,7 +5579,7 @@ createApp({
                 // 2. 逐檔組裝指標報告
                 const payloadStocks = [];
                 for (const code of selectedBatchStocks.value) {
-                    const matchedStock = (stocks.value || []).find(s => String(s.code).padStart(4, '0') === code);
+                    const matchedStock = (stockList.value || []).find(s => String(s.code).padStart(4, '0') === code);
                     const stockObj = matchedStock || { code: code, name: stockDictMap.value[code] || code };
                     const reportText = await buildStock10DayReport(stockObj);
                     if (reportText) {
