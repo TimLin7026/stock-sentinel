@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.13');
+        const appVersion = ref('v2.20261026.14');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5739,19 +5739,23 @@ createApp({
                     throw new Error("無法重組所選個股的技術指標文本，請確認歷史行情已載入！");
                 }
 
-                // 3. 發送至 GAS Web App (採用 text/plain + no-cors 防止跨域預檢失敗)
+                // 3. 發送至 GAS Web App (採用非同步秒派工 Fire-and-Forget，不阻斷手機端)
                 const payload = {
                     apiKey: apiKey,
                     model: getActiveGeminiModel(),
                     stocks: payloadStocks
                 };
 
-                await fetch(gasUrl, {
+                // 🚀 背景發送請求，不等待數分鐘的推導回傳
+                fetch(gasUrl, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(payload)
-                });
+                }).catch(e => console.warn("背景派工傳輸例外:", e));
+
+                // ⏳ 短暫等待 800ms 確保 HTTP 請求已抵達 Google 伺服器
+                await new Promise(r => setTimeout(r, 800));
 
                 fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
@@ -5760,8 +5764,8 @@ createApp({
                     `• 本次派工：共 ${payloadStocks.length} 檔股票\n` +
                     `• 推導清單：${payloadStocks.map(s => s.code).join(', ')}\n\n` +
                     `💡 您現在可以【自由關閉網頁、鎖定螢幕或切換其他 App】！\n` +
-                    `Google 伺服器會在背景完成八大章節推導並自動存入 Google Drive。\n\n` +
-                    `稍後回到戰情室點擊「雲端同步」即可一鍵合流最新戰報！`
+                    `Google 伺服器會在背景完成推導並自動存入 Google Drive。\n\n` +
+                    `隨時可點擊「⚡ 批次戰報」或「雲端同步」查看進度與合流戰報！`
                 );
             } catch (err) {
                 console.error("批次派工失敗:", err);
