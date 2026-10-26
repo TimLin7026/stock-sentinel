@@ -1890,7 +1890,7 @@
                                 :disabled="selectedBatchStocks.length === 0 || isDispatchingBatch"
                                 class="w-2/3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md disabled:opacity-40 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white">
                             <i class="fa-solid" :class="isDispatchingBatch ? 'fa-spinner fa-spin' : 'fa-rocket'"></i>
-                            <span>{{ isDispatchingBatch ? '正在派工傳輸中...' : `🚀 派工至 Google 雲端背景 (${selectedBatchStocks.length} 檔)` }}</span>
+                            <span>{{ isDispatchingBatch ? '正在派工傳輸中...' : `派工至 Google 雲端背景 (${selectedBatchStocks.length} 檔)` }}</span>
                         </button>
                     </div>
                 </div>
@@ -2592,6 +2592,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.07"></script>
+    <script src="app.js?v=2.20261026.08"></script>
 </body>
 </html>
