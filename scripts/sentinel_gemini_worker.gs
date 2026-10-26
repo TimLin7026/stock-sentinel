@@ -265,6 +265,9 @@ function processStockBatch(apiKey, model, stocks) {
     breakReason: breakReason
   };
 
+  // 💾 關鍵核心：將本次成功推導的全部戰報一次性全量寫入 Google Drive，避免快取覆蓋
+  saveAllBatchReportsToCloudDrive(completedReports);
+
   saveStatusReportToCloudDrive(statusReport);
 
   return statusReport;
@@ -390,6 +393,40 @@ function appendReportToCloudDrive(reportData) {
   } else {
     batchList.push(reportData);
     DriveApp.createFile(BATCH_FILE_NAME, JSON.stringify(batchList, null, 2), MimeType.PLAIN_TEXT);
+  }
+}
+
+/**
+ * 將本次所有推導成功的戰報全量一次性存檔至 Google Drive (避免 Drive 快取延遲導致覆蓋)
+ */
+function saveAllBatchReportsToCloudDrive(completedReports) {
+  if (!completedReports || completedReports.length === 0) return;
+  
+  const files = DriveApp.getFilesByName(BATCH_FILE_NAME);
+  let batchList = [];
+
+  // 如果原本就有檔案，讀取現有內容並合併（以最新 completedReports 為主）
+  if (files.hasNext()) {
+    const file = files.next();
+    try {
+      const content = file.getContentText();
+      if (content) {
+        batchList = JSON.parse(content);
+      }
+    } catch (e) {}
+
+    // 先剔除 completedReports 裡面已包含的股票代碼，避免重複
+    const newCodes = new Set(completedReports.map(r => String(r.code)));
+    batchList = batchList.filter(r => !newCodes.has(String(r.code)));
+    
+    // 合併新戰報
+    batchList = batchList.concat(completedReports);
+    file.setContent(JSON.stringify(batchList, null, 2));
+    Logger.log(`💾 全量存檔完成：共計 ${batchList.length} 檔 (本次新增 ${completedReports.length} 檔) 寫入 ${BATCH_FILE_NAME}`);
+  } else {
+    // 檔案不存在則直接新建
+    DriveApp.createFile(BATCH_FILE_NAME, JSON.stringify(completedReports, null, 2), MimeType.PLAIN_TEXT);
+    Logger.log(`💾 全量存檔完成：新建立檔案，共計 ${completedReports.length} 檔寫入 ${BATCH_FILE_NAME}`);
   }
 }
 

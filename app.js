@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261026.14');
+        const appVersion = ref('v2.20261026.15');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5780,7 +5780,7 @@ createApp({
             try {
                 let codeText = '';
                 try {
-                    const res = await fetch('scripts/sentinel_gemini_worker.gs');
+                    const res = await fetch(`scripts/sentinel_gemini_worker.gs?t=${Date.now()}`);
                     if (res.ok) {
                         codeText = await res.text();
                     }
@@ -8448,61 +8448,83 @@ createApp({
                     if (batchSearchRes.ok) {
                         const batchData = await batchSearchRes.json();
                         if (batchData.files && batchData.files.length > 0) {
-                            const bFile = batchData.files[0];
-                            const bContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}?alt=media`, {
-                                headers: { Authorization: `Bearer ${googleAccessToken.value}` }
-                            });
-                            if (bContentRes.ok) {
-                                const bReports = await bContentRes.json();
-                                if (Array.isArray(bReports) && bReports.length > 0) {
-                                    bReports.forEach(rep => {
-                                        const rCode = String(rep.code).padStart(4, '0');
-                                        const rTime = rep.recordTime || (getNowDateTimeStr() + ':00');
-
-                                        // 🛡️ 雙重保險自癒：如果 rep.raw 存在，透過 parseReportText 重新提取精確點位與總結
-                                        let finalRaw = rep.raw || '';
-                                        let finalSummary = rep.summary || '';
-                                        let finalBuyLow = rep.buyLow || 0;
-                                        let finalBuyHigh = rep.buyHigh || 0;
-                                        let finalDefense = rep.defense || 0;
-                                        let finalTargetLow = rep.targetLow || 0;
-                                        let finalTargetHigh = rep.targetHigh || 0;
-
-                                        if (finalRaw) {
-                                            const selfHealed = parseReportText(finalRaw);
-                                            if (selfHealed) {
-                                                if (selfHealed.summary) finalSummary = selfHealed.summary;
-                                                if (selfHealed.buyLow !== null && selfHealed.buyLow !== undefined) finalBuyLow = selfHealed.buyLow;
-                                                if (selfHealed.buyHigh !== null && selfHealed.buyHigh !== undefined) finalBuyHigh = selfHealed.buyHigh;
-                                                if (selfHealed.defense !== null && selfHealed.defense !== undefined) finalDefense = selfHealed.defense;
-                                                if (selfHealed.targetLow !== null && selfHealed.targetLow !== undefined) finalTargetLow = selfHealed.targetLow;
-                                                if (selfHealed.targetHigh !== null && selfHealed.targetHigh !== undefined) finalTargetHigh = selfHealed.targetHigh;
-                                            }
-                                        }
-
-                                        dbInstance.run(
-                                            "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            [rTime, rCode, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
-                                        );
-                                        // 驗證寫入成功後，安全清理該股舊戰報，落實每檔只留一份最新
-                                        try {
-                                            dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [rCode, rTime]);
-                                        } catch (eClean) {}
-                                        batchMergedCount++;
+                            for (const bFile of batchData.files) {
+                                try {
+                                    const bContentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}?alt=media`, {
+                                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
                                     });
-                                    console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報！`);
+                                    if (bContentRes.ok) {
+                                        const bReports = await bContentRes.json();
+                                        if (Array.isArray(bReports) && bReports.length > 0) {
+                                            bReports.forEach(rep => {
+                                                const rCode = String(rep.code).padStart(4, '0');
+                                                const rTime = rep.recordTime || (getNowDateTimeStr() + ':00');
 
-                                    // 合流完成後，安全刪除 Drive 上的暫存檔案避免重複處理
-                                    try {
-                                        await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}`, {
-                                            method: 'DELETE',
-                                            headers: { Authorization: `Bearer ${googleAccessToken.value}` }
-                                        });
-                                    } catch (eDel) {}
+                                                // 🛡️ 雙重保險自癒：如果 rep.raw 存在，透過 parseReportText 重新提取精確點位與總結
+                                                let finalRaw = rep.raw || '';
+                                                let finalSummary = rep.summary || '';
+                                                let finalBuyLow = rep.buyLow || 0;
+                                                let finalBuyHigh = rep.buyHigh || 0;
+                                                let finalDefense = rep.defense || 0;
+                                                let finalTargetLow = rep.targetLow || 0;
+                                                let finalTargetHigh = rep.targetHigh || 0;
+
+                                                if (finalRaw) {
+                                                    const selfHealed = parseReportText(finalRaw);
+                                                    if (selfHealed) {
+                                                        if (selfHealed.summary) finalSummary = selfHealed.summary;
+                                                        if (selfHealed.buyLow !== null && selfHealed.buyLow !== undefined) finalBuyLow = selfHealed.buyLow;
+                                                        if (selfHealed.buyHigh !== null && selfHealed.buyHigh !== undefined) finalBuyHigh = selfHealed.buyHigh;
+                                                        if (selfHealed.defense !== null && selfHealed.defense !== undefined) finalDefense = selfHealed.defense;
+                                                        if (selfHealed.targetLow !== null && selfHealed.targetLow !== undefined) finalTargetLow = selfHealed.targetLow;
+                                                        if (selfHealed.targetHigh !== null && selfHealed.targetHigh !== undefined) finalTargetHigh = selfHealed.targetHigh;
+                                                    }
+                                                }
+
+                                                dbInstance.run(
+                                                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                    [rTime, rCode, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
+                                                );
+                                                // 驗證寫入成功後，安全清理該股舊戰報，落實每檔只留一份最新
+                                                try {
+                                                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [rCode, rTime]);
+                                                } catch (eClean) {}
+                                                batchMergedCount++;
+                                            });
+                                        }
+                                    }
+                                    // 每個檔案處理完後安全刪除
+                                    await fetch(`https://www.googleapis.com/drive/v3/files/${bFile.id}`, {
+                                        method: 'DELETE',
+                                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                    }).catch(() => {});
+                                } catch (eF) {
+                                    console.warn("處理單一戰報暫存檔例外:", eF);
                                 }
+                            }
+                            if (batchMergedCount > 0) {
+                                console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報！`);
                             }
                         }
                     }
+
+                    // 🧹 徹底閉環清理：合流完成後，連同狀態檔 gem_batch_status.json 一併刪除，並重置本機狀態為閒置
+                    try {
+                        const statusSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_batch_status.json' and trashed=false&fields=files(id,name)`;
+                        const sSearchRes = await fetch(statusSearchUrl, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
+                        if (sSearchRes.ok) {
+                            const sData = await sSearchRes.json();
+                            if (sData.files && sData.files.length > 0) {
+                                for (const sf of sData.files) {
+                                    await fetch(`https://www.googleapis.com/drive/v3/files/${sf.id}`, {
+                                        method: 'DELETE',
+                                        headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                    }).catch(() => {});
+                                }
+                            }
+                        }
+                    } catch (eStatusDel) {}
+                    cloudBatchStatus.value = null;
                 } catch (eBatch) {
                     console.warn("合流 GAS 背景戰報警告:", eBatch);
                 }
