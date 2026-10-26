@@ -28,6 +28,24 @@ const MAX_CONSECUTIVE_FAILURES = 2;   // 連續失敗 2 次即熔斷退出
 const ENABLE_AUTO_WAKEUP = false;      // 預設關閉自動排程補跑 (先採人工重啟觸發)
 
 /**
+ * HTTP GET 進入點：健康檢查與狀態查詢 (避免瀏覽器直接開啟時噴錯)
+ */
+function doGet(e) {
+  try {
+    const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
+    let statusInfo = { status: "ready", message: "💎 台股戰情室 Google Apps Script 戰報處理器正常運作中！" };
+    if (files.hasNext()) {
+      try {
+        statusInfo.latestStatus = JSON.parse(files.next().getContentText());
+      } catch (err) {}
+    }
+    return createJsonResponse({ ok: true, data: statusInfo }, 200);
+  } catch (err) {
+    return createJsonResponse({ ok: false, error: err.toString() }, 500);
+  }
+}
+
+/**
  * HTTP POST 進入點：接收手機端派工請求
  */
 function doPost(e) {
@@ -229,46 +247,46 @@ function callGeminiApi(apiKey, model, systemPrompt, userContent) {
 }
 
 /**
- * 簡易解析戰報文本 (擷取買賣區間與防守點)
+ * 解析戰報文本 (100% 對齊戰情室「匯入戰報」與「單檔生成」之標準 parseReportText 規格)
  */
-function parseStrategyContent(rawText, code) {
-  let summary = "";
-  let buyLow = 0, buyHigh = 0, defense = 0, targetLow = 0, targetHigh = 0;
-
-  // 擷取前 120 字作為總結短評
-  summary = rawText.replace(/[#*`\r\n]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
-
-  // 正則探測數字區間
-  const numRegex = /\d+(?:\.\d+)?/g;
-
-  // 1. 佈局區間
-  const buyMatch = rawText.match(/佈局(?:區間|價位|買點|下限)?[:：\s]*([0-9.]+)[~至\-－\s]+([0-9.]+)/i);
-  if (buyMatch) {
-    buyLow = parseFloat(buyMatch[1]) || 0;
-    buyHigh = parseFloat(buyMatch[2]) || 0;
+function parseStrategyContent(rawText, fallbackCode) {
+  if (!rawText || typeof rawText !== "string") {
+    return {
+      raw: "",
+      code: fallbackCode || "",
+      summary: "",
+      buyLow: null,
+      buyHigh: null,
+      defense: null,
+      targetLow: null,
+      targetHigh: null
+    };
   }
 
-  // 2. 防守點
-  const defMatch = rawText.match(/防守(?:點|價|停損)?[:：\s]*([0-9.]+)/i);
-  if (defMatch) {
-    defense = parseFloat(defMatch[1]) || 0;
-  }
+  const t = rawText.trim();
+  const codeMatch = t.match(/代碼[：:]\s*([0-9A-Za-z]+)/);
+  const sumMatch = t.match(/戰情總結[：:]\s*(.*?)(?=\n|$)/);
+  const buyLowMatch = t.match(/佈局區間下限[：:]\s*([0-9.,]+)/);
+  const buyHighMatch = t.match(/佈局區間上限[：:]\s*([0-9.,]+)/);
+  const defMatch = t.match(/防守停損點[：:]\s*([0-9.,]+)/);
+  const targetLowMatch = t.match(/目標調節下限[：:]\s*([0-9.,]+)/);
+  const targetHighMatch = t.match(/目標調節上限[：:]\s*([0-9.,]+)/);
 
-  // 3. 目標區間
-  const tgtMatch = rawText.match(/目標(?:區間|價位|停利)?[:：\s]*([0-9.]+)[~至\-－\s]+([0-9.]+)/i);
-  if (tgtMatch) {
-    targetLow = parseFloat(tgtMatch[1]) || 0;
-    targetHigh = parseFloat(tgtMatch[2]) || 0;
-  }
+  const cleanNum = (m) => {
+    if (!m || !m[1]) return null;
+    const v = parseFloat(m[1].replace(/,/g, ""));
+    return isNaN(v) ? null : v;
+  };
 
   return {
-    raw: rawText,
-    summary: summary,
-    buyLow: buyLow,
-    buyHigh: buyHigh,
-    defense: defense,
-    targetLow: targetLow,
-    targetHigh: targetHigh
+    raw: t,
+    code: codeMatch ? codeMatch[1].trim() : (fallbackCode || ""),
+    summary: sumMatch ? sumMatch[1].trim() : "",
+    buyLow: cleanNum(buyLowMatch),
+    buyHigh: cleanNum(buyHighMatch),
+    defense: cleanNum(defMatch),
+    targetLow: cleanNum(targetLowMatch),
+    targetHigh: cleanNum(targetHighMatch)
   };
 }
 
