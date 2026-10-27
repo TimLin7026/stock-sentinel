@@ -687,26 +687,23 @@
                             :class="onlyExpiredReports 
                                 ? 'bg-amber-600 hover:bg-amber-500 text-white font-bold border-amber-500 shadow-md ring-2 ring-amber-400/30' 
                                 : (theme === 'dark' ? 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800' : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300 shadow-sm')"
-                            class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border transition active:scale-95"
+                            class="flex-shrink-0 w-8 h-8 rounded-xl font-bold text-xs flex items-center justify-center border transition active:scale-95"
                             :title="onlyExpiredReports ? '已開啟戰報過期篩選 (點擊查看全部)' : '快速篩選戰報過期/待更新個股'">
                         <span class="text-xs">⚠️</span>
-                        <span class="whitespace-nowrap">過期</span>
                     </button>
-                    <!-- ⚡ 富貴戰報雲端批次派工按鈕 -->
+                    <!-- ⚡ 富貴戰報雲端批次派工按鈕 (高對比深藍漸層，凸顯黃色閃電) -->
                     <button @click="openBatchDispatchModal"
-                            class="relative flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 border shadow-sm transition active:scale-95 bg-gradient-to-r from-amber-500 to-indigo-600 text-white border-amber-400/30"
+                            class="relative flex-shrink-0 w-8 h-8 rounded-xl font-bold text-xs flex items-center justify-center border shadow-sm transition active:scale-95 bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 text-white border-sky-400/40"
                             title="開啟富貴戰報雲端批次派工 (離線背景執行)">
                         <span class="text-xs" :class="isCloudBatchRunning ? 'animate-bounce' : ''">⚡</span>
-                        <span class="whitespace-nowrap font-medium">批次戰報</span>
-                        <span v-if="isCloudBatchRunning" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping ml-0.5" title="推導進行中"></span>
-                        <span v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0" class="w-2 h-2 rounded-full bg-amber-300 ml-0.5" title="有完成戰報可合流"></span>
+                        <span v-if="isCloudBatchRunning" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" title="推導進行中"></span>
+                        <span v-else-if="cloudBatchStatus && cloudBatchStatus.status === 'completed' && cloudBatchStatus.completedCount > 0" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-300 shadow" title="有完成戰報可合流"></span>
                     </button>
                     <a href="https://gemini.google.com/gem/1e54BS1_dFM3cVc7r0hZYAxujmT18R5tQ?usp=sharing" 
                        target="_blank" 
-                       class="flex-shrink-0 px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1.5 border shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border-indigo-400/30"
+                       class="flex-shrink-0 w-8 h-8 rounded-xl font-bold text-xs flex items-center justify-center border shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white border-indigo-400/30"
                        title="開啟 Google Gemini 財經富貴 Gem (支援喚起 App)">
                         <span class="text-xs">💎</span>
-                        <span class="whitespace-nowrap font-medium">富貴 Gem</span>
                     </a>
                 </div>
 
@@ -2946,6 +2943,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261026.19"></script>
+    <script src="app.js?v=2.20261027.01"></script>
 </body>
 </html>
