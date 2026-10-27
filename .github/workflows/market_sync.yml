@@ -40,15 +40,26 @@ jobs:
         run: |
           python scripts/market_worker.py --target-date="${{ github.event.inputs.target_date }}" --scan-days="${{ github.event.inputs.scan_days }}"
 
-      - name: 🔄 拉取遠端最新變更 (防撞防衝突)
+      - name: 💾 自動提交並防撞推播至 GitHub
         run: |
-          git pull --rebase origin main || true
-
-      - name: 💾 自動提交並推播快照、歷史庫與健康報表至 GitHub
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore(data): auto-update market snapshot, 60d history, db and health audit [skip ci]"
-          file_pattern: "market_snapshot.json.gz market_history_60d.json.gz market_health.json scripts/market_history.db"
-          commit_user_name: "github-actions[bot]"
-          commit_user_email: "github-actions[bot]@users.noreply.github.com"
-          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add market_snapshot.json.gz market_history_60d.json.gz market_health.json scripts/market_history.db
+          if git diff --staged --quiet; then
+            echo "☕ 行情快照無變更，無需提交。"
+            exit 0
+          fi
+          git commit -m "chore(data): auto-update market snapshot, 60d history, db and health audit [skip ci]"
+          for i in {1..5}; do
+            echo "🚀 嘗試推播至遠端 (第 $i 次)..."
+            if git push origin main; then
+              echo "✅ 行情快照推播成功！"
+              exit 0
+            else
+              echo "⚠️ 偵測到遠端有新提交，正在拉取最新 commit 並自動 rebase..."
+              git pull --rebase origin main
+              sleep 2
+            fi
+          done
+          echo "❌ 推播重試 5 次後仍失敗"
+          exit 1
