@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261027.01');
+        const appVersion = ref('v2.20261027.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2737,6 +2737,45 @@ createApp({
             return features;
         };
 
+        // ─── 核心：持股成本與股數滾算引擎 (標準移動加權平均法，修復賣出時未扣成本之 Bug) ───
+        const calcHoldingSharesAndCostPure = (tradeRows) => {
+            let curShares = 0;
+            let totalCost = 0;
+
+            if (tradeRows && tradeRows.length > 0) {
+                tradeRows.forEach(tr => {
+                    const act = String(tr[0] || '').trim();
+                    const sh = Number(tr[1]) || 0;
+                    const pr = Number(tr[2]) || 0;
+
+                    if (sh <= 0) return;
+
+                    if (act === '買進') {
+                        totalCost += sh * pr;
+                        curShares += sh;
+                    } else if (act === '賣出') {
+                        if (curShares > 0) {
+                            // 當前每股平均成本
+                            const avgPrice = totalCost / curShares;
+                            // 賣出按均價扣除已實現持股成本
+                            const sellShares = Math.min(sh, curShares);
+                            totalCost = Math.max(0, totalCost - (sellShares * avgPrice));
+                            curShares = Math.max(0, curShares - sh);
+                        } else {
+                            curShares = 0;
+                            totalCost = 0;
+                        }
+                        if (curShares === 0) {
+                            totalCost = 0;
+                        }
+                    }
+                });
+            }
+
+            const avgCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
+            return { shares: curShares, cost: avgCost };
+        };
+
         // ─── 自動檢查與平滑遷移資料庫架構與時間戳 (對齊地端) ───
         const migrateMobileDatabase = (db) => {
             if (!db) return;
@@ -2857,6 +2896,32 @@ createApp({
                     }
                 } catch (e6) {
                     console.warn("[MIGRATE] cleanup redundant strategies warning:", e6);
+                }
+
+                // 7. ⚖️ 持股庫存與損平價自癒校準（標準移動加權平均法，全面修正歷史賣出漏扣成本問題）
+                try {
+                    const distinctTrades = db.exec("SELECT DISTINCT 股票代號, 證券商 FROM trade_log");
+                    if (distinctTrades.length > 0 && distinctTrades[0].values) {
+                        distinctTrades[0].values.forEach(r => {
+                            const [sCode, sBroker] = r;
+                            const tRows = db.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [sCode, sBroker]);
+                            if (tRows.length > 0 && tRows[0].values) {
+                                const { shares, cost } = calcHoldingSharesAndCostPure(tRows[0].values);
+                                // 若在 my_stock 中有該記錄，更新其正確股數與損平價
+                                const checkStock = db.exec("SELECT 個股股數, 損平價 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [sCode, sBroker]);
+                                if (checkStock.length > 0 && checkStock[0].values && checkStock[0].values[0]) {
+                                    const oldShares = Number(checkStock[0].values[0][0]) || 0;
+                                    const oldCost = Number(checkStock[0].values[0][1]) || 0;
+                                    if (oldShares !== shares || Math.abs(oldCost - cost) >= 0.01) {
+                                        db.run("UPDATE my_stock SET 個股股數 = ?, 損平價 = ? WHERE 股票代號 = ? AND 證券商 = ?", [shares, cost, sCode, sBroker]);
+                                        console.log(`⚖️ [成本自癒校準] ${sCode} (${sBroker}) 損平價由 ${oldCost} 校正為 ${cost}，股數: ${shares}`);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } catch (e7) {
+                    console.warn("[MIGRATE] recalc holdings cost warning:", e7);
                 }
             } catch (err) {
                 console.warn("[MIGRATE] Overall migration error:", err);
@@ -4379,26 +4444,15 @@ createApp({
                         );
                     }
 
-                    // 重新滾算該股持股總數與成本 (支援多券商分別銷帳)
+                    // 重新滾算該股持股總數與成本 (支援多券商分別銷帳，標準移動加權平均法)
                     const recalcBrokerHoldings = (targetCode, targetBroker, fallbackName = '') => {
                         const holdRes = dbInstance.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [targetCode, targetBroker]);
                         let curShares = 0;
                         let curCost = priceVal;
-                        if (holdRes.length > 0) {
-                            let totalCost = 0;
-                            holdRes[0].values.forEach(r => {
-                                const act = r[0];
-                                const sh = Number(r[1]) || 0;
-                                const pr = Number(r[2]) || 0;
-                                if (act === '買進') {
-                                    totalCost += sh * pr;
-                                    curShares += sh;
-                                } else if (act === '賣出') {
-                                    curShares = Math.max(0, curShares - sh);
-                                    if (curShares === 0) totalCost = 0;
-                                }
-                            });
-                            curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
+                        if (holdRes.length > 0 && holdRes[0].values) {
+                            const res = calcHoldingSharesAndCostPure(holdRes[0].values);
+                            curShares = res.shares;
+                            curCost = res.cost;
                         }
 
                         let existingCreated = '';
@@ -8442,19 +8496,10 @@ createApp({
                             const tRows = cloudDb.exec("SELECT 動作, 成交股數, 成交價 FROM trade_log WHERE 股票代號 = ? AND 證券商 = ? ORDER BY 交易時間 ASC, id ASC", [code, broker]);
                             let curShares = 0;
                             let curCost = 0;
-                            let totalCost = 0;
                             if (tRows.length > 0 && tRows[0].values) {
-                                tRows[0].values.forEach(tr => {
-                                    const [act, sh, pr] = tr;
-                                    if (act === '買進') {
-                                        totalCost += sh * pr;
-                                        curShares += sh;
-                                    } else if (act === '賣出') {
-                                        curShares = Math.max(0, curShares - sh);
-                                        if (curShares === 0) totalCost = 0;
-                                    }
-                                });
-                                curCost = curShares > 0 ? Number((totalCost / curShares).toFixed(2)) : 0;
+                                const res = calcHoldingSharesAndCostPure(tRows[0].values);
+                                curShares = res.shares;
+                                curCost = res.cost;
                             }
                             
                             const stockUk = makeStockUniqueKey(code, broker);
