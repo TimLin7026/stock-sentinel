@@ -37,22 +37,29 @@ function doGet(e) {
     // 🚀 支援 GET 接力請求模式 (相容 Google 302 重導向及前端輔助秒級喚醒)
     if (e && e.parameter && e.parameter.action === "process_next_chunk") {
       const batchId = (e.parameter.batchId || "").trim();
-      const targetChunkIndex = Number(e.parameter.targetChunkIndex) || 0;
-      Logger.log(`⚡ [doGet] 收到接力觸發請求：批次 ID [${batchId}]，目標梯次索引 [${targetChunkIndex}]`);
+      let targetChunkIndex = Number(e.parameter.targetChunkIndex);
+      logToDrive("👉 [doGet 收到接力請求] batchId=" + batchId + ", targetChunkIndex=" + targetChunkIndex);
 
       const queue = readQueueFromCloudDrive();
       if (queue) {
+        logToDrive("📄 [doGet 讀出佇列] 總梯數=" + queue.totalChunks + ", 佇列當前梯=" + queue.currentChunkIndex + ", 佇列batchId=" + queue.batchId);
         if (batchId && queue.batchId && queue.batchId !== batchId) {
-          Logger.log(`⚠️ batchId 不符：請求 ${batchId} != 活躍佇列 ${queue.batchId}`);
-          return createJsonResponse({ ok: false, error: `batchId 不符 (${batchId} != ${queue.batchId})` }, 404);
+          logToDrive("❌ [doGet batchId 拒絕] 請求 " + batchId + " != 活躍 " + queue.batchId);
+          return createJsonResponse({ ok: false, error: "batchId 不符" }, 404);
         }
-        // 🛡️ 只有在確認佇列有效且準備啟動時，才清理 Trigger
+
+        // 🛡️ 智能容錯：若傳入索引超出長度，自動切回 queue.currentChunkIndex
+        if (isNaN(targetChunkIndex) || targetChunkIndex < 0 || targetChunkIndex >= queue.chunks.length) {
+          logToDrive("⚠️ [doGet 索引容錯校準] 傳入 " + targetChunkIndex + " 超出範圍，自動校正為 queue.currentChunkIndex=" + (queue.currentChunkIndex || 0));
+          targetChunkIndex = queue.currentChunkIndex || 0;
+        }
+
         clearExistingTriggers();
-        Logger.log(`🏃‍♂️ [doGet] 成功驗證佇列，啟動第 ${targetChunkIndex + 1} 梯次推導！`);
+        logToDrive("🚀 [doGet 成功啟動接力] 執行第 " + (targetChunkIndex + 1) + "/" + queue.totalChunks + " 梯次！");
         processQueueChunk(queue, targetChunkIndex);
-        return createJsonResponse({ ok: true, message: `第 ${targetChunkIndex + 1} 梯次已由 doGet 成功啟動處理` }, 200);
+        return createJsonResponse({ ok: true, message: "第 " + (targetChunkIndex + 1) + " 梯次已成功啟動" }, 200);
       } else {
-        Logger.log("❌ 找不到有效活躍佇列，請確認 Google Drive 上的 gem_batch_queue.json！");
+        logToDrive("❌ [doGet 失敗] 找不到有效活躍佇列");
         return createJsonResponse({ ok: false, error: "活躍佇列不存在" }, 404);
       }
     }
@@ -199,7 +206,7 @@ function processQueueChunk(queue, chunkIndex) {
   let isCircuitBroken = false;
   let breakReason = "";
 
-  Logger.log(`🏁 開始執行第 ${chunkIndex + 1}/${queue.totalChunks} 梯次，本梯檔數: ${chunkStocks.length} 檔`);
+  logToDrive("🏁 [梯次啟動] 開始推導第 " + (chunkIndex + 1) + "/" + queue.totalChunks + " 梯次，共 " + chunkStocks.length + " 檔"); Logger.log("🏁 開始執行第 " + (chunkIndex + 1) + " 梯次");
 
   for (let i = 0; i < chunkStocks.length; i++) {
     // 🛡️ 單梯次內部安全煞車檢查 (防單檔異常卡死)
@@ -318,7 +325,7 @@ function processQueueChunk(queue, chunkIndex) {
     queue.currentChunkIndex = nextChunkIndex;
     saveQueueToCloudDrive(queue);
 
-    Logger.log(`🎉 第 ${chunkIndex + 1}/${queue.totalChunks} 梯次已順利完工！準備接力啟動第 ${nextChunkIndex + 1} 梯次...`);
+    logToDrive("🎉 [梯次完工] 第 " + (chunkIndex + 1) + "/" + queue.totalChunks + " 梯次完成！準備接力啟動第 " + (nextChunkIndex + 1) + " 梯次"); Logger.log("🎉 梯次完工");
 
     // 💓 梯次交界期刷新心跳：更新 lastHeartbeat，杜絕前端 3 分鐘逾時誤判
     saveStatusReportToCloudDrive({
@@ -361,7 +368,7 @@ function processQueueChunk(queue, chunkIndex) {
 
   } else {
     // 🏆 所有梯次全數完工 (或熔斷終止)
-    Logger.log(`🏆 [全部完工] 總計完成 ${queue.completedReports.length}/${queue.totalRequested} 檔戰報！`);
+    logToDrive("🏆 [全部完工] 恭喜！全數 " + queue.completedReports.length + "/" + queue.totalRequested + " 檔推導完畢！"); Logger.log("🏆 全部完工");
 
     const finalReport = {
       status: "completed",
@@ -566,6 +573,23 @@ function parseStrategyContent(rawText, fallbackCode) {
 /**
  * 取得指定名稱之最新有效檔案 (嚴格過濾垃圾桶，徹底免疫殭屍檔干擾)
  */
+
+/**
+ * 📝 Google Drive 即時黑盒子追蹤日誌 (寫入 gem_batch_debug.txt)
+ */
+function logToDrive(msg) {
+  try {
+    const timeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "HH:mm:ss.SSS");
+    const line = "[" + timeStr + "] " + msg + "\n";
+    const file = getValidDriveFile("gem_batch_debug.txt");
+    if (file) {
+      file.setContent(file.getContentText() + line);
+    } else {
+      DriveApp.createFile("gem_batch_debug.txt", line, MimeType.PLAIN_TEXT);
+    }
+  } catch (e) {}
+}
+
 function getValidDriveFile(fileName) {
   try {
     const files = DriveApp.getFilesByName(fileName);

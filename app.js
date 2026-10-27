@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261027.06');
+        const appVersion = ref('v2.20261027.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5688,7 +5688,7 @@ createApp({
                                     const gasUrl = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
                                     if (gasUrl && gasUrl.startsWith('https://script.google.com/')) {
                                         const sep = gasUrl.includes('?') ? '&' : '?';
-                                        const relayUrl = `${gasUrl}${sep}action=process_next_chunk&batchId=${encodeURIComponent(sData.batchId || '')}&targetChunkIndex=${sData.currentChunk}`;
+                                        const relayUrl = `${gasUrl}${sep}action=process_next_chunk&batchId=${encodeURIComponent(sData.batchId || '')}&targetChunkIndex=${Math.max(0, (sData.currentChunk || 1) - 1)}`;
                                         fetch(relayUrl, { mode: 'no-cors' }).catch(() => {});
                                         console.log(`[BatchRelay] ⚡ 前端智慧接力助攻已發送：第 ${sData.currentChunk + 1} 梯次`);
                                     }
