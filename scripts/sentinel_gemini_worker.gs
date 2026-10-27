@@ -116,6 +116,14 @@ function doPost(e) {
     // 🧹 核心設計 1：每次收到新派工，徹底清空除錯日誌，從乾淨第 1 行開始！
     logToDrive("🚀 [新派工抵達] 收到全新派工，總計 " + stocks.length + " 檔！徹底清空舊日誌與舊清單...", true);
 
+    // 🧹 同步初始化舊的 gem_strategy_batch.json，確保本次全新派工戰報乾淨累積
+    try {
+      const oldBatchFile = getValidDriveFile(BATCH_FILE_NAME);
+      if (oldBatchFile) {
+        oldBatchFile.setContent("[]");
+      }
+    } catch (eCleanBatch) {}
+
     const batchId = "batch_" + new Date().getTime();
     const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
 
@@ -197,6 +205,30 @@ function processManifestLoop(apiKey, model, initialManifest) {
     logToDrive("❌ [循環中止] 無法讀取實體清單檔案或清單格式錯誤！");
     return;
   }
+
+  // 💾 核心戰報記憶體累積器：杜絕每檔讀取 Google Drive 導致的覆寫與延遲漏洞！
+  let accumulatedReports = [];
+  let batchDriveFile = getValidDriveFile(BATCH_FILE_NAME);
+
+  if (batchDriveFile) {
+    try {
+      const rawBatch = batchDriveFile.getContentText();
+      if (rawBatch) {
+        const parsed = JSON.parse(rawBatch);
+        if (Array.isArray(parsed)) accumulatedReports = parsed;
+      }
+    } catch (e) {
+      logToDrive("⚠️ 讀取現有 gem_strategy_batch.json 失敗，以空陣列初始化: " + e.toString());
+    }
+  } else {
+    try {
+      batchDriveFile = DriveApp.createFile(BATCH_FILE_NAME, "[]", MimeType.PLAIN_TEXT);
+    } catch (e) {
+      logToDrive("⚠️ 建立 gem_strategy_batch.json 異常: " + e.toString());
+    }
+  }
+
+  logToDrive("📦 [戰報累積器就緒] 目前現存戰報筆數: " + accumulatedReports.length + "，準備開始循環推進！");
 
   while (true) {
     // 🛡️ 時間安全紅線檢查 (防止超過 Google 360 秒硬上限)
@@ -297,8 +329,18 @@ function processManifestLoop(apiKey, model, initialManifest) {
             targetHigh: parsed.targetHigh
           };
 
-          // 💾 1. 戰報落地存檔至 gem_strategy_batch.json
-          appendReportToCloudDrive(reportData);
+          // 💾 1. 戰報落地存檔至 gem_strategy_batch.json (純記憶體累加陣列，徹底根除覆寫漏洞！)
+          accumulatedReports = accumulatedReports.filter(r => String(r.code) !== String(reportData.code));
+          accumulatedReports.push(reportData);
+
+          try {
+            if (!batchDriveFile) {
+              batchDriveFile = getValidDriveFile(BATCH_FILE_NAME) || DriveApp.createFile(BATCH_FILE_NAME, "[]", MimeType.PLAIN_TEXT);
+            }
+            batchDriveFile.setContent(JSON.stringify(accumulatedReports, null, 2));
+          } catch (eWriteBatch) {
+            logToDrive("⚠️ 寫入 gem_strategy_batch.json 異常: " + eWriteBatch.toString());
+          }
 
           // 📝 2. 在實體清單中將該股票標記為 done！
           nextPendingStock.status = "done";
@@ -307,7 +349,7 @@ function processManifestLoop(apiKey, model, initialManifest) {
 
           success = true;
           consecutiveFailures = 0;
-          logToDrive("✅ [註記完成] " + code + " " + name + " 戰報成功落地，清單已註記 done！");
+          logToDrive("✅ [註記完成] " + code + " " + name + " 戰報成功落地！已累積 " + accumulatedReports.length + "/" + manifest.stocks.length + " 檔戰報，清單已註記 done！");
           break;
         }
       } catch (err) {
