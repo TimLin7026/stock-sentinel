@@ -30,6 +30,7 @@ function logToDrive(msg, isOverwrite) {
   try {
     const timeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss.SSS");
     const line = "[" + timeStr + "] " + msg + "\n";
+    Logger.log(line.trim());
     const file = getValidDriveFile(DEBUG_LOG_FILE_NAME);
     if (file) {
       if (isOverwrite) {
@@ -40,7 +41,9 @@ function logToDrive(msg, isOverwrite) {
     } else {
       DriveApp.createFile(DEBUG_LOG_FILE_NAME, line, MimeType.PLAIN_TEXT);
     }
-  } catch (e) {}
+  } catch (e) {
+    Logger.log("logToDrive 異常: " + e.toString());
+  }
 }
 
 /**
@@ -56,7 +59,7 @@ function doGet(e) {
         const apiKey = (e.parameter.apiKey || manifest.apiKey || "").trim();
         const model = (e.parameter.model || manifest.model || "gemini-3.8-flash").trim();
         if (apiKey) {
-          processManifestLoop(apiKey, model);
+          processManifestLoop(apiKey, model, manifest);
           return createJsonResponse({ ok: true, message: "未執行清單已接續啟動推導" }, 200);
         }
       }
@@ -157,8 +160,8 @@ function doPost(e) {
 
     logToDrive("🏃‍♂️ [啟動事務循環] 正式進入 processManifestLoop，逐筆推導並逐筆註記 done 直到全數完成！");
 
-    // 🚀 核心設計 3：啟動推導 Loop，直到清單中所有股票都註記已完成
-    processManifestLoop(apiKey, model);
+    // 🚀 核心設計 3：啟動推導 Loop，直接傳入記憶體物件，徹底杜絕 Google Drive 剛建檔時的查詢延遲！
+    processManifestLoop(apiKey, model, manifestData);
 
     return createJsonResponse({
       ok: true,
@@ -174,12 +177,26 @@ function doPost(e) {
 
 /**
  * 🔄 核心事務循環機：讀取未執行的股票代號呼叫 Gemini，完成後即時註記，持續 loop 直到清單全數完成
+ * @param {string} apiKey - Gemini API 金鑰
+ * @param {string} model - 模型名稱
+ * @param {Object} [initialManifest] - 可選。由呼叫端直接直通傳入之清單物件，避免立即讀取 Drive 的延遲
  */
-function processManifestLoop(apiKey, model) {
+function processManifestLoop(apiKey, model, initialManifest) {
   const loopStartTs = new Date().getTime();
   let consecutiveFailures = 0;
   let isCircuitBroken = false;
   let breakReason = "";
+
+  // 🛡️ 核心防護 1：首輪直接使用傳入之記憶體清單物件；若無傳入則自 Drive 讀取
+  let manifest = initialManifest || null;
+  if (!manifest) {
+    manifest = readManifestFromCloudDrive();
+  }
+
+  if (!manifest || !Array.isArray(manifest.stocks)) {
+    logToDrive("❌ [循環中止] 無法讀取實體清單檔案或清單格式錯誤！");
+    return;
+  }
 
   while (true) {
     // 🛡️ 時間安全紅線檢查 (防止超過 Google 360 秒硬上限)
@@ -191,17 +208,10 @@ function processManifestLoop(apiKey, model) {
       break;
     }
 
-    // 1. 讀取最新實體清單檔案
-    const manifest = readManifestFromCloudDrive();
-    if (!manifest || !Array.isArray(manifest.stocks)) {
-      logToDrive("❌ [循環中止] 無法讀取實體清單檔案或清單格式錯誤！");
-      break;
-    }
-
-    // 2. 尋找下一檔未執行的股票 (status === 'pending')
+    // 尋找下一檔未執行的股票 (status === 'pending')
     const nextPendingStock = manifest.stocks.find(s => s.status === "pending");
 
-    // 3. 🎯 終結條件：清單中所有股票都已經註記已完成！
+    // 🎯 終結條件：清單中所有股票都已經註記已完成！
     if (!nextPendingStock) {
       const doneCount = manifest.stocks.filter(s => s.status === "done").length;
       logToDrive("🏆 [全數完工！] 清單中全數 " + doneCount + "/" + manifest.stocks.length + " 檔皆已註記 done！大功告成！");
