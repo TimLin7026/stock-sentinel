@@ -27,10 +27,25 @@ const MAX_CONSECUTIVE_FAILURES = 2;   // 連續失敗 2 次即熔斷退出
 const MAX_SAFE_EXECUTION_SECONDS = 250; // Google 6 分鐘(360s)上限，提早於 250s 安全優雅收工防逾時
 
 /**
- * HTTP GET 進入點：健康檢查與狀態查詢
+ * HTTP GET 進入點：健康檢查、狀態查詢或梯次接力喚醒
  */
 function doGet(e) {
   try {
+    // 🚀 支援 GET 接力請求模式 (相容 Google 302 重導向及前端輔助秒級喚醒)
+    if (e && e.parameter && e.parameter.action === "process_next_chunk") {
+      const batchId = e.parameter.batchId;
+      const targetChunkIndex = Number(e.parameter.targetChunkIndex) || 0;
+      Logger.log(`⚡ [doGet] 收到接力觸發請求：批次 ID ${batchId}，目標梯次索引 ${targetChunkIndex}`);
+      const queue = readQueueFromCloudDrive();
+      if (queue && (!batchId || queue.batchId === batchId)) {
+        clearExistingTriggers(); // 安全清理排程避免重複觸發
+        processQueueChunk(queue, targetChunkIndex);
+        return createJsonResponse({ ok: true, message: `第 ${targetChunkIndex + 1} 梯次已由 doGet 成功啟動處理` }, 200);
+      } else {
+        return createJsonResponse({ ok: false, error: "佇列不存在或批次 ID 不符合" }, 404);
+      }
+    }
+
     const files = DriveApp.getFilesByName(STATUS_FILE_NAME);
     let statusInfo = { status: "ready", message: "💎 台股戰情室 Google Apps Script 兩層式排程器正常運作中！" };
     if (files.hasNext()) {
@@ -297,23 +312,43 @@ function processQueueChunk(queue, chunkIndex) {
 
     Logger.log(`🎉 第 ${chunkIndex + 1}/${queue.totalChunks} 梯次已順利完工！準備接力啟動第 ${nextChunkIndex + 1} 梯次...`);
 
-    // 🚀 核心接力機制：建立 3 秒後自動喚醒的排程計時器
+    // 💓 梯次交界期刷新心跳：更新 lastHeartbeat，杜絕前端 3 分鐘逾時誤判
+    saveStatusReportToCloudDrive({
+      status: "running",
+      batchId: queue.batchId,
+      startTime: queue.startTime,
+      lastHeartbeat: new Date().getTime(),
+      totalRequested: queue.totalRequested,
+      completedCount: queue.completedReports.length,
+      failedCount: queue.failedList.length,
+      currentChunk: nextChunkIndex + 1,
+      totalChunks: queue.totalChunks,
+      currentStock: `第 ${chunkIndex + 1} 梯次完工，接力啟動第 ${nextChunkIndex + 1} 梯次...`,
+      currentCode: "",
+      progressPercent: Math.round((queue.completedReports.length / queue.totalRequested) * 100),
+      completedList: queue.completedReports.map(r => ({ code: r.code, name: r.name })),
+      failedList: queue.failedList,
+      isCircuitBroken: false,
+      breakReason: ""
+    });
+
+    // 🚀 核心接力機制 1：建立符合 Google 規範的排程計時器 (60秒後保底接力)
     scheduleNextChunkTrigger();
 
-    // 雙保險：若具備 gasUrl，發起短超時 Webhook 自我喚醒
+    // 🚀 核心接力機制 2：雙保險秒級自我喚醒 (改採 GET 繞過 302 重導向丟失 POST body 限制)
     if (queue.gasUrl && queue.gasUrl.startsWith("https://script.google.com/")) {
       try {
-        UrlFetchApp.fetch(queue.gasUrl, {
-          method: "post",
-          contentType: "application/json",
-          payload: JSON.stringify({
-            action: "process_next_chunk",
-            batchId: queue.batchId,
-            targetChunkIndex: nextChunkIndex
-          }),
-          muteHttpExceptions: true
+        const sep = queue.gasUrl.includes("?") ? "&" : "?";
+        const relayUrl = `${queue.gasUrl}${sep}action=process_next_chunk&batchId=${encodeURIComponent(queue.batchId)}&targetChunkIndex=${nextChunkIndex}`;
+        UrlFetchApp.fetch(relayUrl, {
+          method: "get",
+          muteHttpExceptions: true,
+          followRedirects: true
         });
-      } catch (eWebhook) {}
+        Logger.log(`⚡ 自我喚醒 Webhook (GET) 已發送：接力第 ${nextChunkIndex + 1} 梯次`);
+      } catch (eWebhook) {
+        Logger.log("自我喚醒 Webhook 例外 (由背景計時器接管): " + eWebhook.toString());
+      }
     }
 
   } else {
@@ -367,15 +402,20 @@ function runNextChunkJob() {
 }
 
 /**
- * 建立 3 秒後自動喚醒的接力排程計時器
+ * 建立 Google 規範的接力排程計時器 (60秒後喚醒，隔離保護不 Crash)
  */
 function scheduleNextChunkTrigger() {
-  clearExistingTriggers();
-  ScriptApp.newTrigger("runNextChunkJob")
-           .timeBased()
-           .after(3000)
-           .create();
-  Logger.log("⏰ 已建立 Google Apps Script 背景單次計時器，3 秒後自動喚醒接力下一梯次！");
+  try {
+    clearExistingTriggers();
+    // ⚠️ Google Apps Script 官方規定：after(milliseconds) 最小為 60,000 毫秒 (1 分鐘)
+    ScriptApp.newTrigger("runNextChunkJob")
+             .timeBased()
+             .after(60 * 1000)
+             .create();
+    Logger.log("⏰ 已建立 Google Apps Script 背景單次計時器，約 1 分鐘後保底接力下一梯次！");
+  } catch (errTrigger) {
+    Logger.log("⚠️ 建立排程觸發器例外 (由自我 Webhook 或前端助攻接力): " + errTrigger.toString());
+  }
 }
 
 /**

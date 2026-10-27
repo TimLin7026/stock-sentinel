@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261027.02');
+        const appVersion = ref('v2.20261027.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5681,7 +5681,20 @@ createApp({
                             if (sData.status === 'running') {
                                 const now = new Date().getTime();
                                 const last = Number(sData.lastHeartbeat) || 0;
-                                if (now - last > 180000) { // 超過 3 分鐘(180秒)無心跳判定為逾時中斷
+                                const elapsed = now - last;
+
+                                // ⚡ 前端智慧接力助攻：若尚有未完工梯次，且心跳超過 70 秒無新推導，主動發送輕量 Ping 喚醒下一梯次
+                                if (sData.currentChunk < sData.totalChunks && elapsed >= 70000 && elapsed <= 240000) {
+                                    const gasUrl = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+                                    if (gasUrl && gasUrl.startsWith('https://script.google.com/')) {
+                                        const sep = gasUrl.includes('?') ? '&' : '?';
+                                        const relayUrl = `${gasUrl}${sep}action=process_next_chunk&batchId=${encodeURIComponent(sData.batchId || '')}&targetChunkIndex=${sData.currentChunk}`;
+                                        fetch(relayUrl, { mode: 'no-cors' }).catch(() => {});
+                                        console.log(`[BatchRelay] ⚡ 前端智慧接力助攻已發送：第 ${sData.currentChunk + 1} 梯次`);
+                                    }
+                                }
+
+                                if (elapsed > 240000) { // 放寬至 4 分鐘(240秒)無心跳判定為逾時中斷
                                     sData.status = 'timeout';
                                 }
                             }
@@ -5692,7 +5705,7 @@ createApp({
                                 } else if (sData.status === 'completed') {
                                     showToast(`🎉 雲端推導完成 (${sData.completedCount || 0} 檔)`, 2500);
                                 } else if (sData.status === 'timeout') {
-                                    showToast(`⚠️ 雲端推導逾時中斷，請點擊「合流」救援已完成戰報！`, 3000);
+                                    showToast(`⚠️ 雲端推導逾時中斷，可點擊「喚醒接力」或「合流」戰報！`, 3000);
                                 } else {
                                     showToast('🟢 雲端目前閒置中', 2000);
                                 }
@@ -5749,6 +5762,32 @@ createApp({
                 console.error("強制解除鎖定失敗:", err);
                 cloudBatchStatus.value = null;
                 showToast("⚠️ 已重置本地狀態為閒置", 2500);
+            }
+        };
+
+        // ⚡ 手動喚醒接力下一梯次 (若背景排程延遲可一鍵接續)
+        const triggerNextBatchChunkManually = async () => {
+            if (!cloudBatchStatus.value) return;
+            const s = cloudBatchStatus.value;
+            const targetChunk = Number(s.currentChunk) || 1;
+            let gasUrl = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+            if (!gasUrl || !gasUrl.startsWith('https://script.google.com/macros/s/')) {
+                showToast("⚠️ 請先設定有效的個人戰報 GAS 網址", 2500);
+                return;
+            }
+            showToast(`🚀 正在向雲端發送接力指令 (第 ${targetChunk} 梯次)...`, 2500);
+            try {
+                const sep = gasUrl.includes('?') ? '&' : '?';
+                const relayUrl = `${gasUrl}${sep}action=process_next_chunk&batchId=${encodeURIComponent(s.batchId || '')}&targetChunkIndex=${targetChunk - 1}`;
+                await fetch(relayUrl, { mode: 'no-cors' });
+                // 狀態回標為 running 並重置最後心跳
+                s.status = 'running';
+                s.lastHeartbeat = new Date().getTime();
+                showToast(`⚡ 已成功發送接力指令！雲端正在啟動第 ${targetChunk} 梯次...`, 3000);
+                setTimeout(() => fetchCloudBatchStatus(true), 2000);
+            } catch (e) {
+                console.error("手動接力失敗:", e);
+                showToast("❌ 發送接力指令失敗，請檢查網路連線", 2500);
             }
         };
 
@@ -8972,6 +9011,7 @@ createApp({
             isCheckingCloudBatchStatus,
             fetchCloudBatchStatus,
             forceResetCloudBatchLock,
+            triggerNextBatchChunkManually,
             filteredBatchCandidateStocks,
             selectBatchOnlyExpired,
             selectAllBatchStocks,

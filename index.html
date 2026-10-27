@@ -1836,7 +1836,10 @@
                                 🔄 正在分析：<strong class="text-sky-300 font-semibold">{{ cloudBatchStatus.currentStock }}</strong>
                             </span>
                             <span v-else>正在排程等待中...</span>
-                            <div class="flex items-center space-x-1.5">
+                                <button v-if="cloudBatchStatus.totalChunks > 1 && cloudBatchStatus.currentChunk < cloudBatchStatus.totalChunks" @click="triggerNextBatchChunkManually" class="text-indigo-400 hover:text-indigo-300 text-[11px] font-bold flex items-center space-x-1 px-1.5 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 transition" title="若換梯等待稍久，點擊此處立即催促雲端接棒">
+                                    <i class="fa-solid fa-bolt"></i>
+                                    <span>催促接力</span>
+                                </button>
                                 <button @click="forceResetCloudBatchLock(true)" class="text-rose-400 hover:text-rose-300 text-[11px] font-bold flex items-center space-x-1 px-1.5 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 transition" title="強制解鎖並嘗試救援現存戰報">
                                     <i class="fa-solid fa-ban"></i>
                                     <span>強制解鎖</span>
@@ -1858,8 +1861,11 @@
                             </span>
                         </div>
                         <div class="flex items-center justify-between text-[11px] text-slate-400">
-                            <span class="truncate max-w-[130px]">心跳超過 3 分鐘無回應</span>
+                            <span class="truncate max-w-[130px]">心跳超過 4 分鐘無回應</span>
                             <div class="flex items-center space-x-1.5">
+                                <button v-if="cloudBatchStatus.totalChunks > 1 && cloudBatchStatus.currentChunk < cloudBatchStatus.totalChunks" @click="triggerNextBatchChunkManually" class="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition active:scale-95" title="立即向雲端發送指令，喚醒下一梯次繼續推導">
+                                    ⚡ 喚醒接力
+                                </button>
                                 <button @click="forceResetCloudBatchLock(false)" class="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 transition">
                                     重置閒置
                                 </button>
@@ -2943,6 +2949,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261027.02"></script>
+    <script src="app.js?v=2.20261027.03"></script>
 </body>
 </html>
