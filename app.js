@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261027.10');
+        const appVersion = ref('v2.20261028.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5786,7 +5786,28 @@ createApp({
             }
             batchFilterBroker.value = '全部';
             batchFilterCategory.value = '全部';
-            selectBatchOnlyExpired();
+
+            // 🎯 防呆恢復：若有上次派工未完成的股票清單，優先自動勾選未完成股票！
+            let restoredUncompleted = false;
+            try {
+                const rawLast = localStorage.getItem('sentinel_last_dispatched_codes');
+                if (rawLast) {
+                    const lastCodes = JSON.parse(rawLast);
+                    if (Array.isArray(lastCodes) && lastCodes.length > 0) {
+                        const validCandidates = (filteredBatchCandidateStocks.value || []).map(s => s.code);
+                        const matched = lastCodes.filter(c => validCandidates.includes(c));
+                        if (matched.length > 0) {
+                            selectedBatchStocks.value = matched;
+                            restoredUncompleted = true;
+                        }
+                    }
+                }
+            } catch (eRestore) {}
+
+            if (!restoredUncompleted) {
+                selectBatchOnlyExpired();
+            }
+
             fetchCloudBatchStatus();
             showBatchDispatchModal.value = true;
         };
@@ -5904,6 +5925,12 @@ createApp({
 
                 // ⏳ 短暫等待 800ms 確保 HTTP 請求已抵達 Google 伺服器
                 await new Promise(r => setTimeout(r, 800));
+
+                // 💾 核心防呆記錄：將本次派工的股票代碼存入 localStorage，便於合流後自動篩選出未完成股票
+                const dispatchedCodes = payloadStocks.map(s => s.code);
+                try {
+                    localStorage.setItem('sentinel_last_dispatched_codes', JSON.stringify(dispatchedCodes));
+                } catch (eStoreCodes) {}
 
                 fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
@@ -8593,6 +8620,7 @@ createApp({
 
                 // 💎 5. 檢查並合流 Google Drive 上由 GAS 背景批次產出之最新戰報 (gem_strategy_batch.json)
                 let batchMergedCount = 0;
+                const mergedCodesThisRound = new Set();
                 try {
                     const batchSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='gem_strategy_batch.json' and trashed=false&fields=files(id,name)`;
                     const batchSearchRes = await fetch(batchSearchUrl, {
@@ -8643,6 +8671,7 @@ createApp({
                                                     dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [rCode, rTime]);
                                                 } catch (eClean) {}
                                                 batchMergedCount++;
+                                                mergedCodesThisRound.add(rCode);
                                             });
                                         }
                                     }
@@ -8695,12 +8724,36 @@ createApp({
 
                 markAsSynced();
 
+                // 🎯 核心防呆：自動比對上次送出名單，若有未完成股票自動勾選！
+                let uncompletedCodes = [];
+                try {
+                    const rawLast = localStorage.getItem('sentinel_last_dispatched_codes');
+                    if (rawLast) {
+                        const lastDispatched = JSON.parse(rawLast);
+                        if (Array.isArray(lastDispatched) && lastDispatched.length > 0) {
+                            uncompletedCodes = lastDispatched.filter(code => !mergedCodesThisRound.has(code));
+                            if (uncompletedCodes.length > 0) {
+                                selectedBatchStocks.value = uncompletedCodes;
+                                localStorage.setItem('sentinel_last_dispatched_codes', JSON.stringify(uncompletedCodes));
+                            } else {
+                                selectedBatchStocks.value = [];
+                                localStorage.removeItem('sentinel_last_dispatched_codes');
+                            }
+                        }
+                    }
+                } catch (eCheckUncompleted) {
+                    console.warn("比對未完成股票例外:", eCheckUncompleted);
+                }
+
                 const brainDate = marketSyncMeta.value.marketDate ? `${marketSyncMeta.value.marketDate} 盤後` : '未同步';
                 const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
                 const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
 
                 const batchNote = batchMergedCount > 0 ? `\n• 雲端戰報：已自動合流 ${batchMergedCount} 檔最新富貴戰報！` : '';
-                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
+                const uncompletedNote = uncompletedCodes.length > 0 
+                    ? `\n\n⚡【防呆自動勾選】\n上次派工尚有 ${uncompletedCodes.length} 檔未完成 (${uncompletedCodes.join(', ')})，系統已為您自動打勾，可直接再次派工！` 
+                    : '';
+                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
