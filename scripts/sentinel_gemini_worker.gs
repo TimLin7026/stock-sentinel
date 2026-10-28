@@ -22,6 +22,7 @@ const DEBUG_LOG_FILE_NAME = "gem_batch_debug.txt";
 const MAX_RETRY_COUNT = 3;             // 單檔遇忙碌最多重試 3 次
 const MAX_CONSECUTIVE_FAILURES = 3;   // 連續失敗 3 次即熔斷退出
 const MAX_SAFE_EXECUTION_SECONDS = 310; // Google 6 分鐘(360s)上限，提早於 310s 安全優雅收工防逾時
+const BATCH_CONCURRENCY = 3;           // 🚀 每批平行併發調用 Gemini API 之個股數量 (加速 3 倍)
 
 /**
  * 📝 Google Drive 即時黑盒子追蹤日誌 (寫入 gem_batch_debug.txt)
@@ -240,11 +241,11 @@ function processManifestLoop(apiKey, model, initialManifest) {
       break;
     }
 
-    // 尋找下一檔未執行的股票 (status === 'pending')
-    const nextPendingStock = manifest.stocks.find(s => s.status === "pending");
+    // 🚀 取出下一批待執行的股票 (status === 'pending')，最多 BATCH_CONCURRENCY 檔 (預設 3 檔平行)
+    const pendingBatch = manifest.stocks.filter(s => s.status === "pending").slice(0, BATCH_CONCURRENCY);
 
     // 🎯 終結條件：清單中所有股票都已經註記已完成！
-    if (!nextPendingStock) {
+    if (pendingBatch.length === 0) {
       const doneCount = manifest.stocks.filter(s => s.status === "done").length;
       logToDrive("🏆 [全數完工！] 清單中全數 " + doneCount + "/" + manifest.stocks.length + " 檔皆已註記 done！大功告成！");
 
@@ -270,14 +271,12 @@ function processManifestLoop(apiKey, model, initialManifest) {
       break;
     }
 
-    // 4. 開始處理當前 pending 股票
-    const code = nextPendingStock.code;
-    const name = nextPendingStock.name;
-    const reportText = nextPendingStock.reportText;
-    const systemPrompt = nextPendingStock.systemPrompt;
+    // 4. 開始處理當前批次 (平行併發組裝)
     const currentCompleted = manifest.stocks.filter(s => s.status === "done").length;
+    const batchNames = pendingBatch.map(s => s.name).join(", ");
+    const batchCodes = pendingBatch.map(s => s.code).join(", ");
 
-    // 💓 心跳與狀態即時更新 (通知手機端目前推導到哪一檔)
+    // 💓 心跳與狀態即時更新 (通知手機端目前推導哪幾檔)
     saveStatusReportToCloudDrive({
       status: "running",
       batchId: manifest.batchId,
@@ -286,8 +285,8 @@ function processManifestLoop(apiKey, model, initialManifest) {
       totalRequested: manifest.stocks.length,
       completedCount: currentCompleted,
       failedCount: manifest.stocks.filter(s => s.status === "failed").length,
-      currentStock: name,
-      currentCode: code,
+      currentStock: batchNames,
+      currentCode: batchCodes,
       progressPercent: Math.round((currentCompleted / manifest.stocks.length) * 100),
       completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.code),
       failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, error: s.error })),
@@ -295,94 +294,185 @@ function processManifestLoop(apiKey, model, initialManifest) {
       breakReason: ""
     });
 
-    logToDrive("⏳ [推導開始] " + code + " " + name + " (進度: " + (currentCompleted + 1) + "/" + manifest.stocks.length + ")...");
+    logToDrive("⚡ [併發推導啟動] 同時調用 " + batchCodes + " (" + batchNames + ") 共 " + pendingBatch.length + " 檔...");
 
-    if (!reportText) {
-      logToDrive("⚠️ [" + code + " " + name + "] 缺少指標文本，註記 failed");
-      nextPendingStock.status = "failed";
-      nextPendingStock.error = "缺少技術指標戰報文本";
-      saveManifestToCloudDrive(manifest);
+    // 組裝各檔的 Gemini API 請求
+    const cleanModel = encodeURIComponent(model);
+    const cleanKey = encodeURIComponent(apiKey);
+    const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + cleanModel + ":generateContent?key=" + cleanKey;
+
+    const validStocksInBatch = [];
+    const requests = [];
+
+    for (let sIdx = 0; sIdx < pendingBatch.length; sIdx++) {
+      const stock = pendingBatch[sIdx];
+      if (!stock.reportText) {
+        logToDrive("⚠️ [" + stock.code + " " + stock.name + "] 缺少指標文本，註記 failed");
+        stock.status = "failed";
+        stock.error = "缺少技術指標戰報文本";
+        saveManifestToCloudDrive(manifest);
+        continue;
+      }
+
+      validStocksInBatch.push(stock);
+
+      const payload = {
+        contents: [{ role: "user", parts: [{ text: stock.reportText }] }]
+      };
+      if (stock.systemPrompt) {
+        payload.systemInstruction = { parts: [{ text: stock.systemPrompt }] };
+      }
+
+      requests.push({
+        url: geminiUrl,
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+    }
+
+    if (validStocksInBatch.length === 0) {
       continue;
     }
 
-    let success = false;
-    let lastErrorMsg = "";
-
-    // 🔄 單檔重試循環 (指數退避)
-    for (let attempt = 1; attempt <= MAX_RETRY_COUNT; attempt++) {
-      try {
-        const generatedText = callGeminiApi(apiKey, model, systemPrompt, reportText);
-        if (generatedText) {
-          const parsed = parseStrategyContent(generatedText, code);
-          const nowStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
-
-          const reportData = {
-            recordTime: nowStr,
-            code: code,
-            name: name,
-            raw: parsed.raw,
-            summary: parsed.summary,
-            buyLow: parsed.buyLow,
-            buyHigh: parsed.buyHigh,
-            defense: parsed.defense,
-            targetLow: parsed.targetLow,
-            targetHigh: parsed.targetHigh
-          };
-
-          // 💾 1. 戰報落地存檔至 gem_strategy_batch.json (純記憶體累加陣列，徹底根除覆寫漏洞！)
-          accumulatedReports = accumulatedReports.filter(r => String(r.code) !== String(reportData.code));
-          accumulatedReports.push(reportData);
-
-          try {
-            if (!batchDriveFile) {
-              batchDriveFile = getValidDriveFile(BATCH_FILE_NAME) || DriveApp.createFile(BATCH_FILE_NAME, "[]", MimeType.PLAIN_TEXT);
-            }
-            batchDriveFile.setContent(JSON.stringify(accumulatedReports, null, 2));
-          } catch (eWriteBatch) {
-            logToDrive("⚠️ 寫入 gem_strategy_batch.json 異常: " + eWriteBatch.toString());
-          }
-
-          // 📝 2. 在實體清單中將該股票標記為 done！
-          nextPendingStock.status = "done";
-          nextPendingStock.doneTime = nowStr;
-          saveManifestToCloudDrive(manifest);
-
-          success = true;
-          consecutiveFailures = 0;
-          logToDrive("✅ [註記完成] " + code + " " + name + " 戰報成功落地！已累積 " + accumulatedReports.length + "/" + manifest.stocks.length + " 檔戰報，清單已註記 done！");
-          break;
+    // 🚀 平行調用 UrlFetchApp.fetchAll
+    let responses = [];
+    try {
+      responses = UrlFetchApp.fetchAll(requests);
+    } catch (eFetchAll) {
+      logToDrive("💥 [平行調用例外] UrlFetchApp.fetchAll 異常: " + eFetchAll.toString());
+      for (let fIdx = 0; fIdx < validStocksInBatch.length; fIdx++) {
+        const st = validStocksInBatch[fIdx];
+        st.retryCount = (st.retryCount || 0) + 1;
+        if (st.retryCount >= MAX_RETRY_COUNT) {
+          st.status = "failed";
+          st.error = eFetchAll.toString();
         }
-      } catch (err) {
-        lastErrorMsg = err.message || err.toString();
-        logToDrive("⚠️ [" + code + " " + name + "] 第 " + attempt + " 次呼叫失敗: " + lastErrorMsg);
+      }
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        isCircuitBroken = true;
+        breakReason = "連續 " + consecutiveFailures + " 批平行調用失敗，觸發安全熔斷！";
+        logToDrive("🛑 [熔斷終止] " + breakReason);
+        break;
+      }
+      Utilities.sleep(2000);
+      continue;
+    }
 
-        if (lastErrorMsg.includes("429") || lastErrorMsg.includes("503") || lastErrorMsg.includes("overloaded") || lastErrorMsg.includes("ResourceExhausted")) {
-          const sleepSeconds = attempt === 1 ? 2 : (attempt === 2 ? 5 : 10);
-          Utilities.sleep(sleepSeconds * 1000);
+    // 逐筆解析回傳結果
+    let anySuccessInBatch = false;
+    let anyRateLimitInBatch = false;
+    const nowStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+
+    for (let rIdx = 0; rIdx < validStocksInBatch.length; rIdx++) {
+      const stock = validStocksInBatch[rIdx];
+      const resp = responses[rIdx];
+
+      if (!resp) {
+        stock.status = "failed";
+        stock.error = "未收到伺服器回應";
+        continue;
+      }
+
+      const responseCode = resp.getResponseCode();
+      const responseText = resp.getContentText();
+
+      if (responseCode === 200) {
+        try {
+          const data = JSON.parse(responseText);
+          if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+            const generatedText = data.candidates[0].content.parts[0].text;
+            const parsed = parseStrategyContent(generatedText, stock.code);
+
+            const reportData = {
+              recordTime: nowStr,
+              code: stock.code,
+              name: stock.name,
+              raw: parsed.raw,
+              summary: parsed.summary,
+              buyLow: parsed.buyLow,
+              buyHigh: parsed.buyHigh,
+              defense: parsed.defense,
+              targetLow: parsed.targetLow,
+              targetHigh: parsed.targetHigh
+            };
+
+            // 💾 記憶體累積陣列直推 (100% 杜絕覆寫)
+            accumulatedReports = accumulatedReports.filter(r => String(r.code) !== String(reportData.code));
+            accumulatedReports.push(reportData);
+
+            stock.status = "done";
+            stock.doneTime = nowStr;
+            stock.error = null;
+            anySuccessInBatch = true;
+            logToDrive("✅ [" + stock.code + " " + stock.name + "] 戰報推導成功！");
+          } else {
+            stock.status = "failed";
+            stock.error = "Gemini 回傳結構無有效文本";
+            logToDrive("❌ [" + stock.code + " " + stock.name + "] 解析失敗: 無有效文本結構");
+          }
+        } catch (errJson) {
+          stock.status = "failed";
+          stock.error = "戰報解析例外: " + errJson.toString();
+          logToDrive("❌ [" + stock.code + " " + stock.name + "] 文本解析異常: " + errJson.toString());
+        }
+      } else {
+        // HTTP 非 200 (429 忙碌或其他)
+        let errMsg = "HTTP " + responseCode;
+        try {
+          const errObj = JSON.parse(responseText);
+          if (errObj.error && errObj.error.message) errMsg += ": " + errObj.error.message;
+        } catch (eParse) {}
+
+        stock.retryCount = (stock.retryCount || 0) + 1;
+        if (stock.retryCount < MAX_RETRY_COUNT && (responseCode === 429 || responseCode === 503 || responseText.includes("ResourceExhausted") || responseText.includes("overloaded"))) {
+          stock.status = "pending";
+          anyRateLimitInBatch = true;
+          logToDrive("⚠️ [" + stock.code + " " + stock.name + "] 遇 " + errMsg + "，第 " + stock.retryCount + " 次重試等待下一批");
         } else {
-          break;
+          stock.status = "failed";
+          stock.error = errMsg;
+          logToDrive("❌ [" + stock.code + " " + stock.name + "] 推導失敗: " + errMsg);
         }
       }
     }
 
-    // 處理單檔最終失敗
-    if (!success) {
-      consecutiveFailures++;
-      nextPendingStock.status = "failed";
-      nextPendingStock.error = lastErrorMsg;
-      saveManifestToCloudDrive(manifest);
-      logToDrive("❌ [" + code + " " + name + "] 推導失敗，清單註記 failed (連續失敗: " + consecutiveFailures + ")");
+    // 💾 1. 本批次處理完畢，將累積戰報全集寫入 gem_strategy_batch.json
+    try {
+      if (!batchDriveFile) {
+        batchDriveFile = getValidDriveFile(BATCH_FILE_NAME) || DriveApp.createFile(BATCH_FILE_NAME, "[]", MimeType.PLAIN_TEXT);
+      }
+      batchDriveFile.setContent(JSON.stringify(accumulatedReports, null, 2));
+    } catch (eWriteBatch) {
+      logToDrive("⚠️ 寫入 gem_strategy_batch.json 異常: " + eWriteBatch.toString());
+    }
 
+    // 📝 2. 同步寫回實體清單檔案
+    saveManifestToCloudDrive(manifest);
+
+    const currentDoneCount = manifest.stocks.filter(s => s.status === "done").length;
+    logToDrive("📊 [批次完工] 目前進度: " + currentDoneCount + "/" + manifest.stocks.length + " 檔已註記 done (累計戰報: " + accumulatedReports.length + " 筆)");
+
+    if (anySuccessInBatch) {
+      consecutiveFailures = 0;
+    } else {
+      consecutiveFailures++;
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         isCircuitBroken = true;
-        breakReason = "連續 " + consecutiveFailures + " 檔股票推導失敗，觸發安全熔斷停止後續推導！";
+        breakReason = "連續 " + consecutiveFailures + " 批平行推導全數失敗，觸發安全熔斷停止後續推導！";
         logToDrive("🛑 [熔斷終止] " + breakReason);
         break;
       }
     }
 
-    // 溫和間隔防抖
-    Utilities.sleep(600);
+    // 遇 429 忙碌時多休息 3 秒避讓，平時溫和間隔 500ms
+    if (anyRateLimitInBatch) {
+      Utilities.sleep(3000);
+    } else {
+      Utilities.sleep(500);
+    }
   }
 
   // 若因安全煞車或熔斷跳出，更新狀態日誌
