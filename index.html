@@ -1963,15 +1963,15 @@
                 <!-- 待選個股清單 (可捲動區) -->
                 <div class="flex-1 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 min-h-[200px] max-h-[360px]">
                     <div v-for="stk in filteredBatchCandidateStocks" :key="stk.uid || (stk.code + '_' + (stk.broker || '關注'))"
-                         @click="toggleBatchStock(stk.uid)"
-                         :class="selectedBatchStocks.includes(stk.uid) 
+                         @click="toggleBatchStock(stk)"
+                         :class="isBatchStockSelected(stk) 
                              ? (theme === 'dark' ? 'bg-indigo-950/40 border-indigo-500/60' : 'bg-indigo-50/80 border-indigo-400') 
                              : (theme === 'dark' ? 'bg-slate-950/40 border-slate-800 hover:bg-slate-800/40' : 'bg-white border-slate-200 hover:bg-slate-50')"
                          class="p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition select-none">
                         <div class="flex items-center space-x-2.5">
                             <!-- 核取方塊 -->
-                            <input type="checkbox" :checked="selectedBatchStocks.includes(stk.uid)" 
-                                   @click.stop="toggleBatchStock(stk.uid)"
+                            <input type="checkbox" :checked="isBatchStockSelected(stk)" 
+                                   @click.stop="toggleBatchStock(stk)"
                                    class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer">
                             <div>
                                 <div class="font-bold text-xs flex items-center space-x-1.5">
@@ -2207,14 +2207,14 @@
                     <div class="flex-1 overflow-y-auto no-scrollbar pr-1 min-h-0">
                         <div class="grid grid-cols-2 gap-2">
                             <div v-for="stk in filteredBatchCandidateStocks" :key="stk.uid || (stk.code + '_' + (stk.broker || '關注'))"
-                                 @click="toggleBatchStock(stk.uid)"
-                                 :class="selectedBatchStocks.includes(stk.uid) 
+                                 @click="toggleBatchStock(stk)"
+                                 :class="isBatchStockSelected(stk) 
                                      ? (theme === 'dark' ? 'bg-indigo-950/40 border-indigo-500/60' : 'bg-indigo-50/80 border-indigo-400') 
                                      : (theme === 'dark' ? 'bg-slate-950/40 border-slate-800 hover:bg-slate-800/40' : 'bg-white border-slate-200 hover:bg-slate-50')"
                                  class="p-2 rounded-xl border flex items-center justify-between cursor-pointer transition select-none">
                                 <div class="flex items-center space-x-2 min-w-0">
-                                    <input type="checkbox" :checked="selectedBatchStocks.includes(stk.uid)" 
-                                           @click.stop="toggleBatchStock(stk.uid)"
+                                    <input type="checkbox" :checked="isBatchStockSelected(stk)" 
+                                           @click.stop="toggleBatchStock(stk)"
                                            class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0">
                                     <div class="truncate">
                                         <div class="font-bold text-xs flex items-center space-x-1 truncate">
@@ -2945,6 +2945,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261028.04"></script>
+    <script src="app.js?v=2.20261028.05"></script>
 </body>
 </html>

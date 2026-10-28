@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.04');
+        const appVersion = ref('v2.20261028.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5699,13 +5699,32 @@ createApp({
             selectedBatchStocks.value = [];
         };
 
-        // 切換單檔勾選
-        const toggleBatchStock = (targetKey) => {
-            const idx = selectedBatchStocks.value.indexOf(targetKey);
+        // 🎯 雙向強韌相容判定：判斷個股是否在已勾選清單中
+        const isBatchStockSelected = (stk) => {
+            if (!stk) return false;
+            const list = selectedBatchStocks.value || [];
+            if (list.length === 0) return false;
+            const targetUid = stk.uid || `${stk.code}_${stk.broker || '關注'}`;
+            if (list.includes(targetUid)) return true;
+            if (stk.code && list.includes(stk.code)) return true;
+            return false;
+        };
+
+        // 切換單檔勾選 (支援傳入物件或字串)
+        const toggleBatchStock = (stkOrKey) => {
+            const key = typeof stkOrKey === 'object' && stkOrKey 
+                ? (stkOrKey.uid || `${stkOrKey.code}_${stkOrKey.broker || '關注'}`) 
+                : stkOrKey;
+            if (!key) return;
+            const idx = selectedBatchStocks.value.indexOf(key);
             if (idx >= 0) {
                 selectedBatchStocks.value.splice(idx, 1);
             } else {
-                selectedBatchStocks.value.push(targetKey);
+                // 若陣列中有舊代碼，先行清理以對齊 uid
+                const codeOnly = key.split('_')[0];
+                const oldIdx = selectedBatchStocks.value.indexOf(codeOnly);
+                if (oldIdx >= 0) selectedBatchStocks.value.splice(oldIdx, 1);
+                selectedBatchStocks.value.push(key);
             }
         };
 
@@ -9169,6 +9188,7 @@ createApp({
             forceResetCloudBatchLock,
             resumeManifestManually,
             filteredBatchCandidateStocks,
+            isBatchStockSelected,
             selectBatchOnlyExpired,
             selectAllBatchStocks,
             clearAllBatchStocks,
