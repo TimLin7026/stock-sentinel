@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.06');
+        const appVersion = ref('v2.20261028.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2870,27 +2870,38 @@ createApp({
                     console.warn("[MIGRATE] cleanup duplicate watch warning:", e5);
                 }
 
-                // 6. 📜 策略戰報歷史除垢自癒：每檔個股只保留一份最新戰報，其餘歷史舊戰報全部清除並補寫墓碑
+                // 6. 📜 策略戰報歷史除垢自癒：升級為 (股票代號 + 證券商) 獨立除垢，每檔個股在各自券商帳戶保留最新 1 筆，絕不跨券商互殺！
                 try {
+                    // 先確保 gem_strategy 有 證券商 欄位
+                    try {
+                        const infoGCheck = db.exec("PRAGMA table_info(gem_strategy)");
+                        if (infoGCheck.length > 0 && infoGCheck[0].values && !infoGCheck[0].values.some(r => r[1] === '證券商')) {
+                            db.run("ALTER TABLE gem_strategy ADD COLUMN 證券商 TEXT DEFAULT '關注'");
+                        }
+                    } catch (eAddBroker) {}
+
+                    // 依指示：TOTAL 戰報先不處理（排除 TOTAL），並依 (股票代號, 證券商) 分組除垢
                     const multiStratStocks = db.exec(`
-                        SELECT 股票代號, COUNT(*) as cnt FROM gem_strategy 
-                        GROUP BY 股票代號 HAVING cnt > 1
+                        SELECT 股票代號, IFNULL(證券商, '關注') as 證券商, COUNT(*) as cnt FROM gem_strategy 
+                        WHERE 股票代號 != 'TOTAL'
+                        GROUP BY 股票代號, IFNULL(證券商, '關注') HAVING cnt > 1
                     `);
                     if (multiStratStocks.length > 0 && multiStratStocks[0].values) {
                         const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
                         db.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
                         multiStratStocks[0].values.forEach(row => {
                             const sc = String(row[0]).padStart(4, '0');
-                            const allReports = db.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? ORDER BY 記錄時間 DESC", [sc]);
+                            const sb = String(row[1] || '關注');
+                            const allReports = db.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? ORDER BY 記錄時間 DESC", [sc, sb]);
                             if (allReports.length > 0 && allReports[0].values && allReports[0].values.length > 1) {
                                 const oldRows = allReports[0].values.slice(1);
                                 oldRows.forEach(orow => {
                                     const oldRt = String(orow[0]);
-                                    const oldUk = String(sc).padStart(4, '0') + '|' + oldRt;
+                                    const oldUk = String(sc).padStart(4, '0') + '|' + sb + '|' + oldRt;
                                     db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
-                                    db.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [sc, oldRt]);
+                                    db.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 = ?", [sc, sb, oldRt]);
                                 });
-                                console.log(`📜 [戰報歷史除垢] 個股 ${sc} 原有 ${allReports[0].values.length} 筆戰報，已自動收斂只留最新 1 筆，清理 ${oldRows.length} 筆舊戰報並補登墓碑。`);
+                                console.log(`📜 [戰報歷史除垢] 個股 ${sc} (${sb}) 原有 ${allReports[0].values.length} 筆戰報，已自動收斂只留最新 1 筆，清理 ${oldRows.length} 筆舊戰報並補登墓碑。`);
                             }
                         });
                     }
@@ -5069,14 +5080,22 @@ createApp({
             }
 
             const normalizedCode = targetCode.padStart(4, '0');
+            const targetBroker = (importingStock.value && importingStock.value.broker) ? importingStock.value.broker : '關注';
             const nowTime = getNowDateTimeStr() + ':00';
 
             try {
                 // 1. 先安全寫入最新戰報
-                dbInstance.run(
-                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
-                );
+                try {
+                    dbInstance.run(
+                        "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [normalizedCode, targetBroker, nowTime, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
+                    );
+                } catch (eIns) {
+                    dbInstance.run(
+                        "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
+                    );
+                }
 
                 // 2. 驗證新戰報已確實寫入成功
                 const verifyCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [normalizedCode, nowTime]);
@@ -5084,9 +5103,14 @@ createApp({
                     throw new Error("新戰報寫入驗證失敗，中止清理舊戰報以維護資料安全！");
                 }
 
-                // 3. 確認新戰報安全落地後，查詢該股除了最新這筆以外的所有舊戰報並登錄墓碑
+                // 3. 確認新戰報安全落地後，查詢該股該券商帳戶除了最新這筆以外的所有舊戰報並登錄墓碑
                 try {
-                    const oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                    let oldReports = [];
+                    try {
+                        oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 != ?", [normalizedCode, targetBroker, nowTime]);
+                    } catch (eOldQ) {
+                        oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                    }
                     if (oldReports.length > 0 && oldReports[0].values.length > 0) {
                         const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
                         dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
@@ -5095,9 +5119,13 @@ createApp({
                             const oldUk = makeStrategyUniqueKey(normalizedCode, oldRt);
                             dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
                         });
-                        // 4. 刪除該股舊戰報，落實「只保留一份最新戰報」
-                        dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
-                        console.log(`🧹 [手動戰報收斂] 個股 ${normalizedCode} 新戰報已寫入，已安全清理 ${oldReports[0].values.length} 筆舊戰報並登錄墓碑。`);
+                        // 4. 刪除該股該券商舊戰報，落實「各券商只保留一份最新戰報」
+                        try {
+                            dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 != ?", [normalizedCode, targetBroker, nowTime]);
+                        } catch (eDelBroker) {
+                            dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
+                        }
+                        console.log(`🧹 [手動戰報收斂] 個股 ${normalizedCode} (${targetBroker}) 新戰報已寫入，已安全清理 ${oldReports[0].values.length} 筆舊戰報並登錄墓碑。`);
                     }
                 } catch (eOld) {
                     console.warn("清理舊戰報警告:", eOld);
@@ -8588,7 +8616,12 @@ createApp({
                             const bk = broker || '關注';
                             const uk = makeStrategyUniqueKey(code, rTime);
                             if (!deletedStrategyKeys.has(uk) && !deletedStrategyKeys.has(`${code}_${bk}_${rTime}`)) {
-                                const chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                                let chk = [];
+                                try {
+                                    chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 = ?", [code, bk, rTime]);
+                                } catch (eChk) {
+                                    chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                                }
                                 if (!chk.length || !chk[0].values.length) {
                                     try {
                                         cloudDb.run(
