@@ -370,6 +370,10 @@ function processManifestLoop(apiKey, model, initialManifest) {
       const stock = validStocksInBatch[rIdx];
       const resp = responses[rIdx];
 
+      // 🛡️ 關鍵防護：為同批次各檔賦予獨立唯一的秒數時間戳，徹底杜絕撞秒覆寫！
+      const stockDate = new Date(new Date().getTime() + rIdx * 1000);
+      const stockTimeStr = Utilities.formatDate(stockDate, "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+
       if (!resp) {
         stock.status = "failed";
         stock.error = "未收到伺服器回應";
@@ -387,7 +391,7 @@ function processManifestLoop(apiKey, model, initialManifest) {
             const parsed = parseStrategyContent(generatedText, stock.code);
 
             const reportData = {
-              recordTime: nowStr,
+              recordTime: stockTimeStr,
               code: stock.code,
               name: stock.name,
               raw: parsed.raw,
@@ -404,10 +408,10 @@ function processManifestLoop(apiKey, model, initialManifest) {
             accumulatedReports.push(reportData);
 
             stock.status = "done";
-            stock.doneTime = nowStr;
+            stock.doneTime = stockTimeStr;
             stock.error = null;
             anySuccessInBatch = true;
-            logToDrive("✅ [" + stock.code + " " + stock.name + "] 戰報推導成功！");
+            logToDrive("✅ [" + stock.code + " " + stock.name + "] 戰報推導成功！(時間戳: " + stockTimeStr + ")");
           } else {
             stock.status = "failed";
             stock.error = "Gemini 回傳結構無有效文本";

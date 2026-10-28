@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.02');
+        const appVersion = ref('v2.20261028.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2923,6 +2923,43 @@ createApp({
                 } catch (e7) {
                     console.warn("[MIGRATE] recalc holdings cost warning:", e7);
                 }
+
+                // 8. 🛡️ 戰報表主鍵平滑升級：將 gem_strategy 主鍵由 (記錄時間) 升級為 (股票代號)，徹底根絕併發撞秒覆寫！
+                try {
+                    const infoG = db.exec("PRAGMA table_info(gem_strategy)");
+                    if (infoG.length > 0 && infoG[0].values) {
+                        // 檢查目前主鍵是否已經為 股票代號 (pk === 1)
+                        const pkCol = infoG[0].values.find(r => r[5] === 1);
+                        if (!pkCol || pkCol[1] !== '股票代號') {
+                            console.log("🛡️ [MIGRATE] 正在平滑升級 gem_strategy 表結構 (升級主鍵為 股票代號)...");
+                            db.run(`
+                                CREATE TABLE IF NOT EXISTS gem_strategy_new (
+                                    股票代號 TEXT PRIMARY KEY,
+                                    記錄時間 TEXT,
+                                    策略內容 TEXT,
+                                    佈局下限 REAL,
+                                    佈局上限 REAL,
+                                    防守點 REAL,
+                                    目標下限 REAL,
+                                    目標上限 REAL,
+                                    戰情總結 TEXT
+                                );
+                            `);
+                            db.run(`
+                                INSERT OR REPLACE INTO gem_strategy_new (股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結)
+                                SELECT 股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結
+                                FROM gem_strategy
+                                GROUP BY 股票代號
+                                ORDER BY 記錄時間 DESC;
+                            `);
+                            db.run("DROP TABLE gem_strategy");
+                            db.run("ALTER TABLE gem_strategy_new RENAME TO gem_strategy");
+                            console.log("🎉 [MIGRATE] gem_strategy 表結構升級完畢，每檔個股享有獨立主鍵坑位！");
+                        }
+                    }
+                } catch (e8) {
+                    console.warn("[MIGRATE] gem_strategy pk alter warning:", e8);
+                }
             } catch (err) {
                 console.warn("[MIGRATE] Overall migration error:", err);
             }
@@ -2961,8 +2998,8 @@ createApp({
                         PRIMARY KEY (股票代號, 證券商)
                     );
                     CREATE TABLE IF NOT EXISTS gem_strategy (
-                        記錄時間 TEXT PRIMARY KEY,
-                        股票代號 TEXT,
+                        股票代號 TEXT PRIMARY KEY,
+                        記錄時間 TEXT,
                         策略內容 TEXT,
                         佈局下限 REAL,
                         佈局上限 REAL,
@@ -8662,14 +8699,15 @@ createApp({
                                                     }
                                                 }
 
-                                                dbInstance.run(
-                                                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                                    [rTime, rCode, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
-                                                );
-                                                // 驗證寫入成功後，安全清理該股舊戰報，落實每檔只留一份最新
+                                                // 🛡️ 關鍵防護：先安全清除該股票本身的舊戰報（若有），再寫入新戰報，落實每檔獨立坑位絕不被他人波及
                                                 try {
-                                                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [rCode, rTime]);
+                                                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [rCode]);
                                                 } catch (eClean) {}
+
+                                                dbInstance.run(
+                                                    "INSERT OR REPLACE INTO gem_strategy (股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                    [rCode, rTime, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
+                                                );
                                                 batchMergedCount++;
                                                 mergedCodesThisRound.add(rCode);
                                             });
