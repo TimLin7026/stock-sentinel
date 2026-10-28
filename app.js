@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.05');
+        const appVersion = ref('v2.20261028.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5861,19 +5861,33 @@ createApp({
             // 🎯 防呆恢復：若有上次派工未完成的股票清單，優先自動勾選未完成股票！
             let restoredUncompleted = false;
             try {
-                const rawLast = localStorage.getItem('sentinel_last_dispatched_codes');
-                if (rawLast) {
-                    const lastCodes = JSON.parse(rawLast);
-                    if (Array.isArray(lastCodes) && lastCodes.length > 0) {
-                        const validCandidates = (filteredBatchCandidateStocks.value || []).map(s => s.uid);
-                        const matched = lastCodes.map(c => {
-                            if (validCandidates.includes(c)) return c;
-                            const found = (filteredBatchCandidateStocks.value || []).find(s => s.code === c);
-                            return found ? found.uid : null;
-                        }).filter(Boolean);
-                        if (matched.length > 0) {
-                            selectedBatchStocks.value = matched;
-                            restoredUncompleted = true;
+                // 🛑 若雲端已經完工 (completed)，代表本次派工已產出完畢，不需再勾選未完成股票
+                const isCompleted = cloudBatchStatus.value && cloudBatchStatus.value.status === 'completed';
+                if (!isCompleted) {
+                    const rawLast = localStorage.getItem('sentinel_last_dispatched_codes');
+                    if (rawLast) {
+                        const lastCodes = JSON.parse(rawLast);
+                        if (Array.isArray(lastCodes) && lastCodes.length > 0) {
+                            const validCandidates = (filteredBatchCandidateStocks.value || []).map(s => s.uid);
+                            const matched = [];
+                            const matchedSet = new Set();
+                            lastCodes.forEach(c => {
+                                if (validCandidates.includes(c) && !matchedSet.has(c)) {
+                                    matched.push(c);
+                                    matchedSet.add(c);
+                                } else {
+                                    // 相容歷史純代碼，找尋尚未匹配的候選個股 (避免同代碼被同一券商重複搶先匹配)
+                                    const found = (filteredBatchCandidateStocks.value || []).find(s => s.code === c && !matchedSet.has(s.uid));
+                                    if (found) {
+                                        matched.push(found.uid);
+                                        matchedSet.add(found.uid);
+                                    }
+                                }
+                            });
+                            if (matched.length > 0) {
+                                selectedBatchStocks.value = matched;
+                                restoredUncompleted = true;
+                            }
                         }
                     }
                 }
@@ -6020,8 +6034,8 @@ createApp({
                 // ⏳ 短暫等待 800ms 確保 HTTP 請求已抵達 Google 伺服器
                 await new Promise(r => setTimeout(r, 800));
 
-                // 💾 核心防呆記錄：將本次派工的股票代碼存入 localStorage，便於合流後自動篩選出未完成股票
-                const dispatchedCodes = payloadStocks.map(s => s.code);
+                // 💾 核心防呆記錄：將本次派工的股票 UID (股票_券商) 存入 localStorage，便於精準比對各帳戶未完成股票
+                const dispatchedCodes = payloadStocks.map(s => s.uid || (s.code + '_' + (s.broker || '關注')));
                 try {
                     localStorage.setItem('sentinel_last_dispatched_codes', JSON.stringify(dispatchedCodes));
                 } catch (eStoreCodes) {}
