@@ -135,15 +135,22 @@ function doPost(e) {
       apiKey: apiKey,
       model: model,
       totalCount: stocks.length,
-      stocks: stocks.map(s => ({
-        code: String(s.code || "").padStart(4, "0"),
-        name: s.name || s.code,
-        status: "pending", // 初始狀態皆為 pending
-        doneTime: null,
-        error: null,
-        reportText: s.reportText || "",
-        systemPrompt: s.systemPrompt || ""
-      }))
+      stocks: stocks.map(s => {
+        const sc = String(s.code || "").padStart(4, "0");
+        const bk = s.broker || "關注";
+        const uid = s.uid || (sc + "_" + bk);
+        return {
+          code: sc,
+          name: s.name || s.code,
+          broker: bk,
+          uid: uid,
+          status: "pending", // 初始狀態皆為 pending
+          doneTime: null,
+          error: null,
+          reportText: s.reportText || "",
+          systemPrompt: s.systemPrompt || ""
+        };
+      })
     };
 
     saveManifestToCloudDrive(manifestData);
@@ -261,8 +268,8 @@ function processManifestLoop(apiKey, model, initialManifest) {
         currentStock: "",
         currentCode: "",
         progressPercent: 100,
-        completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.code),
-        failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, error: s.error })),
+        completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.uid || (s.code + "_" + (s.broker || "關注"))),
+        failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, broker: s.broker || "關注", uid: s.uid || (s.code + "_" + (s.broker || "關注")), error: s.error })),
         isCircuitBroken: false,
         breakReason: ""
       };
@@ -273,7 +280,7 @@ function processManifestLoop(apiKey, model, initialManifest) {
 
     // 4. 開始處理當前批次 (平行併發組裝)
     const currentCompleted = manifest.stocks.filter(s => s.status === "done").length;
-    const batchNames = pendingBatch.map(s => s.name).join(", ");
+    const batchNames = pendingBatch.map(s => s.name + "(" + (s.broker || "關注") + ")").join(", ");
     const batchCodes = pendingBatch.map(s => s.code).join(", ");
 
     // 💓 心跳與狀態即時更新 (通知手機端目前推導哪幾檔)
@@ -288,8 +295,8 @@ function processManifestLoop(apiKey, model, initialManifest) {
       currentStock: batchNames,
       currentCode: batchCodes,
       progressPercent: Math.round((currentCompleted / manifest.stocks.length) * 100),
-      completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.code),
-      failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, error: s.error })),
+      completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.uid || (s.code + "_" + (s.broker || "關注"))),
+      failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, broker: s.broker || "關注", uid: s.uid || (s.code + "_" + (s.broker || "關注")), error: s.error })),
       isCircuitBroken: false,
       breakReason: ""
     });
@@ -390,10 +397,15 @@ function processManifestLoop(apiKey, model, initialManifest) {
             const generatedText = data.candidates[0].content.parts[0].text;
             const parsed = parseStrategyContent(generatedText, stock.code);
 
+            const stockBroker = stock.broker || "關注";
+            const stockUid = stock.uid || (stock.code + "_" + stockBroker);
+
             const reportData = {
               recordTime: stockTimeStr,
               code: stock.code,
               name: stock.name,
+              broker: stockBroker,
+              uid: stockUid,
               raw: parsed.raw,
               summary: parsed.summary,
               buyLow: parsed.buyLow,
@@ -403,8 +415,11 @@ function processManifestLoop(apiKey, model, initialManifest) {
               targetHigh: parsed.targetHigh
             };
 
-            // 💾 記憶體累積陣列直推 (100% 杜絕覆寫)
-            accumulatedReports = accumulatedReports.filter(r => String(r.code) !== String(reportData.code));
+            // 💾 記憶體累積陣列直推 (以 uid = code_broker 為唯一識別，玉山與中信同代碼共存！)
+            accumulatedReports = accumulatedReports.filter(r => {
+              const rUid = r.uid || (r.code + "_" + (r.broker || "關注"));
+              return rUid !== stockUid;
+            });
             accumulatedReports.push(reportData);
 
             stock.status = "done";

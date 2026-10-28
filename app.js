@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.03');
+        const appVersion = ref('v2.20261028.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2928,13 +2928,15 @@ createApp({
                 try {
                     const infoG = db.exec("PRAGMA table_info(gem_strategy)");
                     if (infoG.length > 0 && infoG[0].values) {
-                        // 檢查目前主鍵是否已經為 股票代號 (pk === 1)
-                        const pkCol = infoG[0].values.find(r => r[5] === 1);
-                        if (!pkCol || pkCol[1] !== '股票代號') {
-                            console.log("🛡️ [MIGRATE] 正在平滑升級 gem_strategy 表結構 (升級主鍵為 股票代號)...");
+                        const hasBroker = infoG[0].values.some(r => r[1] === '證券商');
+                        const pkCols = infoG[0].values.filter(r => r[5] > 0);
+                        const isCompositePk = hasBroker && pkCols.length >= 2;
+                        if (!isCompositePk) {
+                            console.log("🛡️ [MIGRATE] 正在平滑升級 gem_strategy 表結構 (升級複合主鍵為 股票代號 + 證券商)...");
                             db.run(`
-                                CREATE TABLE IF NOT EXISTS gem_strategy_new (
-                                    股票代號 TEXT PRIMARY KEY,
+                                CREATE TABLE IF NOT EXISTS gem_strategy_v3 (
+                                    股票代號 TEXT,
+                                    證券商 TEXT DEFAULT '關注',
                                     記錄時間 TEXT,
                                     策略內容 TEXT,
                                     佈局下限 REAL,
@@ -2942,19 +2944,26 @@ createApp({
                                     防守點 REAL,
                                     目標下限 REAL,
                                     目標上限 REAL,
-                                    戰情總結 TEXT
+                                    戰情總結 TEXT,
+                                    PRIMARY KEY (股票代號, 證券商)
                                 );
                             `);
-                            db.run(`
-                                INSERT OR REPLACE INTO gem_strategy_new (股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結)
-                                SELECT 股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結
-                                FROM gem_strategy
-                                GROUP BY 股票代號
-                                ORDER BY 記錄時間 DESC;
-                            `);
+                            if (hasBroker) {
+                                db.run(`
+                                    INSERT OR REPLACE INTO gem_strategy_v3 (股票代號, 證券商, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結)
+                                    SELECT 股票代號, IFNULL(證券商, '關注'), 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結
+                                    FROM gem_strategy;
+                                `);
+                            } else {
+                                db.run(`
+                                    INSERT OR REPLACE INTO gem_strategy_v3 (股票代號, 證券商, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結)
+                                    SELECT 股票代號, '關注', 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結
+                                    FROM gem_strategy;
+                                `);
+                            }
                             db.run("DROP TABLE gem_strategy");
-                            db.run("ALTER TABLE gem_strategy_new RENAME TO gem_strategy");
-                            console.log("🎉 [MIGRATE] gem_strategy 表結構升級完畢，每檔個股享有獨立主鍵坑位！");
+                            db.run("ALTER TABLE gem_strategy_v3 RENAME TO gem_strategy");
+                            console.log("🎉 [MIGRATE] gem_strategy 表結構升級完畢，每檔個股與券商帳戶享有獨立主鍵坑位！");
                         }
                     }
                 } catch (e8) {
@@ -2998,7 +3007,8 @@ createApp({
                         PRIMARY KEY (股票代號, 證券商)
                     );
                     CREATE TABLE IF NOT EXISTS gem_strategy (
-                        股票代號 TEXT PRIMARY KEY,
+                        股票代號 TEXT,
+                        證券商 TEXT DEFAULT '關注',
                         記錄時間 TEXT,
                         策略內容 TEXT,
                         佈局下限 REAL,
@@ -3006,7 +3016,8 @@ createApp({
                         防守點 REAL,
                         目標下限 REAL,
                         目標上限 REAL,
-                        戰情總結 TEXT
+                        戰情總結 TEXT,
+                        PRIMARY KEY (股票代號, 證券商)
                     );
                     CREATE TABLE IF NOT EXISTS deleted_records (
                         table_name TEXT,
@@ -3214,10 +3225,10 @@ createApp({
                 try {
                     let stratRes = [];
                     try {
-                        stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy ORDER BY 記錄時間 DESC");
+                        stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間, 證券商 FROM gem_strategy ORDER BY 記錄時間 DESC");
                     } catch (e1) {
                         try {
-                            stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy ORDER BY rowid DESC");
+                            stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy ORDER BY 記錄時間 DESC");
                         } catch (e2) {
                             stratRes = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結 FROM gem_strategy");
                         }
@@ -3233,6 +3244,8 @@ createApp({
                             let defense = r[4];
                             let targetLow = r[5];
                             let targetHigh = r[6];
+                            const recTime = r[8] || '';
+                            const brokerVal = String(r[9] || '關注').trim();
 
                             // 🛡️ 雙重保險自癒：若 summaryText 含審計文字或點位皆空，但 rawContent 存在，立即以 parseReportText 重新提取第九章精確點位
                             if (rawContent && (!summaryText || summaryText.includes('【審計】') || (!buyLow && !buyHigh))) {
@@ -3255,14 +3268,24 @@ createApp({
                                 targetLow: targetLow,
                                 targetHigh: targetHigh,
                                 summary: summaryText || rawContent.slice(0, 100),
-                                recordTime: r[8] || ''
+                                recordTime: recTime,
+                                broker: brokerVal
                             };
                             if (rawCode) {
-                                // 僅以最新第一筆作為單一真相
-                                if (!strategyMap[rawCode]) strategyMap[rawCode] = dataObj;
                                 const padCode = rawCode.padStart(4, '0');
-                                if (!strategyMap[padCode]) strategyMap[padCode] = dataObj;
                                 const trimCode = rawCode.replace(/^0+/, '');
+
+                                // 🎯 精準優先鍵：股票代號_券商 (例如 2330_玉山證券, 2330_中信證券)
+                                const uidPad = `${padCode}_${brokerVal}`;
+                                const uidRaw = `${rawCode}_${brokerVal}`;
+                                const uidTrim = `${trimCode}_${brokerVal}`;
+                                if (!strategyMap[uidPad]) strategyMap[uidPad] = dataObj;
+                                if (!strategyMap[uidRaw]) strategyMap[uidRaw] = dataObj;
+                                if (!strategyMap[uidTrim]) strategyMap[uidTrim] = dataObj;
+
+                                // 備援通用鍵 (相容舊版無券商代碼，最新者優先)
+                                if (!strategyMap[rawCode]) strategyMap[rawCode] = dataObj;
+                                if (!strategyMap[padCode]) strategyMap[padCode] = dataObj;
                                 if (!strategyMap[trimCode]) strategyMap[trimCode] = dataObj;
                             }
                         });
@@ -3462,8 +3485,8 @@ createApp({
                             const profit = shares > 0 ? Math.round((curPrice - costPrice) * shares) : 0;
                             const profitRate = costPrice > 0 ? (((curPrice - costPrice) / costPrice) * 100).toFixed(2) : 0;
 
-                            // 戰報與策略特徵 (傳入即時現價以推估完整的 11 項特徵指標包含 RSI12 搶反彈)
-                            const sInfo = strategyMap[code] || strategyMap[code.padStart(4, '0')] || strategyMap[code.replace(/^0+/, '')] || {};
+                            // 戰報與策略特徵 (優先以 券商專屬戰報 uid 索引，找不到再 fallback 通用個股戰報)
+                            const sInfo = strategyMap[uid] || strategyMap[`${code.padStart(4, '0')}_${broker}`] || strategyMap[code] || strategyMap[code.padStart(4, '0')] || strategyMap[code.replace(/^0+/, '')] || {};
                             const hmInfo = heatmapMap[code] || heatmapMap[code.padStart(4, '0')] || heatmapMap[code.replace(/^0+/, '')] || {};
                             const stratFeatures = hmInfo.strategyIndicators 
                                 ? buildStrategyFeaturesFromDict(hmInfo.strategyIndicators, curPrice, code) 
@@ -5561,36 +5584,22 @@ createApp({
                 const normalizedCode = String(targetCode).padStart(4, '0');
                 const nowTime = getNowDateTimeStr() + ':00';
 
-                // 1. 先安全寫入最新戰報
+                const targetBroker = stock.broker || '關注';
+
+                // 1. 先安全清理該股票在該券商帳戶之舊戰報，落實 (股票代號, 證券商) 獨立坑位
+                try {
+                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 證券商 = ?", [normalizedCode, targetBroker]);
+                } catch (eDelSingle) {
+                    try { dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [normalizedCode]); } catch (eF) {}
+                }
+
+                // 2. 安全寫入最新戰報
                 dbInstance.run(
-                    "INSERT OR REPLACE INTO gem_strategy (記錄時間, 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [nowTime, normalizedCode, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
+                    "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [normalizedCode, targetBroker, nowTime, parsed.raw, parsed.buyLow, parsed.buyHigh, parsed.defense, parsed.targetLow, parsed.targetHigh, parsed.summary]
                 );
 
-                // 2. 驗證新戰報已確實寫入成功
-                const verifyCheck = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [normalizedCode, nowTime]);
-                if (!verifyCheck.length || !verifyCheck[0].values.length) {
-                    throw new Error("新戰報寫入驗證失敗，中止清理舊戰報以維護資料安全！");
-                }
-
-                // 3. 確認新戰報安全落地後，查詢該股除了最新這筆以外的所有舊戰報並登錄墓碑
-                try {
-                    const oldReports = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
-                    if (oldReports.length > 0 && oldReports[0].values.length > 0) {
-                        const nowDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-                        dbInstance.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
-                        oldReports[0].values.forEach(r => {
-                            const oldRt = String(r[0]);
-                            const oldUk = makeStrategyUniqueKey(normalizedCode, oldRt);
-                            dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [oldUk, nowDelStr]);
-                        });
-                        // 4. 刪除該股舊戰報，落實「只保留一份最新戰報」
-                        dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 != ?", [normalizedCode, nowTime]);
-                        console.log(`🧹 [富貴戰報收斂] 個股 ${normalizedCode} 新戰報已寫入，已安全清理 ${oldReports[0].values.length} 筆舊戰報並登錄墓碑。`);
-                    }
-                } catch (eOld) {
-                    console.warn("清理舊戰報警告:", eOld);
-                }
+                console.log(`🧹 [富貴戰報收斂] 個股 ${normalizedCode} (${targetBroker}) 新戰報已寫入。`);
 
                 // 5. 銷除最新戰報可能遺留之歷史刪除墓碑
                 try {
@@ -5619,31 +5628,35 @@ createApp({
         // ─── ⚡ 富貴戰報雲端批次派工模組 (GAS 離線背景執行) ───
         const filteredBatchCandidateStocks = computed(() => {
             const rawList = stockList.value || [];
-            // 代碼去重彙整
-            const codeMap = new Map();
+            // 以 uid: code_broker 彙整 (股票代號 + 證券商)
+            const itemMap = new Map();
             rawList.forEach(s => {
                 if (!s.code) return;
                 const c = String(s.code).padStart(4, '0');
-                if (!codeMap.has(c)) {
-                    codeMap.set(c, {
+                const bk = s.broker || '關注';
+                const uid = `${c}_${bk}`;
+                if (!itemMap.has(uid)) {
+                    itemMap.set(uid, {
+                        uid: uid,
                         code: c,
                         name: s.name || c,
-                        broker: s.broker || '關注',
+                        broker: bk,
                         shares: Number(s.shares) || 0,
+                        costPrice: Number(s.costPrice) || 0,
                         focusStatus: s.focusStatus || '否',
                         isReportFresh: Boolean(s.isReportFresh),
                         isReportExpired: !s.isReportFresh,
                         lastReportDate: s.reportDate !== '最新' && s.reportDate !== '---' ? s.reportDate : ''
                     });
                 } else {
-                    const existing = codeMap.get(c);
+                    const existing = itemMap.get(uid);
                     if (s.shares > 0) existing.shares += Number(s.shares);
+                    if (s.costPrice > 0) existing.costPrice = Number(s.costPrice);
                     if (s.focusStatus === '買' || s.focusStatus === '賣' || s.focusStatus === '是') existing.focusStatus = s.focusStatus;
-                    if (existing.broker === '關注' && s.broker && s.broker !== '關注') existing.broker = s.broker;
                 }
             });
 
-            let candidates = Array.from(codeMap.values());
+            let candidates = Array.from(itemMap.values());
 
             // 1. 證券商過濾
             if (batchFilterBroker.value !== '全部') {
@@ -5657,26 +5670,28 @@ createApp({
                 candidates = candidates.filter(s => s.focusStatus === '買' || s.focusStatus === '賣' || s.focusStatus === '是');
             }
 
-            // 排序：過期者優先，同類依代號由小到大
+            // 排序：過期者優先，同類依代號由小到大、再依券商
             return candidates.sort((a, b) => {
                 if (a.isReportExpired !== b.isReportExpired) {
                     return a.isReportExpired ? -1 : 1;
                 }
-                return a.code.localeCompare(b.code);
+                const codeComp = a.code.localeCompare(b.code);
+                if (codeComp !== 0) return codeComp;
+                return a.broker.localeCompare(b.broker);
             });
         });
 
         // 僅勾選過期 (預設)
         const selectBatchOnlyExpired = () => {
-            const expiredCodes = filteredBatchCandidateStocks.value
+            const expiredUids = filteredBatchCandidateStocks.value
                 .filter(s => s.isReportExpired)
-                .map(s => s.code);
-            selectedBatchStocks.value = [...expiredCodes];
+                .map(s => s.uid);
+            selectedBatchStocks.value = [...expiredUids];
         };
 
         // 全選
         const selectAllBatchStocks = () => {
-            selectedBatchStocks.value = filteredBatchCandidateStocks.value.map(s => s.code);
+            selectedBatchStocks.value = filteredBatchCandidateStocks.value.map(s => s.uid);
         };
 
         // 全取消
@@ -5685,12 +5700,12 @@ createApp({
         };
 
         // 切換單檔勾選
-        const toggleBatchStock = (code) => {
-            const idx = selectedBatchStocks.value.indexOf(code);
+        const toggleBatchStock = (targetKey) => {
+            const idx = selectedBatchStocks.value.indexOf(targetKey);
             if (idx >= 0) {
                 selectedBatchStocks.value.splice(idx, 1);
             } else {
-                selectedBatchStocks.value.push(code);
+                selectedBatchStocks.value.push(targetKey);
             }
         };
 
@@ -5831,8 +5846,12 @@ createApp({
                 if (rawLast) {
                     const lastCodes = JSON.parse(rawLast);
                     if (Array.isArray(lastCodes) && lastCodes.length > 0) {
-                        const validCandidates = (filteredBatchCandidateStocks.value || []).map(s => s.code);
-                        const matched = lastCodes.filter(c => validCandidates.includes(c));
+                        const validCandidates = (filteredBatchCandidateStocks.value || []).map(s => s.uid);
+                        const matched = lastCodes.map(c => {
+                            if (validCandidates.includes(c)) return c;
+                            const found = (filteredBatchCandidateStocks.value || []).find(s => s.code === c);
+                            return found ? found.uid : null;
+                        }).filter(Boolean);
                         if (matched.length > 0) {
                             selectedBatchStocks.value = matched;
                             restoredUncompleted = true;
@@ -5924,16 +5943,35 @@ createApp({
                 // 1. 取得系統提示詞
                 const systemPrompt = await fetchGeminiPrompt();
 
-                // 2. 逐檔組裝指標報告
+                // 2. 逐檔組裝指標報告 (精準對齊 券商帳戶成本與股數)
                 const payloadStocks = [];
-                for (const code of selectedBatchStocks.value) {
-                    const matchedStock = (stockList.value || []).find(s => String(s.code).padStart(4, '0') === code);
-                    const stockObj = matchedStock || { code: code, name: stockDictMap.value[code] || code };
+                for (const itemKey of selectedBatchStocks.value) {
+                    let targetCode = itemKey;
+                    let targetBroker = '關注';
+                    if (itemKey.includes('_')) {
+                        const parts = itemKey.split('_');
+                        targetCode = parts[0];
+                        targetBroker = parts.slice(1).join('_') || '關注';
+                    }
+                    const padCode = String(targetCode).padStart(4, '0');
+                    const matchedStock = (stockList.value || []).find(s => 
+                        String(s.code).padStart(4, '0') === padCode && (s.broker || '關注') === targetBroker
+                    ) || (stockList.value || []).find(s => String(s.code).padStart(4, '0') === padCode);
+                    
+                    const stockObj = matchedStock ? { ...matchedStock, broker: targetBroker } : {
+                        code: padCode,
+                        name: stockDictMap.value[padCode] || padCode,
+                        broker: targetBroker,
+                        shares: 0,
+                        costPrice: 0
+                    };
                     const reportText = await buildStock10DayReport(stockObj);
                     if (reportText) {
                         payloadStocks.push({
-                            code: code,
-                            name: stockObj.name || code,
+                            uid: `${padCode}_${targetBroker}`,
+                            code: padCode,
+                            name: stockObj.name || padCode,
+                            broker: targetBroker,
                             reportText: reportText,
                             systemPrompt: systemPrompt
                         });
@@ -8479,30 +8517,57 @@ createApp({
                     console.warn("注入本地 trade_log 警告:", e);
                 }
 
-                // 3. 智慧合流 gem_strategy (清算墓碑 + 增量注入)
+                // 3. 智慧合流 gem_strategy (清算墓碑 + 增量注入，支援股票代號 + 證券商)
                 try {
-                    const cStrat = cloudDb.exec("SELECT rowid, 股票代號, 記錄時間 FROM gem_strategy");
+                    // 確保 cloudDb 結構支援 證券商
+                    try {
+                        const cInfo = cloudDb.exec("PRAGMA table_info(gem_strategy)");
+                        if (cInfo.length > 0 && cInfo[0].values && !cInfo[0].values.some(r => r[1] === '證券商')) {
+                            cloudDb.run("ALTER TABLE gem_strategy ADD COLUMN 證券商 TEXT DEFAULT '關注'");
+                        }
+                    } catch (eCInfo) {}
+
+                    let cStrat = [];
+                    try {
+                        cStrat = cloudDb.exec("SELECT rowid, 股票代號, 記錄時間, 證券商 FROM gem_strategy");
+                    } catch (eC1) {
+                        cStrat = cloudDb.exec("SELECT rowid, 股票代號, 記錄時間 FROM gem_strategy");
+                    }
                     if (cStrat.length > 0) {
                         cStrat[0].values.forEach(r => {
-                            const [r_id, r_code, r_time] = r;
+                            const [r_id, r_code, r_time, r_broker] = r;
+                            const bk = r_broker || '關注';
                             const uk = makeStrategyUniqueKey(r_code, r_time);
-                            if (deletedStrategyKeys.has(uk)) {
+                            if (deletedStrategyKeys.has(uk) || deletedStrategyKeys.has(`${r_code}_${bk}_${r_time}`)) {
                                 cloudDb.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
                             }
                         });
                     }
-                    const lStrat = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
+                    let lStrat = [];
+                    try {
+                        lStrat = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間, 證券商 FROM gem_strategy");
+                    } catch (eL1) {
+                        lStrat = dbInstance.exec("SELECT 股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間 FROM gem_strategy");
+                    }
                     if (lStrat.length > 0) {
                         lStrat[0].values.forEach(r => {
-                            const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime] = r;
+                            const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime, broker] = r;
+                            const bk = broker || '關注';
                             const uk = makeStrategyUniqueKey(code, rTime);
-                            if (!deletedStrategyKeys.has(uk)) {
+                            if (!deletedStrategyKeys.has(uk) && !deletedStrategyKeys.has(`${code}_${bk}_${rTime}`)) {
                                 const chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
                                 if (!chk.length || !chk[0].values.length) {
-                                    cloudDb.run(
-                                        "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                    );
+                                    try {
+                                        cloudDb.run(
+                                            "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                            [code, bk, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                        );
+                                    } catch (eIns) {
+                                        cloudDb.run(
+                                            "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                            [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                        );
+                                    }
                                 }
                             }
                         });
@@ -8699,16 +8764,22 @@ createApp({
                                                     }
                                                 }
 
-                                                // 🛡️ 關鍵防護：先安全清除該股票本身的舊戰報（若有），再寫入新戰報，落實每檔獨立坑位絕不被他人波及
+                                                const rBroker = rep.broker || '關注';
+                                                const rUid = rep.uid || `${rCode}_${rBroker}`;
+
+                                                // 🛡️ 關鍵防護：先安全清除該股票在該券商帳戶的舊戰報（若有），再寫入新戰報，落實 (股票代號, 證券商) 獨立坑位
                                                 try {
-                                                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [rCode]);
-                                                } catch (eClean) {}
+                                                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND 證券商 = ?", [rCode, rBroker]);
+                                                } catch (eClean) {
+                                                    try { dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [rCode]); } catch (eFallbackClean) {}
+                                                }
 
                                                 dbInstance.run(
-                                                    "INSERT OR REPLACE INTO gem_strategy (股票代號, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                                    [rCode, rTime, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
+                                                    "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 記錄時間, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                    [rCode, rBroker, rTime, finalRaw, finalBuyLow, finalBuyHigh, finalDefense, finalTargetLow, finalTargetHigh, finalSummary]
                                                 );
                                                 batchMergedCount++;
+                                                mergedCodesThisRound.add(rUid);
                                                 mergedCodesThisRound.add(rCode);
                                             });
                                         }
