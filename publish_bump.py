@@ -46,6 +46,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_FILE = os.path.join(BASE_DIR, "version_v2.txt")
 APP_JS_FILE = os.path.join(BASE_DIR, "app.js")
 INDEX_HTML_FILE = os.path.join(BASE_DIR, "index.html")
+GS_WORKER_FILE = os.path.join(BASE_DIR, "scripts", "sentinel_gemini_worker.gs")
 BAK_DIR = os.path.join(BASE_DIR, "bak")
 
 
@@ -89,6 +90,7 @@ def perform_physical_backup():
         (VERSION_FILE, "version_v2", "txt"),
         (APP_JS_FILE, "app", "js"),
         (INDEX_HTML_FILE, "index", "html"),
+        (GS_WORKER_FILE, "sentinel_gemini_worker", "gs"),
     ]:
         if os.path.exists(file_path):
             dest_name = f"{prefix}_{ts}.{ext}"
@@ -165,6 +167,29 @@ def bump_all_files(target_ver, dry_run=False):
         print(f"✅ [3/3] 已更新 index.html 中的快取參數 ➔ app.js?v={clean_v_num}")
     else:
         print(f"🔍 [模擬 3/3] 將更新 index.html 中的快取參數 ➔ app.js?v={clean_v_num} (匹配 {count_idx} 處)")
+
+    # 5.1 處理 sentinel_gemini_worker.gs (若存在)
+    if os.path.exists(GS_WORKER_FILE):
+        with open(GS_WORKER_FILE, "r", encoding="utf-8") as f:
+            gs_content = f.read()
+        gs_new, count_gs = re.subn(
+            r"(\*\s*📌\s*對應版本：)(v2\.[^\s\r\n]+)",
+            rf"\g<1>{target_ver}",
+            gs_content
+        )
+        if count_gs > 0:
+            today_date = datetime.now().strftime("%Y-%m-%d")
+            gs_new = re.sub(
+                r"(\*\s*🕒\s*更新日期：)(\d{4}-\d{2}-\d{2})",
+                rf"\g<1>{today_date}",
+                gs_new
+            )
+            if not dry_run:
+                with open(GS_WORKER_FILE, "w", encoding="utf-8") as f:
+                    f.write(gs_new)
+                print(f"✅ [選配同步] 已同步更新 sentinel_gemini_worker.gs ➔ {target_ver}")
+            else:
+                print(f"🔍 [模擬同步] 將更新 sentinel_gemini_worker.gs ➔ {target_ver}")
 
     # 6. 三重檢驗閘門 (Triple-Check Gate)
     if not dry_run:
