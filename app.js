@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.08');
+        const appVersion = ref('v2.20261029.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -708,9 +708,9 @@ createApp({
                 if (isMarketHoliday(target)) continue;
 
                 const slots = [
-                    { h: 14, m: 40, tag: '盤後初版' },
-                    { h: 16, m: 30, tag: '三大法人' },
-                    { h: 20, m: 30, tag: '全量資券校準' }
+                    { h: 14, m: 45, tag: '盤後就緒' },
+                    { h: 16, m: 35, tag: '法人就緒' },
+                    { h: 20, m: 35, tag: '資券就緒' }
                 ];
                 for (const slot of slots) {
                     const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
@@ -731,10 +731,10 @@ createApp({
                     }
                 }
             }
-            return { label: '開市日 14:40 / 16:30 / 20:30', countdown: '', tag: '三班制排程' };
+            return { label: '開市日 14:45 / 16:35 / 20:35', countdown: '', tag: '三班就緒排程' };
         });
 
-        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (三班制階梯式感知：14:40初版 / 16:30法人 / 20:30資券)
+        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (三班就緒感知：14:45盤後 / 16:35法人 / 20:35資券)
         const calendarMarketStatus = computed(() => {
             const now = new Date();
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -743,14 +743,14 @@ createApp({
             const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
             // 三班排程就緒時間（分鐘數）：
-            // 班次 1: 14:40 觸發 -> 14:45 就緒 (885分)
-            // 班次 2: 16:30 觸發 -> 16:35 就緒 (995分)
-            // 班次 3: 20:30 觸發 -> 20:35 就緒 (1235分)
+            // 班次 1: 14:45 盤後就緒 (885分)
+            // 班次 2: 16:35 法人就緒 (995分)
+            // 班次 3: 20:35 資券就緒 (1235分)
             const M_1445 = 14 * 60 + 45; // 885
             const M_1635 = 16 * 60 + 35; // 995
             const M_2035 = 20 * 60 + 35; // 1235
 
-            // 判斷當前台灣時間若已過 14:45 (首班盤後初版行情就緒)，則今日納入已收盤開市日探測點
+            // 判斷當前台灣時間若已過 14:45 (盤後行情就緒)，則今日納入已收盤開市日探測點
             const isTodayClosed = totalMinutes >= M_1445;
             let checkDt = new Date(twNow.getFullYear(), twNow.getMonth(), twNow.getDate());
             if (!isTodayClosed) {
@@ -804,14 +804,14 @@ createApp({
                 isNeedsSync = true;
                 if (isExpectedToday) {
                     if (totalMinutes >= M_2035) {
-                        statusTag = '⚠️ 全量資券籌碼待同步';
-                        currentSlotTag = '20:30場次';
+                        statusTag = '⚠️ 資券就緒待同步';
+                        currentSlotTag = '資券就緒';
                     } else if (totalMinutes >= M_1635) {
-                        statusTag = '⚠️ 三大法人籌碼待同步';
-                        currentSlotTag = '16:30場次';
+                        statusTag = '⚠️ 法人就緒待同步';
+                        currentSlotTag = '法人就緒';
                     } else {
-                        statusTag = '⚠️ 盤後初版行情待同步';
-                        currentSlotTag = '14:40場次';
+                        statusTag = '⚠️ 盤後就緒待同步';
+                        currentSlotTag = '盤後就緒';
                     }
                 } else {
                     statusTag = '⚠️ 有新開市日待同步';
@@ -821,31 +821,31 @@ createApp({
                 const isSyncedToday = (lastFetchDigits === todayDigits);
 
                 if (totalMinutes >= M_2035) {
-                    // 20:35 之後，全量資券已出爐
+                    // 20:35 之後，資券籌碼已就緒
                     if (!isSyncedToday || lastFetchTotalMinutes < M_2035) {
                         isNeedsSync = true;
-                        statusTag = '⚠️ 全量資券籌碼待同步';
-                        currentSlotTag = '20:30場次';
+                        statusTag = '⚠️ 資券就緒待同步';
+                        currentSlotTag = '資券就緒';
                     } else {
-                        statusTag = '🟢 今日全量籌碼已全數校準';
+                        statusTag = '🟢 已同步資券籌碼';
                     }
                 } else if (totalMinutes >= M_1635) {
-                    // 16:35 ~ 20:35 之間，三大法人已出爐
+                    // 16:35 ~ 20:35 之間，法人籌碼已就緒
                     if (!isSyncedToday || lastFetchTotalMinutes < M_1635) {
                         isNeedsSync = true;
-                        statusTag = '⚠️ 三大法人籌碼待同步';
-                        currentSlotTag = '16:30場次';
+                        statusTag = '⚠️ 法人就緒待同步';
+                        currentSlotTag = '法人就緒';
                     } else {
-                        statusTag = '🟢 已同步三大法人籌碼';
+                        statusTag = '🟢 已同步法人籌碼';
                     }
                 } else if (totalMinutes >= M_1445) {
-                    // 14:45 ~ 16:35 之間，盤後初版已出爐
+                    // 14:45 ~ 16:35 之間，盤後行情已就緒
                     if (!isSyncedToday || lastFetchTotalMinutes < M_1445) {
                         isNeedsSync = true;
-                        statusTag = '⚠️ 盤後初版行情待同步';
-                        currentSlotTag = '14:40場次';
+                        statusTag = '⚠️ 盤後就緒待同步';
+                        currentSlotTag = '盤後就緒';
                     } else {
-                        statusTag = '🟢 已同步盤後初版行情';
+                        statusTag = '🟢 已同步盤後行情';
                     }
                 }
             }
@@ -861,7 +861,7 @@ createApp({
             };
         });
 
-        // 🔔 主動提醒狀態 (對齊 GAS 三班制：14:40初版 / 16:30法人 / 20:30全量籌碼)
+        // 🔔 主動提醒狀態 (對齊三班就緒時間：14:45盤後 / 16:35法人 / 20:35資券)
         const activeSyncNotice = ref({
             show: false,
             type: '', // 'post_market' | 'chip_market' | 'full_chip'
@@ -888,51 +888,51 @@ createApp({
             const todayDateStr = `${y}${m}${d}`;
             const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
-            // 1. 下午初版行情場次提醒：14:45 ~ 15:30 (885分 ~ 930分)
+            // 1. 盤後行情就緒場次提醒：14:45 ~ 15:30 (885分 ~ 930分)
             if (totalMinutes >= 885 && totalMinutes < 930) {
                 if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1440_${todayDateStr}`);
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1445_${todayDateStr}`);
                     if (!alreadyNotified) {
                         activeSyncNotice.value = {
                             show: true,
                             type: 'post_market',
-                            title: '📈 盤後初版行情已就緒 (14:40場次)',
+                            title: '📈 盤後行情已就緒 (14:45)',
                             message: '今日收盤價與 6 大青紅燈指標已更新，請點擊同步！',
-                            slot: '1440'
+                            slot: '1445'
                         };
                         return;
                     }
                 }
             }
 
-            // 2. 傍晚三大法人籌碼場次提醒：16:35 ~ 17:30 (995分 ~ 1050分)
+            // 2. 法人籌碼就緒場次提醒：16:35 ~ 17:30 (995分 ~ 1050分)
             if (totalMinutes >= 995 && totalMinutes < 1050) {
                 if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1630_${todayDateStr}`);
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1635_${todayDateStr}`);
                     if (!alreadyNotified) {
                         activeSyncNotice.value = {
                             show: true,
                             type: 'chip_market',
-                            title: '🏢 三大法人籌碼已出爐 (16:30場次)',
+                            title: '🏢 法人籌碼已就緒 (16:35)',
                             message: '外資、投信與自營商進出動向已就緒，請點擊同步！',
-                            slot: '1630'
+                            slot: '1635'
                         };
                         return;
                     }
                 }
             }
 
-            // 3. 晚間全量資券籌碼場次提醒：20:35 ~ 21:30 (1235分 ~ 1290分)
+            // 3. 資券籌碼就緒場次提醒：20:35 ~ 21:30 (1235分 ~ 1290分)
             if (totalMinutes >= 1235 && totalMinutes < 1290) {
                 if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_2030_${todayDateStr}`);
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_2035_${todayDateStr}`);
                     if (!alreadyNotified) {
                         activeSyncNotice.value = {
                             show: true,
                             type: 'full_chip',
-                            title: '📊 全量籌碼校準完成 (20:30場次)',
-                            message: '融資融券與全市場清洗審計完畢，請點擊同步！',
-                            slot: '2030'
+                            title: '📊 資券籌碼已就緒 (20:35)',
+                            message: '全量融資融券與全市場清洗審計完畢，請點擊同步！',
+                            slot: '2035'
                         };
                         return;
                     }
