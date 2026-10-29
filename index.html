@@ -1522,24 +1522,25 @@
                                                 </button>
                                             </div>
                                             
-                                            <!-- 📖 GAS 4 步驟極速部署引導 -->
+                                            <!-- 📖 GAS 5 步驟極速部署引導 -->
                                             <details class="mt-1.5 group">
                                                 <summary class="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer list-none flex items-center space-x-1">
-                                                    <span>📖 點此查看 GAS 4 步驟極速部署引導</span>
+                                                    <span>📖 點此查看 GAS 5 步驟極速部署引導</span>
                                                     <i class="fa-solid fa-chevron-down text-[8px] transition-transform group-open:rotate-180"></i>
                                                 </summary>
                                                 <div class="mt-2 p-2.5 rounded-xl text-[10px] space-y-1.5 leading-relaxed border"
                                                      :class="theme === 'dark' ? 'bg-slate-950/80 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'">
-                                                    <div class="font-bold text-indigo-400 mb-1">🚀 4 步驟極速完成部署：</div>
+                                                    <div class="font-bold text-indigo-400 mb-1">🚀 5 步驟極速完成部署：</div>
                                                     <div><b>① 複製代碼：</b> 點擊上方「<span class="text-indigo-400 font-semibold underline cursor-pointer" @click="copyGasScriptAndOpen">複製代碼並開啟 GAS ↗</span>」，腳本已自動存入剪貼簿。</div>
                                                     <div><b>② 貼上儲存：</b> 在開啟的 Google Apps Script 專案中，全選貼上代碼 (<code>Ctrl+A</code> ➔ <code>Ctrl+V</code>) 並按 <code>Ctrl+S</code> 儲存。</div>
-                                                    <div><b>③ 發布部署：</b> 點擊右上角【部署】➔【新增部署作業】➔ 點左上齒輪選擇【網頁應用程式】：
+                                                    <div><b>③ 執行授權 (重要！)：</b> 上方選單選擇 <code>testDrivePermission</code> ➔ 點擊【執行】，依提示完成帳號授權 (點「進階」➔「前往專案 (不安全)」➔「允許」)。</div>
+                                                    <div><b>④ 發布部署：</b> 點擊右上角【部署】➔【新增部署作業】➔ 點左上齒輪選擇【網頁應用程式】：
                                                         <ul class="list-disc pl-4 text-[9px] text-slate-400 mt-0.5 space-y-0.5">
                                                             <li>執行身分：<b>我 (您的 Google 帳號)</b></li>
                                                             <li>誰可以存取：<b>任何人 (Anyone)</b></li>
                                                         </ul>
                                                     </div>
-                                                    <div><b>④ 貼回儲存：</b> 點擊部署完成授權，複製產生的「網頁應用程式網址」並貼回此欄位，點擊「儲存」即可！</div>
+                                                    <div><b>⑤ 貼回儲存：</b> 點擊部署完成授權，複製產生的「網頁應用程式網址」並貼回此欄位，點擊「儲存」即可！</div>
                                                 </div>
                                             </details>
                                         </div>
@@ -2948,6 +2949,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261029.05"></script>
+    <script src="app.js?v=2.20261029.06"></script>
 </body>
 </html>

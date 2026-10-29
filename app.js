@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.05');
+        const appVersion = ref('v2.20261029.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6253,7 +6253,7 @@ createApp({
                     copySuccess = true;
                 }
 
-                showToast('📋 GAS 戰報腳本代碼已複製到剪貼簿！正在開啟 Google Apps Script...', 4000);
+                showToast('📋 GAS 腳本已複製到剪貼簿！開啟後貼上儲存，請先執行一次 testDrivePermission 完成授權～', 5500);
                 window.open('https://script.new', '_blank');
             } catch (err) {
                 console.error("複製 GAS 腳本失敗:", err);
