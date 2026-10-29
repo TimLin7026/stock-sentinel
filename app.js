@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.09');
+        const appVersion = ref('v2.20261029.10');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3657,11 +3657,42 @@ createApp({
                 allDates = allDates.filter(d => d.length >= 8).sort().reverse();
                 const latestMarketTradingDay = allDates.length > 0 ? allDates[0].slice(0, 8) : '20260331';
 
+                // 本機最新快照收錄日期與最後同步時間 (用於計算今日盤後/籌碼行情之就緒門檻)
+                const snapDateDigits = String(marketSyncMeta.value.marketDate || '').replace(/\D/g, '').slice(0, 8);
+                const lastFetchStr = String(marketSyncMeta.value.fetchTime || '').trim();
+                let lastFetchDate8 = '';
+                let lastFetchTime6 = '';
+                if (lastFetchStr) {
+                    const parts = lastFetchStr.split(' ');
+                    if (parts[0]) lastFetchDate8 = parts[0].replace(/\D/g, '').slice(0, 8);
+                    if (parts[1]) lastFetchTime6 = parts[1].replace(/\D/g, '').padEnd(6, '0').slice(0, 6);
+                }
+
+                // 判斷本機已同步之行情門檻 (14:45盤後 / 16:35法人 / 20:35資券)
+                const isSnapLatestMarket = Boolean(snapDateDigits && snapDateDigits >= latestMarketTradingDay);
+                let currentSnapThresholdTime = '144500'; // 基礎門檻：14:45 盤後就緒
+                if (isSnapLatestMarket && lastFetchDate8 === snapDateDigits) {
+                    if (lastFetchTime6 >= '203500') {
+                        currentSnapThresholdTime = '203500'; // 已同步資券籌碼
+                    } else if (lastFetchTime6 >= '163500') {
+                        currentSnapThresholdTime = '163500'; // 已同步法人籌碼
+                    }
+                }
+
                 // 日期格式化輔助 (轉換為 YYYY/MM/DD)
                 const formatDateClean = (dStr) => {
                     if (!dStr) return '';
                     const clean = String(dStr).trim().replace(/-/g, '/');
                     return clean.length >= 10 ? clean.slice(0, 10) : clean;
+                };
+
+                // 戰報時效日期時間格式化 (若含時間則格式化為 YYYY/MM/DD HH:mm)
+                const formatReportDateTimeClean = (dStr) => {
+                    if (!dStr) return '';
+                    const clean = String(dStr).trim().replace(/-/g, '/');
+                    if (clean.length >= 16) return clean.slice(0, 16);
+                    if (clean.length >= 10) return clean.slice(0, 10);
+                    return clean;
                 };
 
                 // 6. 讀取 my_stock (持股與自選觀察清單)
@@ -3764,9 +3795,13 @@ createApp({
                             // 時效比對 (對齊電腦端：✅ 即時新鮮 / ⚠️ 過期或落後)
                             const pDigits = String(pInfo.date || '').replace(/\D/g, '').slice(0, 8);
                             const hmDigits = String(hmInfo.dataDate || '').replace(/\D/g, '').slice(0, 8);
-                            const stratDigits = String(sInfo.recordTime || '').replace(/\D/g, '').slice(0, 8);
 
-                            // 🎯 核心校驗：必須有實質戰報內容 (非空白底稿)，且日期為最新開市日才亮綠勾
+                            // 戰報紀錄時間 14 碼解析 (YYYYMMDDHHmmss，如 20261029100000)
+                            const stratDigits14 = String(sInfo.recordTime || '').replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+                            const stratDate8 = stratDigits14.slice(0, 8);
+                            const stratTime6 = stratDigits14.slice(8, 14);
+
+                            // 🎯 核心校驗：必須有實質戰報內容 (非空白底稿)
                             const hasActualReport = Boolean(
                                 (sInfo.summary && sInfo.summary.trim()) || 
                                 (sInfo.content && sInfo.content.trim()) || 
@@ -3775,12 +3810,35 @@ createApp({
                             );
 
                             const isPriceFresh = Boolean(pDigits && pDigits === latestMarketTradingDay);
-                            const isReportFresh = Boolean(hasActualReport && stratDigits && stratDigits >= latestMarketTradingDay);
+
+                            // 🎯 智能時效過期判定 (精準對齊盤後與籌碼就緒同步時間)：
+                            // 1. 若戰報日期早於最新市場交易日 -> 必然過期 (跨日)
+                            // 2. 若戰報日期等於最新開市日，且本機已同步該日行情快照：
+                            //    戰報時間必須晚於或等於當前快照數據門檻 (14:45 / 16:35 / 20:35)，才算新鮮！
+                            //    若在該門檻之前 (例如 10:00 戰報在 14:45 同步後)，精準判定為過期！
+                            let isReportFresh = false;
+                            if (hasActualReport && stratDate8) {
+                                if (stratDate8 < latestMarketTradingDay) {
+                                    isReportFresh = false;
+                                } else if (stratDate8 > latestMarketTradingDay) {
+                                    isReportFresh = true;
+                                } else {
+                                    // stratDate8 === latestMarketTradingDay (同日)
+                                    if (!isSnapLatestMarket) {
+                                        // 本機尚未同步今日行情，戰報只要是今日產生即算有效
+                                        isReportFresh = true;
+                                    } else {
+                                        // 本機已同步今日行情：必須晚於當前快照數據就緒門檻！
+                                        isReportFresh = (stratTime6 >= currentSnapThresholdTime);
+                                    }
+                                }
+                            }
+
                             const isIndicatorFresh = Boolean(hmDigits && pDigits && hmDigits === pDigits);
                             const isStrategyFresh = Boolean(hmDigits && hmDigits === latestMarketTradingDay);
 
                             const priceDate = formatDateClean(pInfo.date) || '---';
-                            const reportDate = formatDateClean(sInfo.recordTime) || '最新';
+                            const reportDate = formatReportDateTimeClean(sInfo.recordTime) || '最新';
                             const strategyDate = formatDateClean(hmInfo.dataDate) || (formatDateClean(pInfo.date) || '最新交易日');
 
                             // 建議買賣區間格式化 (精準對齊：buyLow<買<buyHigh ~ targetLow<賣<targetHigh)
