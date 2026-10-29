@@ -1449,14 +1449,22 @@
                                 </div>
                             </div>
                             <div class="flex space-x-1.5">
-                                <button @click="testGeminiConnection" :disabled="isTestingGemini || !geminiApiKey"
+                                <button @click="autoProbeBestGeminiModel" :disabled="isAutoProbing || isTestingGemini || !geminiApiKey"
+                                        :class="theme === 'dark' ? 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border-emerald-700/60' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'"
+                                        class="flex-1 border py-2 px-1.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition disabled:opacity-40"
+                                        title="由 3.8 階梯向下自動測選並儲存最佳純免費模型">
+                                    <i class="fa-solid fa-bolt text-[11px]" :class="isAutoProbing ? 'fa-bounce text-amber-400' : ''"></i>
+                                    <span>{{ isAutoProbing ? autoProbeStatusText : '⚡ 自動測選' }}</span>
+                                </button>
+                                <button @click="testGeminiConnection" :disabled="isTestingGemini || isAutoProbing || !geminiApiKey"
                                         :class="theme === 'dark' ? 'bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border-indigo-700/60' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-700 border-indigo-300'"
-                                        class="flex-1 border py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition disabled:opacity-40">
+                                        class="flex-1 border py-2 px-1.5 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1 transition disabled:opacity-40"
+                                        title="測試當前選取之模型連線並自動儲存">
                                     <i class="fa-solid fa-plug text-[11px]" :class="isTestingGemini ? 'fa-spin' : ''"></i>
                                     <span>{{ isTestingGemini ? '測試中' : '連線測試' }}</span>
                                 </button>
-                                <button @click="saveGeminiSettings" 
-                                        class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2 px-2.5 rounded-xl text-xs shadow-sm transition active:scale-95">
+                                <button @click="saveGeminiSettings(false)" 
+                                        class="px-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2 rounded-xl text-xs shadow-sm transition active:scale-95 whitespace-nowrap">
                                     <span>儲存設定</span>
                                 </button>
                             </div>
@@ -3014,6 +3022,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261029.11"></script>
+    <script src="app.js?v=2.20261029.12"></script>
 </body>
 </html>

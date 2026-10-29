@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.11');
+        const appVersion = ref('v2.20261029.12');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5472,18 +5472,32 @@ createApp({
                 // ─── 💎 Google Gemini AI 智能戰報模組 ───
         const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
         let storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
-        if (storedModel === 'gemini-2.5-flash' || storedModel === 'gemini-4-argon' || !storedModel) {
+        
+        // 自動檢查並遷移淘汰的舊世代或付費模型 (如 2.5 系列、3.1 系列、argon、pro 等)
+        const checkModelIsObsolete = (mName) => {
+            if (!mName || mName === 'custom') return false;
+            const str = String(mName).toLowerCase();
+            if (str.includes('argon') || str.includes('pro') || str.includes('banana')) return true;
+            const match = str.match(/gemini-(\d+(?:\.\d+)?)/);
+            if (match) {
+                const ver = parseFloat(match[1]);
+                return ver < 3.5 || ver >= 4.0;
+            }
+            return false;
+        };
+        if (checkModelIsObsolete(storedModel) || !storedModel) {
             storedModel = 'gemini-3.8-flash';
             localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
         }
 
-        // 預設與快取的可用模型清單 (精準純免費 Flash 陣容)
+        // 預設與快取的可用模型清單 (精準純免費 3.5 ~ 3.8 Flash 陣容)
         const defaultModels = [
-            { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (免費主力推薦 🚀)' },
-            { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash (免費主力 💎)' },
-            { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (免費快速 ⚡)' },
-            { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite (極速輕量 🍃)' },
-            { id: 'gemini-flash-latest', label: 'gemini-flash-latest (自動最新 🔄)' }
+            { id: 'gemini-3.8-flash', label: '3.8 Flash (全方位協助 · 免費主力推薦 🚀)' },
+            { id: 'gemini-3.7-flash', label: '3.7 Flash (免費主力 💎)' },
+            { id: 'gemini-3.6-flash', label: '3.6 Flash (免費快速 ⚡)' },
+            { id: 'gemini-3.5-flash-lite', label: '3.5 Flash-Lite (回覆最快 🍃)' },
+            { id: 'gemini-3.5-flash', label: '3.5 Flash (穩定備用 🛡️)' },
+            { id: 'gemini-flash-latest', label: 'Gemini Flash (自動最新 🔄)' }
         ];
 
         let cachedModels = null;
@@ -5491,9 +5505,20 @@ createApp({
             const rawCache = localStorage.getItem('sentinel_gemini_models_cache');
             if (rawCache) {
                 const parsed = JSON.parse(rawCache);
-                // 自動清洗過往快取中的非 Flash 或付費雜質模型
+                // 自動清洗過往快取中的非 Flash、付費或非 3.5~3.8 雜質模型
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    const cleaned = parsed.filter(m => m.id && m.id.includes('flash') && !m.id.includes('tts') && !m.id.includes('image') && !m.id.includes('argon') && !m.id.includes('banana'));
+                    const cleaned = parsed.filter(m => {
+                        if (!m.id) return false;
+                        const id = m.id.toLowerCase();
+                        if (!id.includes('flash')) return false;
+                        if (id.includes('tts') || id.includes('image') || id.includes('argon') || id.includes('banana') || id.includes('pro')) return false;
+                        const match = id.match(/gemini-(\d+(?:\.\d+)?)/);
+                        if (match) {
+                            const ver = parseFloat(match[1]);
+                            if (ver < 3.5 || ver >= 4.0) return false;
+                        }
+                        return true;
+                    });
                     if (cleaned.length > 0) cachedModels = cleaned;
                 }
             }
@@ -5578,7 +5603,7 @@ createApp({
                 const data = await res.json();
                 const rawList = data.models || [];
 
-                // 🎯 精準篩選：必須支援 generateContent、包含 flash、且排除語音/圖像/音樂/付費模型
+                // 🎯 精準篩選：必須支援 generateContent、包含 flash、版本號限定 3.5 ~ 3.8，且排除語音/圖像/音樂/付費/Pro/Argon 模型
                 const filtered = rawList.filter(m => {
                     const methods = m.supportedGenerationMethods || [];
                     const name = (m.name || '').toLowerCase();
@@ -5590,33 +5615,50 @@ createApp({
                                        name.includes('banana') || 
                                        name.includes('lyria') || 
                                        name.includes('argon') || 
+                                       name.includes('pro') ||
                                        name.includes('robotics') || 
                                        name.includes('computer-use') ||
                                        name.includes('embedding') || 
                                        name.includes('aqa');
-                    return isGen && isFlash && !isExcluded;
+                    if (!isGen || !isFlash || isExcluded) return false;
+
+                    // 🎯 嚴格版本號限制：3.5 ~ 3.8 (排除 < 3.5 與 >= 4.0)
+                    const id = m.name.replace(/^models\//, '');
+                    const match = id.match(/gemini-(\d+(?:\.\d+)?)/);
+                    if (match) {
+                        const ver = parseFloat(match[1]);
+                        if (ver < 3.5 || ver >= 4.0) return false;
+                    }
+                    return true;
                 });
 
                 if (filtered.length > 0) {
                     const mapped = filtered.map(m => {
                         const id = m.name.replace(/^models\//, '');
-                        let tag = '';
-                        if (id === 'gemini-3.8-flash') tag = ' (免費主力推薦 🚀)';
-                        else if (id === 'gemini-3.7-flash') tag = ' (免費主力 💎)';
-                        else if (id === 'gemini-3.6-flash') tag = ' (免費快速 ⚡)';
-                        else if (id === 'gemini-3.5-flash-lite') tag = ' (極速輕量 🍃)';
-                        else if (id === 'gemini-flash-latest') tag = ' (自動最新 🔄)';
-                        else tag = ' (免費可用)';
-                        return { id: id, label: `${id}${tag}` };
+                        let label = id;
+                        if (id === 'gemini-3.8-flash') label = '3.8 Flash (全方位協助 · 免費主力推薦 🚀)';
+                        else if (id === 'gemini-3.7-flash') label = '3.7 Flash (免費主力 💎)';
+                        else if (id === 'gemini-3.6-flash') label = '3.6 Flash (免費快速 ⚡)';
+                        else if (id === 'gemini-3.5-flash-lite') label = '3.5 Flash-Lite (回覆最快 🍃)';
+                        else if (id === 'gemini-3.5-flash') label = '3.5 Flash (穩定備用 🛡️)';
+                        else if (id === 'gemini-flash-latest') label = 'Gemini Flash (自動最新 🔄)';
+                        else label = `${id} (免費可用)`;
+                        return { id: id, label: label };
                     });
 
-                    // 智慧排序：3.8 置頂第一，3.7 置頂第二，其餘降序排列
+                    // 智慧排序：3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5-lite ➔ 3.5 ➔ latest
+                    const orderMap = {
+                        'gemini-3.8-flash': 1,
+                        'gemini-3.7-flash': 2,
+                        'gemini-3.6-flash': 3,
+                        'gemini-3.5-flash-lite': 4,
+                        'gemini-3.5-flash': 5,
+                        'gemini-flash-latest': 6
+                    };
                     mapped.sort((a, b) => {
-                        if (a.id === 'gemini-3.8-flash') return -1;
-                        if (b.id === 'gemini-3.8-flash') return 1;
-                        if (a.id === 'gemini-3.7-flash') return -1;
-                        if (b.id === 'gemini-3.7-flash') return 1;
-                        return b.id.localeCompare(a.id);
+                        const oa = orderMap[a.id] || 99;
+                        const ob = orderMap[b.id] || 99;
+                        return oa - ob;
                     });
 
                     availableGeminiModels.value = mapped;
@@ -5645,7 +5687,7 @@ createApp({
         };
         let cachedGeminiPrompt = null;
 
-        const saveGeminiSettings = async () => {
+        const saveGeminiSettings = async (quiet = false) => {
             const cleanKey = (geminiApiKey.value || '').trim();
             if (cleanKey) {
                 localStorage.setItem('sentinel_gemini_api_key', cleanKey);
@@ -5674,7 +5716,7 @@ createApp({
                 }
             }
 
-            showToast('✅ Gemini 與個人戰報 GAS 設定已儲存，並已綁定本地資料庫（可隨 DB 跨設備同步）！', 3000);
+            if (!quiet) showToast('✅ Gemini 與個人戰報 GAS 設定已儲存，並已綁定本地資料庫（可隨 DB 跨設備同步）！', 3000);
         };
 
         const testGeminiConnection = async () => {
@@ -5700,7 +5742,8 @@ createApp({
                 });
                 clearTimeout(timeoutId);
                 if (res.ok) {
-                    alert(`🎉 連線測試成功！\n模型 [${model}] 正常運作中。`);
+                    await saveGeminiSettings(true); // 🎯 測試成功自動儲存模型設定
+                    alert(`🎉 連線測試成功！\n\n模型 [${model}] 正常通訊中。\n✅ 已自動為您儲存此模型設定！`);
                     fetchAvailableGeminiModels(true);
                 } else {
                     const errJson = await res.json().catch(() => ({}));
@@ -5711,7 +5754,7 @@ createApp({
                             `⚠️ Google 伺服器尖峰塞車中 (HTTP 503)\n\n` +
                             `Google 官方回報目前該模型全球請求量瞬間暴增正在排隊中。\n` +
                             `這通常是暫時性的（1~3 分鐘內會自動恢復）。\n\n` +
-                            `💡 建議：請稍候再試，或在選單中切換至【gemini-3.7-flash】或【gemini-3.6-flash】走快車道！`
+                            `💡 建議：請點擊「⚡ 自動測選」由系統自動切換至當前最順暢的免費快車道！`
                         );
                     } else if (res.status === 429 && msg.includes('limit: 0')) {
                         alert(
@@ -5720,12 +5763,13 @@ createApp({
                         );
                         geminiModelSelection.value = 'gemini-3.8-flash';
                         localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
+                        await saveGeminiSettings(true);
                     } else if (isModelDeprecatedError(msg, res.status)) {
                         alert(
                             `❌ 連線測試失敗（模型已失效）\n\n` +
                             `Google 官方回報：模型 [${model}] 已停用或下線！\n` +
                             `（詳細訊息：${msg}）\n\n` +
-                            `👉 請點擊模型版本上方的「🔄 同步官方」按鈕，立即重新取得 Google 官方最新可用模型清單！`
+                            `👉 請點擊「⚡ 自動測選」讓系統自動為您尋找最佳可用模型！`
                         );
                     } else {
                         alert(`❌ 連線測試失敗 (HTTP ${res.status})：\n${msg}`);
@@ -5740,6 +5784,96 @@ createApp({
                 }
             } finally {
                 isTestingGemini.value = false;
+            }
+        };
+
+        // ─── ⚡ 智能階梯自動測選最佳模型 (單程線性探測，6秒超時，成功自動儲存，100% 杜絕無窮迴圈) ───
+        const isAutoProbing = ref(false);
+        const autoProbeStatusText = ref('');
+
+        const autoProbeBestGeminiModel = async () => {
+            const key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                alert('⚠️ 請先填入 Gemini API Key！');
+                return;
+            }
+            if (isAutoProbing.value || isTestingGemini.value) return;
+
+            // 🎯 單程線性探測清單：依序 3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5-lite ➔ 3.5 ➔ latest
+            const probeCandidates = [
+                { id: 'gemini-3.8-flash', name: '3.8 Flash' },
+                { id: 'gemini-3.7-flash', name: '3.7 Flash' },
+                { id: 'gemini-3.6-flash', name: '3.6 Flash' },
+                { id: 'gemini-3.5-flash-lite', name: '3.5 Flash-Lite' },
+                { id: 'gemini-3.5-flash', name: '3.5 Flash' },
+                { id: 'gemini-flash-latest', name: 'Gemini Flash (自動最新)' }
+            ];
+
+            isAutoProbing.value = true;
+            autoProbeStatusText.value = '準備測速...';
+
+            let bestFound = null;
+            let bestLatency = 0;
+            const failureLogs = [];
+
+            try {
+                // 🛡️ 嚴格單程線性走訪：每個模型只測 1 次，絕不回頭重試，保證 0 迴圈
+                for (const candidate of probeCandidates) {
+                    autoProbeStatusText.value = `測 ${candidate.name}...`;
+                    const startTime = performance.now();
+                    const controller = new AbortController();
+                    // 🛡️ 穩健 6 秒單次超時保護 (兼顧尖峰排隊與超時斷尾)
+                    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+                    try {
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candidate.id)}:generateContent?key=${encodeURIComponent(key)}`;
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ role: 'user', parts: [{ text: 'Ping' }] }],
+                                generationConfig: { maxOutputTokens: 5 }
+                            }),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+
+                        if (res.ok) {
+                            const elapsed = Math.round(performance.now() - startTime);
+                            bestFound = candidate;
+                            bestLatency = elapsed;
+                            // 🎯 成功即斷 (Early Break)，立刻停止後續測試！
+                            break;
+                        } else {
+                            const errJson = await res.json().catch(() => ({}));
+                            const errMsg = errJson.error ? errJson.error.message : `HTTP ${res.status}`;
+                            failureLogs.push(`• ${candidate.name}: ${errMsg}`);
+                        }
+                    } catch (eProbe) {
+                        clearTimeout(timeoutId);
+                        const isTimeout = eProbe.name === 'AbortError';
+                        failureLogs.push(`• ${candidate.name}: ${isTimeout ? '超時 (>6秒)' : eProbe.message}`);
+                    }
+                }
+
+                if (bestFound) {
+                    geminiModelSelection.value = bestFound.id;
+                    localStorage.setItem('sentinel_gemini_model', bestFound.id);
+                    await saveGeminiSettings(true); // 🎯 測試成功自動儲存模型設定
+                    alert(`🎉 階梯測選成功！\n\n已為您自動選用最佳純免費模型：\n👉【${bestFound.name}】（延遲約 ${bestLatency}ms）\n\n✅ 模型設定已自動儲存完成！`);
+                    fetchAvailableGeminiModels(true);
+                } else {
+                    // 全數失敗即停 (Safe Exhaustion)
+                    alert(
+                        `❌ 階梯探測完成（全數未通過）：\n\n` +
+                        `已為您單程測試了 6 款純免費 Flash 模型，皆無法連通。\n\n` +
+                        `各模型失敗回報：\n${failureLogs.slice(0, 3).join('\n')}\n\n` +
+                        `💡 建議：請檢查 Gemini API Key 是否輸入正確、帳號是否有效或網路連線是否受阻。`
+                    );
+                }
+            } finally {
+                isAutoProbing.value = false;
+                autoProbeStatusText.value = '';
             }
         };
 
@@ -9681,6 +9815,9 @@ createApp({
             isModelOutOfDate,
             getActiveGeminiModel,
             isTestingGemini,
+            isAutoProbing,
+            autoProbeStatusText,
+            autoProbeBestGeminiModel,
             saveGeminiSettings,
             testGeminiConnection,
             generateGeminiReportForStock,
