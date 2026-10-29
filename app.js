@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.04');
+        const appVersion = ref('v2.20261029.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1543,12 +1543,35 @@ createApp({
             return '=';
         };
 
+        // 🌟 計算全量歷史時序之動能燈號 (落實 OSC縮「=」時繼承前一日燈號準則)
+        const calcHistoricalPulses = (arr) => {
+            if (!arr || !Array.isArray(arr) || arr.length === 0) return;
+            let prevOscPulse = -1;
+            for (let i = 0; i < arr.length; i++) {
+                const r = arr[i];
+                const prevR = i > 0 ? arr[i - 1] : null;
+                if (prevR) {
+                    const currOsc = Number(r[13]);
+                    const prevOsc = Number(prevR[13]);
+                    if (currOsc > prevOsc) {
+                        prevOscPulse = 1;
+                    } else if (currOsc < prevOsc) {
+                        prevOscPulse = -1;
+                    }
+                    // 若相等 (=)，prevOscPulse 維持前一日狀態！
+                } else {
+                    prevOscPulse = Number(r[13]) >= 0 ? 1 : -1;
+                }
+                r._oscPulse = prevOscPulse;
+            }
+        };
+
         // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA 與各指標漲跌直箭頭)
         const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
             // 計算 6 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平)
             const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
-            const oscVal = prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : -1) : (Number(r[13]) >= 0 ? 1 : -1);
+            const oscVal = r._oscPulse !== undefined ? r._oscPulse : (prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : (Number(r[13]) < Number(prevR[13]) ? -1 : (prevR._oscPulse !== undefined ? prevR._oscPulse : -1))) : (Number(r[13]) >= 0 ? 1 : -1));
             const kVal = prevR ? (Number(r[14]) > Number(prevR[14]) ? 1 : -1) : 1;
             const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
             const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
@@ -1765,6 +1788,9 @@ createApp({
                 isChartLoading.value = false;
                 return;
             }
+
+            // 🌟 預先計算全量歷史動能時序燈號（遇 = 繼承前日狀態）
+            calcHistoricalPulses(rawRows);
 
             const rows = rawRows.slice(-days);
             isChartLoading.value = false;
@@ -2167,13 +2193,14 @@ createApp({
                 // 🔥 熱力青紅燈 (6 大信號：MTM金, OSC縮, K趨, DIF趨, KD金, MACD金)
                 // Y 軸由下至上排列: MACD金, KD金, DIF趨, K趨, OSC縮, MTM金 (與電腦端 Stock_Sentinel 100% 對齊)
                 const yLabels = ['MACD金', 'KD金', 'DIF趨', 'K趨', 'OSC縮', 'MTM金'];
+                calcHistoricalPulses(rows);
                 const heatData = [];
                 for (let i = 0; i < rows.length; i++) {
                     const r = rows[i];
                     const prevR = i > 0 ? rows[i - 1] : null;
 
                     const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
-                    const oscVal = prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : -1) : (Number(r[13]) >= 0 ? 1 : -1);
+                    const oscVal = r._oscPulse !== undefined ? r._oscPulse : (prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : (Number(r[13]) < Number(prevR[13]) ? -1 : (prevR._oscPulse !== undefined ? prevR._oscPulse : -1))) : (Number(r[13]) >= 0 ? 1 : -1));
                     const kVal = prevR ? (Number(r[14]) > Number(prevR[14]) ? 1 : -1) : 1;
                     const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
                     const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
@@ -2443,6 +2470,7 @@ createApp({
             if (stockHistoryCache && activeChartStock.value && activeChartStock.value.code) {
                 const rawCode = String(activeChartStock.value.code).trim();
                 const rawRows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
+                calcHistoricalPulses(rawRows);
                 const rows = rawRows.slice(-chartDaysCount.value);
                 renderSubOscChart(rows);
                 if (rows.length > 0) {
@@ -6469,7 +6497,15 @@ createApp({
 
                 // 6 燈
                 rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
-                rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
+                let oscPulse = -1;
+                if (i >= 1) {
+                    if (rows[i].OSC > rows[i - 1].OSC) oscPulse = 1;
+                    else if (rows[i].OSC < rows[i - 1].OSC) oscPulse = -1;
+                    else oscPulse = rows[i - 1].P1_MACD_OSC !== undefined ? rows[i - 1].P1_MACD_OSC : -1;
+                } else {
+                    oscPulse = rows[i].OSC >= 0 ? 1 : -1;
+                }
+                rows[i].P1_MACD_OSC = oscPulse;
                 rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
                 rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
                 rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
@@ -6925,6 +6961,7 @@ createApp({
                 const rawRows = (histMap && (histMap[sc] || histMap[sc.replace(/^0+/, '')] || histMap[stock.code])) || [];
                 if (rawRows && rawRows.length >= 10) {
                     isFromCloudHist = true;
+                    let runningOscPulse = -1;
                     rows = rawRows.map((r, i) => {
                         const fb = Number(r[16]) || 0;
                         const sb = Number(r[17]) || 0;
@@ -6937,6 +6974,13 @@ createApp({
                         const mtm_ma = Number(r[22]) || 0;
                         const osc = Number(r[13]) || 0;
                         const prev_osc = i >= 1 ? (Number(rawRows[i - 1][13]) || 0) : osc;
+                        if (i === 0) {
+                            runningOscPulse = osc >= 0 ? 1 : -1;
+                        } else {
+                            if (osc > prev_osc) runningOscPulse = 1;
+                            else if (osc < prev_osc) runningOscPulse = -1;
+                            // 相等時維持 runningOscPulse
+                        }
                         const k = Number(r[14]) || 0;
                         const prev_k = i >= 1 ? (Number(rawRows[i - 1][14]) || 0) : k;
                         const d = Number(r[15]) || 0;
@@ -6992,7 +7036,7 @@ createApp({
 
                             // 6 燈
                             P10_MTM_Cross: mtm > mtm_ma ? 1 : -1,
-                            P1_MACD_OSC: osc > prev_osc ? 1 : -1,
+                            P1_MACD_OSC: runningOscPulse,
                             P5_K_Trend: k > prev_k ? 1 : -1,
                             P3_DIF_Trend: dif > prev_dif ? 1 : -1,
                             P4_KD_Cross: k > d ? 1 : -1,
@@ -7181,7 +7225,15 @@ createApp({
 
                     // 6 燈
                     rows[i].P10_MTM_Cross = rows[i].MTM > rows[i].MTM_MA ? 1 : -1;
-                    rows[i].P1_MACD_OSC = i >= 1 && rows[i].OSC > rows[i - 1].OSC ? 1 : -1;
+                    let oscPulse = -1;
+                    if (i >= 1) {
+                        if (rows[i].OSC > rows[i - 1].OSC) oscPulse = 1;
+                        else if (rows[i].OSC < rows[i - 1].OSC) oscPulse = -1;
+                        else oscPulse = rows[i - 1].P1_MACD_OSC !== undefined ? rows[i - 1].P1_MACD_OSC : -1;
+                    } else {
+                        oscPulse = rows[i].OSC >= 0 ? 1 : -1;
+                    }
+                    rows[i].P1_MACD_OSC = oscPulse;
                     rows[i].P5_K_Trend = i >= 1 && rows[i].K > rows[i - 1].K ? 1 : -1;
                     rows[i].P3_DIF_Trend = i >= 1 && rows[i].DIF > rows[i - 1].DIF ? 1 : -1;
                     rows[i].P4_KD_Cross = rows[i].K > rows[i].D ? 1 : -1;
