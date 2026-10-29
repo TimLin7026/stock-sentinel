@@ -1669,27 +1669,27 @@
                             </span>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-2 text-center font-mono">
+                        <div class="grid grid-cols-[1.15fr_0.7fr_1.15fr] gap-1.5 text-center font-mono">
                             <!-- 佈局甜美區間 -->
-                            <div :class="theme === 'dark' ? 'bg-emerald-950/40 border-emerald-900/50' : 'bg-emerald-50/80 border-emerald-200'" class="p-2 rounded-xl border space-y-0.5">
+                            <div :class="theme === 'dark' ? 'bg-emerald-950/40 border-emerald-900/50' : 'bg-emerald-50/80 border-emerald-200'" class="px-1 py-1.5 rounded-xl border space-y-0.5">
                                 <div class="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">佈局區間</div>
-                                <div class="text-xs font-bold text-emerald-700 dark:text-emerald-300 truncate">
+                                <div class="text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-300 tracking-tighter whitespace-nowrap">
                                     {{ currentReportStock?.buyRange || '---' }}
                                 </div>
                             </div>
 
                             <!-- 關鍵防守點位 -->
-                            <div :class="theme === 'dark' ? 'bg-rose-950/40 border-rose-900/50' : 'bg-rose-50/80 border-rose-200'" class="p-2 rounded-xl border space-y-0.5">
+                            <div :class="theme === 'dark' ? 'bg-rose-950/40 border-rose-900/50' : 'bg-rose-50/80 border-rose-200'" class="px-1 py-1.5 rounded-xl border space-y-0.5">
                                 <div class="text-[10px] text-rose-600 dark:text-rose-400 font-bold">防守停損</div>
-                                <div class="text-xs font-bold text-rose-700 dark:text-rose-300 truncate">
+                                <div class="text-[11px] sm:text-xs font-bold text-rose-700 dark:text-rose-300 tracking-tighter whitespace-nowrap">
                                     {{ currentReportStock?.defensePrice || '---' }}
                                 </div>
                             </div>
 
                             <!-- 目標調節區間 -->
-                            <div :class="theme === 'dark' ? 'bg-amber-950/40 border-amber-900/50' : 'bg-amber-50/80 border-amber-200'" class="p-2 rounded-xl border space-y-0.5">
+                            <div :class="theme === 'dark' ? 'bg-amber-950/40 border-amber-900/50' : 'bg-amber-50/80 border-amber-200'" class="px-1 py-1.5 rounded-xl border space-y-0.5">
                                 <div class="text-[10px] text-amber-600 dark:text-amber-400 font-bold">目標調節</div>
-                                <div class="text-xs font-bold text-amber-700 dark:text-amber-300 truncate">
+                                <div class="text-[11px] sm:text-xs font-bold text-amber-700 dark:text-amber-300 tracking-tighter whitespace-nowrap">
                                     {{ currentReportStock?.targetRange || '---' }}
                                 </div>
                             </div>
@@ -2945,6 +2945,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261028.07"></script>
+    <script src="app.js?v=2.20261029.01"></script>
 </body>
 </html>

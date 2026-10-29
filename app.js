@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261028.07');
+        const appVersion = ref('v2.20261029.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2780,13 +2780,17 @@ createApp({
         const migrateMobileDatabase = (db) => {
             if (!db) return;
             try {
-                // 1. 檢查並升級 my_stock 欄位 (created_at)
+                // 1. 檢查並升級 my_stock 欄位 (created_at 與 focus_updated_at)
                 try {
                     const infoM = db.exec("PRAGMA table_info(my_stock)");
                     if (infoM.length > 0 && infoM[0].values) {
                         const colsM = infoM[0].values.map(r => r[1]);
                         if (!colsM.includes('created_at')) {
                             db.run("ALTER TABLE my_stock ADD COLUMN created_at TEXT");
+                        }
+                        if (!colsM.includes('focus_updated_at')) {
+                            db.run("ALTER TABLE my_stock ADD COLUMN focus_updated_at TEXT DEFAULT '1970-01-01 00:00:00'");
+                            db.run("UPDATE my_stock SET focus_updated_at = '1970-01-01 00:00:00' WHERE focus_updated_at IS NULL OR focus_updated_at = ''");
                         }
                     }
                 } catch (e1) {
@@ -4052,7 +4056,8 @@ createApp({
             }
             if (dbInstance) {
                 try {
-                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [stock.focusStatus, stock.code, stock.broker]);
+                    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ?, focus_updated_at = ? WHERE 股票代號 = ? AND 證券商 = ?", [stock.focusStatus, nowStr, stock.code, stock.broker]);
                     saveDbToIndexedDb();
                 } catch (e) {}
             }
@@ -4062,7 +4067,8 @@ createApp({
             stock.focusStatus = status;
             if (dbInstance) {
                 try {
-                    dbInstance.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [status, stock.code, stock.broker]);
+                    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                    dbInstance.run("UPDATE my_stock SET 特別關注 = ?, focus_updated_at = ? WHERE 股票代號 = ? AND 證券商 = ?", [status, nowStr, stock.code, stock.broker]);
                     saveDbToIndexedDb();
                 } catch (e) {}
             }
@@ -8616,24 +8622,43 @@ createApp({
                             const bk = broker || '關注';
                             const uk = makeStrategyUniqueKey(code, rTime);
                             if (!deletedStrategyKeys.has(uk) && !deletedStrategyKeys.has(`${code}_${bk}_${rTime}`)) {
-                                let chk = [];
+                                // 🛡️ 核心防倒灌：查詢雲端現存該 (股票代號, 證券商) 的最新戰報記錄時間
+                                let existingCloudStrat = [];
                                 try {
-                                    chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 = ?", [code, bk, rTime]);
-                                } catch (eChk) {
-                                    chk = cloudDb.exec("SELECT rowid FROM gem_strategy WHERE 股票代號 = ? AND 記錄時間 = ?", [code, rTime]);
+                                    existingCloudStrat = cloudDb.exec(
+                                        "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? ORDER BY 記錄時間 DESC",
+                                        [code, bk]
+                                    );
+                                } catch (eQ) {
+                                    existingCloudStrat = cloudDb.exec(
+                                        "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? ORDER BY 記錄時間 DESC",
+                                        [code]
+                                    );
                                 }
-                                if (!chk.length || !chk[0].values.length) {
-                                    try {
-                                        cloudDb.run(
-                                            "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            [code, bk, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                        );
-                                    } catch (eIns) {
-                                        cloudDb.run(
-                                            "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                        );
+
+                                if (existingCloudStrat.length > 0 && existingCloudStrat[0].values && existingCloudStrat[0].values.length > 0) {
+                                    const cloudLatestTime = String(existingCloudStrat[0].values[0][0] || '');
+                                    // 若雲端已有較新或相同的戰報，嚴禁本地過期戰報反向覆蓋/倒灌！
+                                    if (cloudLatestTime >= rTime) {
+                                        return;
                                     }
+                                }
+
+                                // 本地戰報較新，先安全清理該個股該券商舊戰報，再寫入最新戰報
+                                try {
+                                    cloudDb.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ?", [code, bk]);
+                                } catch (eDelOld) {}
+
+                                try {
+                                    cloudDb.run(
+                                        "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        [code, bk, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                    );
+                                } catch (eIns) {
+                                    cloudDb.run(
+                                        "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                    );
                                 }
                             }
                         });
@@ -8645,10 +8670,15 @@ createApp({
                 // 4. 智慧合流 my_stock (自選名冊與特別關注狀態對齊，採用時間戳墓碑判定演算法)
                 try {
                     // 4.0 本地股票合流至 cloudDb：若 created_at > tomb.stock_created_at 視為新生個股除名墓碑
-                    const lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at FROM my_stock");
+                    let lStocksAll = [];
+                    try {
+                        lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, IFNULL(focus_updated_at, '1970-01-01 00:00:00') FROM my_stock");
+                    } catch (eLStocks) {
+                        lStocksAll = dbInstance.exec("SELECT 股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, '1970-01-01 00:00:00' FROM my_stock");
+                    }
                     if (lStocksAll.length > 0 && lStocksAll[0].values) {
                         lStocksAll[0].values.forEach(r => {
-                            const [code, name, shares, cost, broker, focus, createdAt] = r;
+                            const [code, name, shares, cost, broker, focus, createdAt, focusUpdatedAt] = r;
                             const uk = makeStockUniqueKey(code, broker);
                             const tombSc = tombStockCreatedMap[uk] || '1970-01-01 00:00:00';
                             const cAtStr = String(createdAt || '').trim() || '1970-01-01 00:00:00';
@@ -8663,14 +8693,14 @@ createApp({
                                         dbInstance.run("DELETE FROM deleted_records WHERE table_name = 'my_stock' AND unique_key = ?", [uk]);
                                     } catch (e) {}
                                     cloudDb.run(
-                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                        [code, name, shares, cost, broker, focus || '否', cAtStr]
+                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, focus_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        [code, name, shares, cost, broker, focus || '否', cAtStr, focusUpdatedAt || '1970-01-01 00:00:00']
                                     );
                                 }
                             } else {
                                 cloudDb.run(
-                                    "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                    [code, name, shares, cost, broker, focus || '否', cAtStr]
+                                    "INSERT OR IGNORE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, focus_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, name, shares, cost, broker, focus || '否', cAtStr, focusUpdatedAt || '1970-01-01 00:00:00']
                                 );
                             }
                         });
@@ -8701,13 +8731,30 @@ createApp({
                         });
                     }
 
-                    // 4.2 本地特別關注狀態更新至 cloudDb
+                    // 4.2 本地特別關注狀態更新至 cloudDb (以 focus_updated_at 時間戳決策：Last-Write-Wins)
                     if (lStocksAll.length > 0 && lStocksAll[0].values) {
                         lStocksAll[0].values.forEach(r => {
-                            const [code, name, shares, cost, broker, focus] = r;
+                            const [code, name, shares, cost, broker, focus, createdAt, focusUpdatedAt] = r;
                             const uk = makeStockUniqueKey(code, broker);
-                            if (!deletedStockKeys.has(uk) && focus && focus !== '否') {
-                                cloudDb.run("UPDATE my_stock SET 特別關注 = ? WHERE 股票代號 = ? AND 證券商 = ?", [focus, code, broker]);
+                            if (!deletedStockKeys.has(uk)) {
+                                const lFocus = String(focus || '否').trim();
+                                const lFocusTime = String(focusUpdatedAt || '1970-01-01 00:00:00').trim();
+
+                                let cFocus = '否';
+                                let cFocusTime = '1970-01-01 00:00:00';
+                                try {
+                                    const cr = cloudDb.exec("SELECT IFNULL(特別關注, '否'), IFNULL(focus_updated_at, '1970-01-01 00:00:00') FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                    if (cr.length > 0 && cr[0].values && cr[0].values[0]) {
+                                        cFocus = String(cr[0].values[0][0] || '否').trim();
+                                        cFocusTime = String(cr[0].values[0][1] || '1970-01-01 00:00:00').trim();
+                                    }
+                                } catch (eC) {}
+
+                                // 🎯 核心時間戳比對 (Last-Write-Wins)：
+                                // 若 本地時間戳 > 雲端時間戳，代表本設備有新設定/新取消，寫回雲端！
+                                if (lFocusTime > cFocusTime) {
+                                    cloudDb.run("UPDATE my_stock SET 特別關注 = ?, focus_updated_at = ? WHERE 股票代號 = ? AND 證券商 = ?", [lFocus, lFocusTime, code, broker]);
+                                }
                             }
                         });
                     }
@@ -8734,17 +8781,19 @@ createApp({
                             const tombSc = tombStockCreatedMap[stockUk] || '1970-01-01 00:00:00';
                             let curCreatedAt = '';
                             let existingFocus = '否';
+                            let existingFocusTime = '1970-01-01 00:00:00';
                             try {
-                                const cr = cloudDb.exec("SELECT created_at, 特別關注 FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
+                                const cr = cloudDb.exec("SELECT created_at, 特別關注, IFNULL(focus_updated_at, '1970-01-01 00:00:00') FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
                                 if (cr.length > 0 && cr[0].values && cr[0].values[0]) {
                                     curCreatedAt = String(cr[0].values[0][0] || '').trim();
                                     existingFocus = String(cr[0].values[0][1] || '否').trim();
+                                    existingFocusTime = String(cr[0].values[0][2] || '1970-01-01 00:00:00').trim();
                                 }
                             } catch (e) {}
                             if (!curCreatedAt) curCreatedAt = '1970-01-01 00:00:00';
 
                             const isNewborn = curCreatedAt > tombSc;
-                            const isFocusWatch = (broker === '關注' || existingFocus === '是');
+                            const isFocusWatch = (broker === '關注' || (existingFocus && existingFocus !== '否'));
 
                             if (curShares === 0) {
                                 // 0 股且非自選關注，或已被墓碑刪除者：徹底刪除
@@ -8752,8 +8801,8 @@ createApp({
                                     cloudDb.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [code, broker]);
                                 } else {
                                     cloudDb.run(
-                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, 0, 0, ?, ?, ?)",
-                                        [code, name, broker, existingFocus, curCreatedAt]
+                                        "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, focus_updated_at) VALUES (?, ?, 0, 0, ?, ?, ?, ?)",
+                                        [code, name, broker, existingFocus, curCreatedAt, existingFocusTime]
                                     );
                                 }
                             } else {
@@ -8767,8 +8816,8 @@ createApp({
                                     } catch (e) {}
                                 }
                                 cloudDb.run(
-                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                    [code, name, curShares, curCost, broker, existingFocus, curCreatedAt]
+                                    "INSERT OR REPLACE INTO my_stock (股票代號, 股票名稱, 個股股數, 損平價, 證券商, 特別關注, created_at, focus_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, name, curShares, curCost, broker, existingFocus, curCreatedAt, existingFocusTime]
                                 );
                             }
                         });
@@ -8885,6 +8934,9 @@ createApp({
                 } catch (eBatch) {
                     console.warn("合流 GAS 背景戰報警告:", eBatch);
                 }
+
+                // 🛡️ 雙向同步收斂自癒：確保 gem_strategy 與 my_stock 在上傳回 Google Drive 前完成精準除垢
+                migrateMobileDatabase(dbInstance);
 
                 await saveDbToIndexedDb();
                 const finalBuf = dbInstance.export();
