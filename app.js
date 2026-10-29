@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.07');
+        const appVersion = ref('v2.20261029.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -708,9 +708,9 @@ createApp({
                 if (isMarketHoliday(target)) continue;
 
                 const slots = [
-                    { h: 14, m: 5, tag: '盤後第一時間' },
-                    { h: 16, m: 45, tag: '法人籌碼' },
-                    { h: 21, m: 10, tag: '全量資券校準' }
+                    { h: 14, m: 40, tag: '盤後初版' },
+                    { h: 16, m: 30, tag: '三大法人' },
+                    { h: 20, m: 30, tag: '全量資券校準' }
                 ];
                 for (const slot of slots) {
                     const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
@@ -731,18 +731,27 @@ createApp({
                     }
                 }
             }
-            return { label: '開市日 14:05 / 16:45 / 21:10', countdown: '', tag: '三班制排程' };
+            return { label: '開市日 14:40 / 16:30 / 20:30', countdown: '', tag: '三班制排程' };
         });
 
-        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (感知今日是否開市、休市日、引導 User 同步)
+        // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (三班制階梯式感知：14:40初版 / 16:30法人 / 20:30資券)
         const calendarMarketStatus = computed(() => {
             const now = new Date();
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
             const twNow = new Date(utc + (3600000 * 8));
             const pad = (n) => String(n).padStart(2, '0');
+            const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
-            // 判斷當前台灣時間若已過 14:00 (13:30 收盤後的盤後結算期)，則今日納入已收盤開市日探測點
-            const isTodayClosed = (twNow.getHours() > 14) || (twNow.getHours() === 14 && twNow.getMinutes() >= 0);
+            // 三班排程就緒時間（分鐘數）：
+            // 班次 1: 14:40 觸發 -> 14:45 就緒 (885分)
+            // 班次 2: 16:30 觸發 -> 16:35 就緒 (995分)
+            // 班次 3: 20:30 觸發 -> 20:35 就緒 (1235分)
+            const M_1445 = 14 * 60 + 45; // 885
+            const M_1635 = 16 * 60 + 35; // 995
+            const M_2035 = 20 * 60 + 35; // 1235
+
+            // 判斷當前台灣時間若已過 14:45 (首班盤後初版行情就緒)，則今日納入已收盤開市日探測點
+            const isTodayClosed = totalMinutes >= M_1445;
             let checkDt = new Date(twNow.getFullYear(), twNow.getMonth(), twNow.getDate());
             if (!isTodayClosed) {
                 checkDt.setDate(checkDt.getDate() - 1);
@@ -760,17 +769,86 @@ createApp({
             const expectedFormatted = `${expectedYear}/${expectedMonth}/${expectedDay}`;
 
             const todayFormatted = `${twNow.getFullYear()}/${pad(twNow.getMonth() + 1)}/${pad(twNow.getDate())}`;
+            const todayDigits = `${twNow.getFullYear()}${pad(twNow.getMonth() + 1)}${pad(twNow.getDate())}`;
             const isExpectedToday = (expectedFormatted === todayFormatted);
 
-            // 本機快照收錄日期
+            // 本機快照收錄日期與最後同步時間
             const snapDateRaw = String(marketSyncMeta.value.marketDate || '').trim();
             const snapDigits = snapDateRaw.replace(/\D/g, '').slice(0, 8);
             const snapFormatted = snapDigits.length === 8 
                 ? `${snapDigits.slice(0, 4)}/${snapDigits.slice(4, 6)}/${snapDigits.slice(6, 8)}`
                 : (snapDateRaw || '尚未同步');
 
-            // 是否落後待同步
-            const isNeedsSync = Boolean(expectedDigits && (!snapDigits || snapDigits < expectedDigits));
+            // 解析最後一次同步的時間（分鐘數與日期）
+            const lastFetchStr = String(marketSyncMeta.value.fetchTime || '').trim();
+            let lastFetchDigits = '';
+            let lastFetchTotalMinutes = -1;
+            if (lastFetchStr) {
+                const parts = lastFetchStr.split(' ');
+                if (parts[0]) lastFetchDigits = parts[0].replace(/\D/g, '').slice(0, 8);
+                if (parts[1]) {
+                    const timeParts = parts[1].split(':');
+                    if (timeParts.length >= 2) {
+                        lastFetchTotalMinutes = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
+                    }
+                }
+            }
+
+            // 分階待同步判定
+            let isNeedsSync = false;
+            let statusTag = '🟢 已為最新開市日行情';
+            let currentSlotTag = '';
+
+            // 情況 1：根本尚未同步到預期的開市日
+            if (!snapDigits || snapDigits < expectedDigits) {
+                isNeedsSync = true;
+                if (isExpectedToday) {
+                    if (totalMinutes >= M_2035) {
+                        statusTag = '⚠️ 全量資券籌碼待同步';
+                        currentSlotTag = '20:30場次';
+                    } else if (totalMinutes >= M_1635) {
+                        statusTag = '⚠️ 三大法人籌碼待同步';
+                        currentSlotTag = '16:30場次';
+                    } else {
+                        statusTag = '⚠️ 盤後初版行情待同步';
+                        currentSlotTag = '14:40場次';
+                    }
+                } else {
+                    statusTag = '⚠️ 有新開市日待同步';
+                }
+            } else if (isExpectedToday && snapDigits === todayDigits) {
+                // 情況 2：本機已經有今天的行情，但可能處於不同班次的交接期！
+                const isSyncedToday = (lastFetchDigits === todayDigits);
+
+                if (totalMinutes >= M_2035) {
+                    // 20:35 之後，全量資券已出爐
+                    if (!isSyncedToday || lastFetchTotalMinutes < M_2035) {
+                        isNeedsSync = true;
+                        statusTag = '⚠️ 全量資券籌碼待同步';
+                        currentSlotTag = '20:30場次';
+                    } else {
+                        statusTag = '🟢 今日全量籌碼已全數校準';
+                    }
+                } else if (totalMinutes >= M_1635) {
+                    // 16:35 ~ 20:35 之間，三大法人已出爐
+                    if (!isSyncedToday || lastFetchTotalMinutes < M_1635) {
+                        isNeedsSync = true;
+                        statusTag = '⚠️ 三大法人籌碼待同步';
+                        currentSlotTag = '16:30場次';
+                    } else {
+                        statusTag = '🟢 已同步三大法人籌碼';
+                    }
+                } else if (totalMinutes >= M_1445) {
+                    // 14:45 ~ 16:35 之間，盤後初版已出爐
+                    if (!isSyncedToday || lastFetchTotalMinutes < M_1445) {
+                        isNeedsSync = true;
+                        statusTag = '⚠️ 盤後初版行情待同步';
+                        currentSlotTag = '14:40場次';
+                    } else {
+                        statusTag = '🟢 已同步盤後初版行情';
+                    }
+                }
+            }
 
             return {
                 expectedDateStr: expectedFormatted,
@@ -778,16 +856,15 @@ createApp({
                 isExpectedToday,
                 snapshotDateStr: snapFormatted,
                 isNeedsSync,
-                statusTag: isNeedsSync 
-                    ? (isExpectedToday ? '⚠️ 今日行情待同步' : '⚠️ 有新開市日待同步')
-                    : '🟢 已為最新開市日行情'
+                statusTag,
+                currentSlotTag
             };
         });
 
-        // 🔔 主動提醒狀態 (開市日 15:00 / 21:30 推播)
+        // 🔔 主動提醒狀態 (對齊 GAS 三班制：14:40初版 / 16:30法人 / 20:30全量籌碼)
         const activeSyncNotice = ref({
             show: false,
-            type: '', // 'post_market' | 'full_chip'
+            type: '', // 'post_market' | 'chip_market' | 'full_chip'
             title: '',
             message: '',
             slot: ''
@@ -799,8 +876,8 @@ createApp({
             const twNow = new Date(utc + (3600000 * 8));
             const dayOfWeek = twNow.getDay();
 
-            // 週末不提醒
-            if (dayOfWeek === 0 || dayOfWeek === 6) {
+            // 週末或休市日不提醒
+            if (dayOfWeek === 0 || dayOfWeek === 6 || isMarketHoliday(twNow)) {
                 if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
                 return;
             }
@@ -811,38 +888,59 @@ createApp({
             const todayDateStr = `${y}${m}${d}`;
             const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
-            // 1. 下午場提醒：15:00 ~ 15:30 (900分 ~ 930分)
-            if (totalMinutes >= 900 && totalMinutes < 930) {
-                const alreadyNotified = localStorage.getItem(`sentinel_notified_1500_${todayDateStr}`);
-                if (!alreadyNotified) {
-                    activeSyncNotice.value = {
-                        show: true,
-                        type: 'post_market',
-                        title: '📈 盤後行情已出爐 (14:30場次)',
-                        message: '今日收盤價與 6 大青紅燈指標已就緒，請點擊同步更新！',
-                        slot: '1500'
-                    };
-                    return;
+            // 1. 下午初版行情場次提醒：14:45 ~ 15:30 (885分 ~ 930分)
+            if (totalMinutes >= 885 && totalMinutes < 930) {
+                if (calendarMarketStatus.value.isNeedsSync) {
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1440_${todayDateStr}`);
+                    if (!alreadyNotified) {
+                        activeSyncNotice.value = {
+                            show: true,
+                            type: 'post_market',
+                            title: '📈 盤後初版行情已就緒 (14:40場次)',
+                            message: '今日收盤價與 6 大青紅燈指標已更新，請點擊同步！',
+                            slot: '1440'
+                        };
+                        return;
+                    }
                 }
             }
 
-            // 2. 晚間場提醒：21:30 ~ 22:00 (1290分 ~ 1320分)
-            if (totalMinutes >= 1290 && totalMinutes < 1320) {
-                const alreadyNotified = localStorage.getItem(`sentinel_notified_2130_${todayDateStr}`);
-                if (!alreadyNotified) {
-                    activeSyncNotice.value = {
-                        show: true,
-                        type: 'full_chip',
-                        title: '📊 全量籌碼已結算 (21:00場次)',
-                        message: '三大法人與融資券數據已全數清洗完畢，請點擊同步！',
-                        slot: '2130'
-                    };
-                    return;
+            // 2. 傍晚三大法人籌碼場次提醒：16:35 ~ 17:30 (995分 ~ 1050分)
+            if (totalMinutes >= 995 && totalMinutes < 1050) {
+                if (calendarMarketStatus.value.isNeedsSync) {
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1630_${todayDateStr}`);
+                    if (!alreadyNotified) {
+                        activeSyncNotice.value = {
+                            show: true,
+                            type: 'chip_market',
+                            title: '🏢 三大法人籌碼已出爐 (16:30場次)',
+                            message: '外資、投信與自營商進出動向已就緒，請點擊同步！',
+                            slot: '1630'
+                        };
+                        return;
+                    }
                 }
             }
 
-            // 非提醒時段自動關閉
-            if (activeSyncNotice.value.show) {
+            // 3. 晚間全量資券籌碼場次提醒：20:35 ~ 21:30 (1235分 ~ 1290分)
+            if (totalMinutes >= 1235 && totalMinutes < 1290) {
+                if (calendarMarketStatus.value.isNeedsSync) {
+                    const alreadyNotified = localStorage.getItem(`sentinel_notified_2030_${todayDateStr}`);
+                    if (!alreadyNotified) {
+                        activeSyncNotice.value = {
+                            show: true,
+                            type: 'full_chip',
+                            title: '📊 全量籌碼校準完成 (20:30場次)',
+                            message: '融資融券與全市場清洗審計完畢，請點擊同步！',
+                            slot: '2030'
+                        };
+                        return;
+                    }
+                }
+            }
+
+            // 非提醒時段或已無待同步需求時自動隱藏
+            if (activeSyncNotice.value.show && !calendarMarketStatus.value.isNeedsSync) {
                 activeSyncNotice.value.show = false;
             }
         };
