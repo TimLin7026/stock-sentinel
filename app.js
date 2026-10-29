@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.12');
+        const appVersion = ref('v2.20261029.13');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5473,11 +5473,11 @@ createApp({
         const geminiApiKey = ref(localStorage.getItem('sentinel_gemini_api_key') || '');
         let storedModel = localStorage.getItem('sentinel_gemini_model') || 'gemini-3.8-flash';
         
-        // 自動檢查並遷移淘汰的舊世代或付費模型 (如 2.5 系列、3.1 系列、argon、pro 等)
+        // 自動檢查並遷移淘汰的舊世代或付費模型 (如 2.5 系列、3.1 系列、argon、pro、omni 等)
         const checkModelIsObsolete = (mName) => {
             if (!mName || mName === 'custom') return false;
             const str = String(mName).toLowerCase();
-            if (str.includes('argon') || str.includes('pro') || str.includes('banana')) return true;
+            if (str.includes('argon') || str.includes('pro') || str.includes('banana') || str.includes('omni')) return true;
             const match = str.match(/gemini-(\d+(?:\.\d+)?)/);
             if (match) {
                 const ver = parseFloat(match[1]);
@@ -5505,13 +5505,13 @@ createApp({
             const rawCache = localStorage.getItem('sentinel_gemini_models_cache');
             if (rawCache) {
                 const parsed = JSON.parse(rawCache);
-                // 自動清洗過往快取中的非 Flash、付費或非 3.5~3.8 雜質模型
+                // 自動清洗過往快取中的非 Flash、付費或非 3.5~3.8、omni 雜質模型
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     const cleaned = parsed.filter(m => {
                         if (!m.id) return false;
                         const id = m.id.toLowerCase();
                         if (!id.includes('flash')) return false;
-                        if (id.includes('tts') || id.includes('image') || id.includes('argon') || id.includes('banana') || id.includes('pro')) return false;
+                        if (id.includes('tts') || id.includes('image') || id.includes('argon') || id.includes('banana') || id.includes('pro') || id.includes('omni')) return false;
                         const match = id.match(/gemini-(\d+(?:\.\d+)?)/);
                         if (match) {
                             const ver = parseFloat(match[1]);
@@ -5616,6 +5616,7 @@ createApp({
                                        name.includes('lyria') || 
                                        name.includes('argon') || 
                                        name.includes('pro') ||
+                                       name.includes('omni') ||
                                        name.includes('robotics') || 
                                        name.includes('computer-use') ||
                                        name.includes('embedding') || 
@@ -5642,6 +5643,7 @@ createApp({
                         else if (id === 'gemini-3.5-flash-lite') label = '3.5 Flash-Lite (回覆最快 🍃)';
                         else if (id === 'gemini-3.5-flash') label = '3.5 Flash (穩定備用 🛡️)';
                         else if (id === 'gemini-flash-latest') label = 'Gemini Flash (自動最新 🔄)';
+                        else if (id === 'gemini-flash-lite-latest') label = 'Flash-Lite (極速輕量 · 自動最新 🍃)';
                         else label = `${id} (免費可用)`;
                         return { id: id, label: label };
                     });
@@ -5653,7 +5655,8 @@ createApp({
                         'gemini-3.6-flash': 3,
                         'gemini-3.5-flash-lite': 4,
                         'gemini-3.5-flash': 5,
-                        'gemini-flash-latest': 6
+                        'gemini-flash-latest': 6,
+                        'gemini-flash-lite-latest': 7
                     };
                     mapped.sort((a, b) => {
                         const oa = orderMap[a.id] || 99;
