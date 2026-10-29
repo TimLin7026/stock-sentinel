@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.10');
+        const appVersion = ref('v2.20261029.11');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1030,6 +1030,37 @@ createApp({
             ];
         };
 
+        /**
+         * 🎯 全域統一戰報時效判定引擎 (computeReportFreshness)
+         * 規則：
+         * 1. 必須有實質戰報內容 (非空白底稿)。
+         * 2. 戰報日期 < 最新開市日 -> 必然過期 (跨日舊戰報)。
+         * 3. 戰報日期 > 最新開市日 -> 新鮮。
+         * 4. 戰報日期 === 最新開市日 (同日)：
+         *    - 若尚未同步今日最新盤後行情快照 -> 視為新鮮。
+         *    - 若已同步今日最新盤後行情快照：戰報產製時間必須 >= 當前快照就緒門檻 (14:45 / 16:35 / 20:35)，否則精準判定為過期！
+         */
+        const computeReportFreshness = (rawReportTime, hasActualReport, marketTradingDay8, thresholdTime6 = '144500', isMarketDataSynced = true) => {
+            if (!hasActualReport || !rawReportTime) return false;
+            const digits = String(rawReportTime).replace(/\D/g, '');
+            if (!digits || digits.length < 8) return false;
+            const stratDigits14 = digits.padEnd(14, '0').slice(0, 14);
+            const stratDate8 = stratDigits14.slice(0, 8);
+            const stratTime6 = stratDigits14.slice(8, 14);
+
+            if (stratDate8 < marketTradingDay8) {
+                return false;
+            } else if (stratDate8 > marketTradingDay8) {
+                return true;
+            } else {
+                // 同日 (stratDate8 === marketTradingDay8)
+                if (!isMarketDataSynced) {
+                    return true;
+                }
+                return stratTime6 >= thresholdTime6;
+            }
+        };
+
         // 將全市場快照行情與指標注入前端狀態
         const applyMarketSnapshot = (snapshotData, meta = {}) => {
             if (!snapshotData || typeof snapshotData !== 'object') return 0;
@@ -1044,6 +1075,20 @@ createApp({
                     stockDictMap.value[c.padStart(5, '0')] = item.name;
                 }
             });
+
+            // 🎯 計算快照對應之時效門檻 (14:45盤後 / 16:35法人 / 20:35資券)
+            let snapThresholdTime = '144500';
+            const fetchStr = String((meta && meta.fetchTime) || (marketSyncMeta.value && marketSyncMeta.value.fetchTime) || '').trim();
+            if (fetchStr) {
+                const parts = fetchStr.split(' ');
+                let fTime6 = '';
+                if (parts[1]) fTime6 = parts[1].replace(/\D/g, '').padEnd(6, '0').slice(0, 6);
+                if (fTime6 >= '203500') {
+                    snapThresholdTime = '203500';
+                } else if (fTime6 >= '163500') {
+                    snapThresholdTime = '163500';
+                }
+            }
 
             // 2. 更新持股與自選股之最新行情與指標
             let matchedCount = 0;
@@ -1076,8 +1121,7 @@ createApp({
                         s.isIndicatorFresh = true;
                         s.isStrategyFresh = true;
 
-                        // 🎯 依據雲端大腦最新開市日即時重算戰報時效 (戰報日期必須 >= 最新開市日才亮綠勾 ✅，否則顯示 ⚠️)
-                        const repDigits = String(s.reportDate || '').replace(/\D/g, '').slice(0, 8);
+                        // 🎯 依據雲端大腦最新開市日即時重算戰報時效 (嚴格對齊 14:45 / 16:35 / 20:35 就緒門檻)
                         const hasActualRep = Boolean(
                             (s.summaryText && s.summaryText !== '暫無策略總結，請於 PC 端進行全量掃描分析。') ||
                             (s.fullStrategyContent && s.fullStrategyContent.trim()) ||
@@ -1085,7 +1129,8 @@ createApp({
                             (s.sellPriceTarget && s.sellPriceTarget !== '---')
                         );
                         if (snapDigits.length === 8) {
-                            s.isReportFresh = Boolean(hasActualRep && repDigits.length === 8 && repDigits >= snapDigits);
+                            const rawTime = s.reportRawTime || s.reportDate;
+                            s.isReportFresh = computeReportFreshness(rawTime, hasActualRep, snapDigits, snapThresholdTime, true);
                         }
                     }
 
@@ -3811,28 +3856,14 @@ createApp({
 
                             const isPriceFresh = Boolean(pDigits && pDigits === latestMarketTradingDay);
 
-                            // 🎯 智能時效過期判定 (精準對齊盤後與籌碼就緒同步時間)：
-                            // 1. 若戰報日期早於最新市場交易日 -> 必然過期 (跨日)
-                            // 2. 若戰報日期等於最新開市日，且本機已同步該日行情快照：
-                            //    戰報時間必須晚於或等於當前快照數據門檻 (14:45 / 16:35 / 20:35)，才算新鮮！
-                            //    若在該門檻之前 (例如 10:00 戰報在 14:45 同步後)，精準判定為過期！
-                            let isReportFresh = false;
-                            if (hasActualReport && stratDate8) {
-                                if (stratDate8 < latestMarketTradingDay) {
-                                    isReportFresh = false;
-                                } else if (stratDate8 > latestMarketTradingDay) {
-                                    isReportFresh = true;
-                                } else {
-                                    // stratDate8 === latestMarketTradingDay (同日)
-                                    if (!isSnapLatestMarket) {
-                                        // 本機尚未同步今日行情，戰報只要是今日產生即算有效
-                                        isReportFresh = true;
-                                    } else {
-                                        // 本機已同步今日行情：必須晚於當前快照數據就緒門檻！
-                                        isReportFresh = (stratTime6 >= currentSnapThresholdTime);
-                                    }
-                                }
-                            }
+                            // 🎯 智能時效過期判定 (調用統一全域判定引擎 computeReportFreshness)：
+                            const isReportFresh = computeReportFreshness(
+                                sInfo.recordTime || '',
+                                hasActualReport,
+                                latestMarketTradingDay,
+                                currentSnapThresholdTime,
+                                isSnapLatestMarket
+                            );
 
                             const isIndicatorFresh = Boolean(hmDigits && pDigits && hmDigits === pDigits);
                             const isStrategyFresh = Boolean(hmDigits && hmDigits === latestMarketTradingDay);
@@ -3905,6 +3936,7 @@ createApp({
                                 isStrategyFresh,
                                 priceDate,
                                 reportDate,
+                                reportRawTime: sInfo.recordTime || '',
                                 strategyDate
                             });
                         });
