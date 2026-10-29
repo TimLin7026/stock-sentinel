@@ -864,11 +864,11 @@
                                     </div>
                                 </div>
                                 <div :class="theme === 'dark' ? 'bg-slate-900/80 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'" class="p-2.5 rounded-xl border leading-relaxed text-xs">
-                                    <!-- Row 1: 建議買賣 (建議： {buyLow}<買<{buyHigh} ~ {targetLow}<賣<{targetHigh}) -->
+                                    <!-- Row 1: 建議買賣 (建議： {bL} ~ {bH} | {tL} ~ {tH}) -->
                                     <div class="flex items-center space-x-1 pb-2 mb-2 border-b font-mono text-[11px] whitespace-nowrap overflow-x-auto no-scrollbar" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-100'">
                                         <span class="text-sky-600 dark:text-sky-400 font-bold flex-shrink-0">建議：</span>
                                         <span class="text-rose-600 dark:text-rose-400 font-bold flex-shrink-0">{{ stock.buySuggestionText }}</span>
-                                        <span :class="theme === 'dark' ? 'text-slate-500' : 'text-slate-400'" class="font-bold flex-shrink-0 px-1">~</span>
+                                        <span :class="theme === 'dark' ? 'text-slate-600' : 'text-slate-300'" class="font-bold flex-shrink-0 px-1.5">|</span>
                                         <span class="text-emerald-600 dark:text-emerald-400 font-bold flex-shrink-0">{{ stock.sellSuggestionText }}</span>
                                     </div>
                                     <!-- Row 2: 短評文字內容 -->
@@ -2948,6 +2948,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261029.03"></script>
+    <script src="app.js?v=2.20261029.04"></script>
 </body>
 </html>

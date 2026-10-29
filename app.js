@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.03');
+        const appVersion = ref('v2.20261029.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3654,20 +3654,20 @@ createApp({
                             const tL = sInfo.targetLow !== undefined && sInfo.targetLow !== null && String(sInfo.targetLow).trim() !== '' ? String(sInfo.targetLow).trim() : '';
                             const tH = sInfo.targetHigh !== undefined && sInfo.targetHigh !== null && String(sInfo.targetHigh).trim() !== '' ? String(sInfo.targetHigh).trim() : '';
 
-                            let buySuggestionText = '買---';
+                            let buySuggestionText = '---';
                             if (bL && bH) {
-                                buySuggestionText = `${bL}<買<${bH}`;
+                                buySuggestionText = `${bL} ~ ${bH}`;
                             } else if (bH) {
-                                buySuggestionText = `買<${bH}`;
+                                buySuggestionText = `< ${bH}`;
                             } else if (costPrice) {
-                                buySuggestionText = `買<${costPrice}`;
+                                buySuggestionText = `< ${costPrice}`;
                             }
 
-                            let sellSuggestionText = '賣---';
+                            let sellSuggestionText = '---';
                             if (tL && tH) {
-                                sellSuggestionText = `${tL}<賣<${tH}`;
+                                sellSuggestionText = `${tL} ~ ${tH}`;
                             } else if (tL) {
-                                sellSuggestionText = `${tL}<賣`;
+                                sellSuggestionText = `> ${tL}`;
                             }
 
                             const buyTarget = bH || (costPrice ? String(costPrice) : '---');
