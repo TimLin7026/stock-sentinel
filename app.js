@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.01');
+        const appVersion = ref('v2.20261029.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2913,6 +2913,62 @@ createApp({
                     console.warn("[MIGRATE] cleanup redundant strategies warning:", e6);
                 }
 
+                // 6.1 🛡️【常駐孤兒戰報防呆自癒】：
+                // (1) 若某個股在實體券商 (非關注) 已有戰報或持股，自動驅逐清理同代號券商為 '關注' 的殘留戰報
+                // (2) 凡是非 TOTAL 戰報，且「(股票代號 + 券商)」已不存在於當前自選名冊 (my_stock) 者，判定為歷史刪除孤兒戰報，自動徹底清除並登記墓碑
+                try {
+                    db.run("CREATE TABLE IF NOT EXISTS deleted_records (table_name TEXT, unique_key TEXT, deleted_at TEXT, stock_created_at TEXT, PRIMARY KEY (table_name, unique_key))");
+                    const nowOrphanDelStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+                    // (1) 驅逐同代號殘留之關注戰報 (若實體券商已有戰報)
+                    const redundantWatchStrats = db.exec(`
+                        SELECT 股票代號, 記錄時間 FROM gem_strategy 
+                        WHERE IFNULL(證券商, '關注') = '關注' 
+                          AND 股票代號 != 'TOTAL'
+                          AND 股票代號 IN (SELECT 股票代號 FROM gem_strategy WHERE IFNULL(證券商, '關注') != '關注')
+                    `);
+                    if (redundantWatchStrats.length > 0 && redundantWatchStrats[0].values) {
+                        redundantWatchStrats[0].values.forEach(r => {
+                            const sc = String(r[0]).padStart(4, '0');
+                            const rt = String(r[1] || '');
+                            const uk1 = makeStrategyUniqueKey(sc, rt);
+                            const uk2 = `${sc}|關注|${rt}`;
+                            const uk3 = `${sc}_關注_${rt}`;
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk1, nowOrphanDelStr]);
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk2, nowOrphanDelStr]);
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk3, nowOrphanDelStr]);
+                            db.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = '關注' AND 記錄時間 = ?", [sc, rt]);
+                            console.log(`🛡️ [驅逐殘留關注戰報] ${sc} (關注) 因實體券商已有戰報，已自動清理並登記墓碑。`);
+                        });
+                    }
+
+                    // (2) 掃描完全不在 my_stock 名冊中之孤兒戰報 (排除 TOTAL 總覽)
+                    const orphanStrats = db.exec(`
+                        SELECT 股票代號, IFNULL(證券商, '關注') as 證券商, 記錄時間 FROM gem_strategy 
+                        WHERE 股票代號 != 'TOTAL'
+                          AND (股票代號 || '|' || IFNULL(證券商, '關注')) NOT IN (
+                              SELECT 股票代號 || '|' || IFNULL(證券商, '關注') FROM my_stock
+                          )
+                    `);
+                    if (orphanStrats.length > 0 && orphanStrats[0].values && orphanStrats[0].values.length > 0) {
+                        orphanStrats[0].values.forEach(row => {
+                            const sc = String(row[0]).padStart(4, '0');
+                            const sb = String(row[1] || '關注');
+                            const rt = String(row[2] || '');
+                            const uk1 = makeStrategyUniqueKey(sc, rt);
+                            const uk2 = `${sc}|${sb}|${rt}`;
+                            const uk3 = `${sc}_${sb}_${rt}`;
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk1, nowOrphanDelStr]);
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk2, nowOrphanDelStr]);
+                            db.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [uk3, nowOrphanDelStr]);
+                            db.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? AND 記錄時間 = ?", [sc, sb, rt]);
+                            console.log(`🛡️ [孤兒戰報自癒防呆] 發現已自自選名冊移除之孤兒戰報：${sc} (${sb}, ${rt})，已自動清除並補登墓碑。`);
+                        });
+                    }
+                } catch (eOrphan) {
+                    console.warn("[MIGRATE] cleanup orphan strategies warning:", eOrphan);
+                }
+
                 // 7. ⚖️ 持股庫存與損平價自癒校準（標準移動加權平均法，全面修正歷史賣出漏扣成本問題）
                 try {
                     const distinctTrades = db.exec("SELECT DISTINCT 股票代號, 證券商 FROM trade_log");
@@ -4690,20 +4746,27 @@ createApp({
                     const stockUk = makeStockUniqueKey(stock.code, stock.broker || '關注');
                     dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at, stock_created_at) VALUES ('my_stock', ?, ?, ?)", [stockUk, nowStr, stockCreatedAt]);
 
-                    // 3. 寫入 gem_strategy 刪除墓碑
+                    // 3. 寫入 gem_strategy 刪除墓碑 (支援多券商與多重墓碑 key)
                     try {
-                        const stratRows = dbInstance.exec("SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
+                        const sBroker = stock.broker || '關注';
+                        const stratRows = dbInstance.exec("SELECT 記錄時間, IFNULL(證券商, '關注') FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ?", [stock.code, sBroker]);
                         if (stratRows.length > 0 && stratRows[0].values.length > 0) {
                             stratRows[0].values.forEach(r => {
-                                const stratUk = makeStrategyUniqueKey(stock.code, r[0]);
+                                const rt = r[0];
+                                const bk = r[1] || sBroker;
+                                const stratUk = makeStrategyUniqueKey(stock.code, rt);
+                                const stratUk2 = `${stock.code}|${bk}|${rt}`;
+                                const stratUk3 = `${stock.code}_${bk}_${rt}`;
                                 dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [stratUk, nowStr]);
+                                dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [stratUk2, nowStr]);
+                                dbInstance.run("INSERT OR REPLACE INTO deleted_records (table_name, unique_key, deleted_at) VALUES ('gem_strategy', ?, ?)", [stratUk3, nowStr]);
                             });
                         }
                     } catch (e_strat) {}
 
                     // 4. 物理刪除 my_stock 與 gem_strategy (絕不刪除 trade_log)
                     dbInstance.run("DELETE FROM my_stock WHERE 股票代號 = ? AND 證券商 = ?", [stock.code, stock.broker || '關注']);
-                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ?", [stock.code]);
+                    dbInstance.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ?", [stock.code, stock.broker || '關注']);
 
                     await saveDbToIndexedDb();
                     const u8 = dbInstance.export();
@@ -8594,6 +8657,19 @@ createApp({
                         }
                     } catch (eCInfo) {}
 
+                    // 預先收集雙方名冊中合法的 (股票代號|證券商) 集合，用於嚴格攔截孤兒戰報
+                    const activeStockBrokerSet = new Set();
+                    try {
+                        const lM = dbInstance.exec("SELECT 股票代號, IFNULL(證券商, '關注') FROM my_stock");
+                        if (lM.length > 0 && lM[0].values) {
+                            lM[0].values.forEach(m => activeStockBrokerSet.add(`${m[0]}|${m[1]}`));
+                        }
+                        const cM = cloudDb.exec("SELECT 股票代號, IFNULL(證券商, '關注') FROM my_stock");
+                        if (cM.length > 0 && cM[0].values) {
+                            cM[0].values.forEach(m => activeStockBrokerSet.add(`${m[0]}|${m[1]}`));
+                        }
+                    } catch (eMSet) {}
+
                     let cStrat = [];
                     try {
                         cStrat = cloudDb.exec("SELECT rowid, 股票代號, 記錄時間, 證券商 FROM gem_strategy");
@@ -8605,7 +8681,14 @@ createApp({
                             const [r_id, r_code, r_time, r_broker] = r;
                             const bk = r_broker || '關注';
                             const uk = makeStrategyUniqueKey(r_code, r_time);
-                            if (deletedStrategyKeys.has(uk) || deletedStrategyKeys.has(`${r_code}_${bk}_${r_time}`)) {
+                            const fullUk1 = `${r_code}|${bk}|${r_time}`;
+                            const fullUk2 = `${r_code}_${bk}_${r_time}`;
+                            if (deletedStrategyKeys.has(uk) || deletedStrategyKeys.has(fullUk1) || deletedStrategyKeys.has(fullUk2)) {
+                                cloudDb.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
+                                return;
+                            }
+                            // 🛡️ 雲端孤兒清理：若非 TOTAL 且雙方名冊皆無此股票，直接刪除
+                            if (r_code !== 'TOTAL' && activeStockBrokerSet.size > 0 && !activeStockBrokerSet.has(`${r_code}|${bk}`)) {
                                 cloudDb.run("DELETE FROM gem_strategy WHERE rowid = ?", [r_id]);
                             }
                         });
@@ -8621,45 +8704,61 @@ createApp({
                             const [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime, broker] = r;
                             const bk = broker || '關注';
                             const uk = makeStrategyUniqueKey(code, rTime);
-                            if (!deletedStrategyKeys.has(uk) && !deletedStrategyKeys.has(`${code}_${bk}_${rTime}`)) {
-                                // 🛡️ 核心防倒灌：查詢雲端現存該 (股票代號, 證券商) 的最新戰報記錄時間
-                                let existingCloudStrat = [];
-                                try {
-                                    existingCloudStrat = cloudDb.exec(
-                                        "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? ORDER BY 記錄時間 DESC",
-                                        [code, bk]
-                                    );
-                                } catch (eQ) {
-                                    existingCloudStrat = cloudDb.exec(
-                                        "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? ORDER BY 記錄時間 DESC",
-                                        [code]
-                                    );
-                                }
+                            const fullUk1 = `${code}|${bk}|${rTime}`;
+                            const fullUk2 = `${code}_${bk}_${rTime}`;
+                            if (deletedStrategyKeys.has(uk) || deletedStrategyKeys.has(fullUk1) || deletedStrategyKeys.has(fullUk2)) {
+                                return;
+                            }
 
-                                if (existingCloudStrat.length > 0 && existingCloudStrat[0].values && existingCloudStrat[0].values.length > 0) {
-                                    const cloudLatestTime = String(existingCloudStrat[0].values[0][0] || '');
-                                    // 若雲端已有較新或相同的戰報，嚴禁本地過期戰報反向覆蓋/倒灌！
-                                    if (cloudLatestTime >= rTime) {
-                                        return;
-                                    }
-                                }
+                            // 🛡️ 防線三：嚴格孤兒攔截！若非 TOTAL 且雙方名冊皆無此股票，嚴禁倒灌入雲端！
+                            if (code !== 'TOTAL' && activeStockBrokerSet.size > 0 && !activeStockBrokerSet.has(`${code}|${bk}`)) {
+                                return;
+                            }
 
-                                // 本地戰報較新，先安全清理該個股該券商舊戰報，再寫入最新戰報
+                            // 🛡️ 實體券商防護：若本地戰報為實體券商，確保順手清理雲端同代號殘留之「關注」戰報
+                            if (bk !== '關注') {
                                 try {
-                                    cloudDb.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ?", [code, bk]);
-                                } catch (eDelOld) {}
+                                    cloudDb.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = '關注'", [code]);
+                                } catch (eDelWatch) {}
+                            }
 
-                                try {
-                                    cloudDb.run(
-                                        "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        [code, bk, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                    );
-                                } catch (eIns) {
-                                    cloudDb.run(
-                                        "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
-                                    );
+                            // 🛡️ 核心防倒灌：查詢雲端現存該 (股票代號, 證券商) 的最新戰報記錄時間
+                            let existingCloudStrat = [];
+                            try {
+                                existingCloudStrat = cloudDb.exec(
+                                    "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ? ORDER BY 記錄時間 DESC",
+                                    [code, bk]
+                                );
+                            } catch (eQ) {
+                                existingCloudStrat = cloudDb.exec(
+                                    "SELECT 記錄時間 FROM gem_strategy WHERE 股票代號 = ? ORDER BY 記錄時間 DESC",
+                                    [code]
+                                );
+                            }
+
+                            if (existingCloudStrat.length > 0 && existingCloudStrat[0].values && existingCloudStrat[0].values.length > 0) {
+                                const cloudLatestTime = String(existingCloudStrat[0].values[0][0] || '');
+                                // 若雲端已有較新或相同的戰報，嚴禁本地過期戰報反向覆蓋/倒灌！
+                                if (cloudLatestTime >= rTime) {
+                                    return;
                                 }
+                            }
+
+                            // 本地戰報較新，先安全清理該個股該券商舊戰報，再寫入最新戰報
+                            try {
+                                cloudDb.run("DELETE FROM gem_strategy WHERE 股票代號 = ? AND IFNULL(證券商, '關注') = ?", [code, bk]);
+                            } catch (eDelOld) {}
+
+                            try {
+                                cloudDb.run(
+                                    "INSERT OR REPLACE INTO gem_strategy (股票代號, 證券商, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, bk, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                );
+                            } catch (eIns) {
+                                cloudDb.run(
+                                    "INSERT INTO gem_strategy (股票代號, 策略內容, 佈局下限, 佈局上限, 防守點, 目標下限, 目標上限, 戰情總結, 記錄時間) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [code, content, bLow, bHigh, defP, tLow, tHigh, sumText, rTime]
+                                );
                             }
                         });
                     }
