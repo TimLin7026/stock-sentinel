@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.06');
+        const appVersion = ref('v2.20261029.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -158,6 +158,15 @@ createApp({
         const stockSearchQuery = ref('');
         const onlyExpiredReports = ref(false); // 快速篩選戰報過期/待更新個股
         const expandedStockUids = ref(new Set()); // 展開卡片集合 (以 code_broker 為唯一 UID)
+
+        // ─── 雲端設定：三大主題分頁狀態 (方案 A: 雲端同步 / AI 智能戰報 / 系統與維護) ───
+        const cloudSettingsTab = ref(localStorage.getItem('sentinel_cloud_settings_tab') || 'sync');
+        const changeCloudSettingsTab = (tab) => {
+            cloudSettingsTab.value = tab;
+            try {
+                localStorage.setItem('sentinel_cloud_settings_tab', tab);
+            } catch(e) {}
+        };
 
         // ─── 資產總覽：券商篩選狀態 (對齊地端) ───
         const selectedBrokerFilter = ref('全部');
@@ -9393,6 +9402,8 @@ createApp({
             chartOrientation,
             toggleChartOrientation,
             currentTab,
+            cloudSettingsTab,
+            changeCloudSettingsTab,
             stockSubTab,
             starredSubFilter,
             stockSearchQuery,
