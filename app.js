@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261029.02');
+        const appVersion = ref('v2.20261029.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3648,9 +3648,30 @@ createApp({
                             const reportDate = formatDateClean(sInfo.recordTime) || '最新';
                             const strategyDate = formatDateClean(hmInfo.dataDate) || (formatDateClean(pInfo.date) || '最新交易日');
 
-                            // 建議買賣區間
-                            const buyTarget = sInfo.buyHigh ? String(sInfo.buyHigh) : (costPrice ? String(costPrice) : '---');
-                            const sellTarget = sInfo.targetLow ? String(sInfo.targetLow) : '---';
+                            // 建議買賣區間格式化 (精準對齊：buyLow<買<buyHigh ~ targetLow<賣<targetHigh)
+                            const bL = sInfo.buyLow !== undefined && sInfo.buyLow !== null && String(sInfo.buyLow).trim() !== '' ? String(sInfo.buyLow).trim() : '';
+                            const bH = sInfo.buyHigh !== undefined && sInfo.buyHigh !== null && String(sInfo.buyHigh).trim() !== '' ? String(sInfo.buyHigh).trim() : '';
+                            const tL = sInfo.targetLow !== undefined && sInfo.targetLow !== null && String(sInfo.targetLow).trim() !== '' ? String(sInfo.targetLow).trim() : '';
+                            const tH = sInfo.targetHigh !== undefined && sInfo.targetHigh !== null && String(sInfo.targetHigh).trim() !== '' ? String(sInfo.targetHigh).trim() : '';
+
+                            let buySuggestionText = '買---';
+                            if (bL && bH) {
+                                buySuggestionText = `${bL}<買<${bH}`;
+                            } else if (bH) {
+                                buySuggestionText = `買<${bH}`;
+                            } else if (costPrice) {
+                                buySuggestionText = `買<${costPrice}`;
+                            }
+
+                            let sellSuggestionText = '賣---';
+                            if (tL && tH) {
+                                sellSuggestionText = `${tL}<賣<${tH}`;
+                            } else if (tL) {
+                                sellSuggestionText = `${tL}<賣`;
+                            }
+
+                            const buyTarget = bH || (costPrice ? String(costPrice) : '---');
+                            const sellTarget = tL || '---';
 
                             // 最新交易/分析時間 (供排序使用)
                             const latestDate = latestTradeDateMap[uid] || latestTradeDateMap[code] || hmInfo.dataDate || pInfo.date || '2026-01-01';
@@ -3671,9 +3692,15 @@ createApp({
                                 signal: shares > 0 ? (profit >= 0 ? '🔴 多頭獲利' : '🟢 測底佈局') : '⚪ 觀察追蹤',
                                 buyPriceTarget: buyTarget,
                                 sellPriceTarget: sellTarget,
-                                buyRange: sInfo.buyLow && sInfo.buyHigh ? `${sInfo.buyLow} - ${sInfo.buyHigh}` : '---',
+                                buyLow: bL,
+                                buyHigh: bH,
+                                targetLow: tL,
+                                targetHigh: tH,
+                                buySuggestionText,
+                                sellSuggestionText,
+                                buyRange: bL && bH ? `${bL} - ${bH}` : '---',
                                 defensePrice: sInfo.defense ? String(sInfo.defense) : '---',
-                                targetRange: sInfo.targetLow && sInfo.targetHigh ? `${sInfo.targetLow} - ${sInfo.targetHigh}` : '---',
+                                targetRange: tL && tH ? `${tL} - ${tH}` : '---',
                                 indicatorTags,
                                 strategyFeatures: stratFeatures,
                                 summaryText: sInfo.summary || sInfo.content || '暫無策略總結，請於 PC 端進行全量掃描分析。',
