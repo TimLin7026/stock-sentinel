@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-10-30 16:26:48",
+  "run_time": "2026-10-30 20:37:06",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261030] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,17 +15,16 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2240,
+      "count": 2245,
       "status": "OK"
     },
     "margin": {
-      "count": 2374,
-      "elapsed": 0.0,
+      "count": 1300,
       "status": "OK"
     },
     "indicators": {
       "count": 2385,
-      "elapsed": 80.21,
+      "elapsed": 71.76,
       "status": "OK"
     }
   },
@@ -140,10 +139,6 @@
         "name": "富邦上証+R"
       },
       {
-        "code": "00636K",
-        "name": "國泰中國A50+U"
-      },
-      {
         "code": "00643K",
         "name": "群益深証中小+R"
       },
@@ -214,14 +209,18 @@
       {
         "code": "1418",
         "name": "東華"
+      },
+      {
+        "code": "1443",
+        "name": "立益物流"
       }
     ]
   },
   "target_date": "20261030",
-  "total_elapsed": 154.39,
-  "snapshot_size_kb": 462.6,
-  "next_scheduled_run": "2026/10/30 (週五) 16:30",
-  "next_scheduled_iso": "2026-10-30T16:30:00",
+  "total_elapsed": 160.77,
+  "snapshot_size_kb": 469.2,
+  "next_scheduled_run": "2026/11/02 (週一) 14:40",
+  "next_scheduled_iso": "2026-11-02T14:40:00",
   "schedule_times": [
     "14:40",
     "16:30",
