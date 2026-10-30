@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261030.02');
+        const appVersion = ref('v2.20261030.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5839,7 +5839,7 @@ createApp({
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
-                const model = getActiveGeminiModel();
+                const model = customModel || getActiveGeminiModel();
                 recordGeminiUsage(model, 1);
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
                 const res = await fetch(url, {
@@ -5906,6 +5906,154 @@ createApp({
         };
 
         // ─── ⚡ 智能階梯自動測選最佳模型 (單程線性探測，6秒超時，成功自動儲存，100% 杜絕無窮迴圈) ───
+        // ─── 🩺 4 大核心模型健康診斷狀態 ───
+        const isDiagnosingModels = ref(false);
+        const diagnosisProgressText = ref('');
+        const showDiagnosisModal = ref(false);
+        const diagnosisReportList = ref([]);
+
+        // ─── 💎 單檔個股戰報「4 選 1」彈窗狀態 ───
+        const showSingleReportModal = ref(false);
+        const targetSingleStock = ref(null);
+        const selectedSingleModel = ref('gemini-3.5-flash-lite');
+
+        const CORE_4_MODELS = [
+            { id: 'gemini-3.5-flash-lite', name: '3.5 Flash-Lite', desc: '海量主力 · 極速', limit: 1500, tag: '推薦預設' },
+            { id: 'gemini-3.5-flash', name: '3.5 Flash', desc: '穩定海量', limit: 1500, tag: '' },
+            { id: 'gemini-3.7-flash', name: '3.7 Flash', desc: '免費主力', limit: 20, tag: '' },
+            { id: 'gemini-3.8-flash', name: '3.8 Flash', desc: '頂級精讀 · 旗艦深度', limit: 20, tag: '' }
+        ];
+
+        // 單檔彈窗 4 選 1 動態選項 (響應式包含即時配額)
+        const singleReportOptions = computed(() => {
+            const _v = geminiUsageVersion.value;
+            return CORE_4_MODELS.map(m => {
+                const usage = getGeminiModelUsage(m.id);
+                const limit = getGeminiModelLimit(m.id);
+                const exceeded = isGeminiModelExceeded(m.id);
+                return {
+                    ...m,
+                    usage,
+                    limit,
+                    exceeded,
+                    displayLabel: `${m.name} (${m.desc} · 今日: ${usage}/${limit} ${exceeded ? '⚠️ 限額' : '🟢'})${m.tag ? ` [${m.tag}]` : ''}`
+                };
+            });
+        });
+
+        // 打開單檔 4 選 1 彈窗
+        const openSingleReportPicker = (stock) => {
+            if (!stock) return;
+            const key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                alert('⚠️ 請先於「雲端設定」填入您的 Google Gemini API Key！');
+                return;
+            }
+            targetSingleStock.value = stock;
+            // 預設為 3.5-Lite，若已滿則退避至 3.5
+            selectedSingleModel.value = isGeminiModelExceeded('gemini-3.5-flash-lite') ? 'gemini-3.5-flash' : 'gemini-3.5-flash-lite';
+            showSingleReportModal.value = true;
+        };
+
+        // 確認並啟動單檔生成
+        const confirmGenerateSingleReport = () => {
+            if (!targetSingleStock.value) return;
+            const stock = targetSingleStock.value;
+            const modelToUse = selectedSingleModel.value || 'gemini-3.5-flash-lite';
+            showSingleReportModal.value = false;
+            generateGeminiReportForStock(stock, modelToUse);
+        };
+
+        // 🩺 輪流檢測「4 選 1」中所有模型之健康度、連通性與延遲速度
+        const run4ModelsDiagnosis = async () => {
+            const key = (geminiApiKey.value || '').trim();
+            if (!key) {
+                alert('⚠️ 請先填入 Gemini API Key！');
+                return;
+            }
+            if (isDiagnosingModels.value) return;
+
+            isDiagnosingModels.value = true;
+            diagnosisProgressText.value = '準備檢測...';
+            diagnosisReportList.value = [];
+
+            try {
+                for (const m of CORE_4_MODELS) {
+                    diagnosisProgressText.value = `測 ${m.name}...`;
+                    const startTime = performance.now();
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+                    let status = 'error';
+                    let statusText = '連線失敗';
+                    let latency = 0;
+                    let detailMsg = '';
+
+                    try {
+                        recordGeminiUsage(m.id, 1);
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m.id)}:generateContent?key=${encodeURIComponent(key)}`;
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ role: 'user', parts: [{ text: 'Ping' }] }],
+                                generationConfig: { maxOutputTokens: 5 }
+                            }),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+                        latency = Math.round(performance.now() - startTime);
+
+                        if (res.ok) {
+                            status = 'ok';
+                            statusText = `連線正常 (${latency}ms)`;
+                        } else {
+                            const errJson = await res.json().catch(() => ({}));
+                            const errMsg = errJson.error ? errJson.error.message : `HTTP ${res.status}`;
+                            detailMsg = errMsg;
+                            if (res.status === 429) {
+                                status = 'exceeded';
+                                statusText = '今日配額已滿 (429 限額)';
+                                const matchLimit = errMsg.match(/limit:\s*(\d+)/i);
+                                const limitVal = matchLimit ? parseInt(matchLimit[1], 10) : null;
+                                markGeminiModelQuotaExceeded(m.id, limitVal);
+                            } else if (res.status === 503) {
+                                status = 'busy';
+                                statusText = '伺服器尖峰排隊中 (503)';
+                            } else {
+                                statusText = `HTTP ${res.status} 異常`;
+                            }
+                        }
+                    } catch (eErr) {
+                        clearTimeout(timeoutId);
+                        if (eErr.name === 'AbortError') {
+                            statusText = '超時 (>6秒未回應)';
+                        } else {
+                            statusText = `網路錯誤: ${eErr.message}`;
+                        }
+                    }
+
+                    diagnosisReportList.value.push({
+                        id: m.id,
+                        name: m.name,
+                        desc: m.desc,
+                        status: status,
+                        statusText: statusText,
+                        latency: latency,
+                        detailMsg: detailMsg,
+                        usage: getGeminiModelUsage(m.id),
+                        limit: getGeminiModelLimit(m.id)
+                    });
+                }
+
+                // 檢測完成，開啟診斷報告彈窗
+                showDiagnosisModal.value = true;
+            } finally {
+                isDiagnosingModels.value = false;
+                diagnosisProgressText.value = '';
+            }
+        };
+
         const isAutoProbing = ref(false);
         const autoProbeStatusText = ref('');
 
@@ -6037,7 +6185,7 @@ createApp({
             return INLINED_GEMINI_PROMPT_FORMAT_A;
         };
 
-        const generateGeminiReportForStock = async (stock) => {
+        const generateGeminiReportForStock = async (stock, customModel = null) => {
             if (!stock) return;
 
             // 🛡️ 全域互斥鎖防呆攔截：一次限執行一支股票
@@ -6637,7 +6785,7 @@ createApp({
                 // 3. 發送至 GAS Web App (採用非同步秒派工 Fire-and-Forget，不阻斷手機端)
                 const payload = {
                     apiKey: apiKey,
-                    model: getActiveGeminiModel(),
+                    model: 'gemini-3.5-flash-lite', // 🛡️ 批次派工鎖定 3.5-Lite 海量 1500 次模型，絕不耗損 3.8 珍貴限額
                     gasUrl: gasUrl,
                     stocks: payloadStocks
                 };
@@ -9946,6 +10094,17 @@ createApp({
             isFetchingModels,
             formatModelOptionLabel,
             geminiUsageVersion,
+            isDiagnosingModels,
+            diagnosisProgressText,
+            showDiagnosisModal,
+            diagnosisReportList,
+            run4ModelsDiagnosis,
+            showSingleReportModal,
+            targetSingleStock,
+            selectedSingleModel,
+            singleReportOptions,
+            openSingleReportPicker,
+            confirmGenerateSingleReport,
             fetchAvailableGeminiModels,
             geminiModelSelection,
             geminiCustomModel,
