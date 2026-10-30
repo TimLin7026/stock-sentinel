@@ -1040,25 +1040,25 @@ createApp({
          *    - 若尚未同步今日最新盤後行情快照 -> 視為新鮮。
          *    - 若已同步今日最新盤後行情快照：戰報產製時間必須 >= 當前快照就緒門檻 (14:45 / 16:35 / 20:35)，否則精準判定為過期！
          */
-        const computeReportFreshness = (rawReportTime, hasActualReport, marketTradingDay8, thresholdTime6 = '144500', isMarketDataSynced = true) => {
+        const computeReportFreshness = (rawReportTime, hasActualReport, marketTradingDay8 = '', thresholdTime6 = '', isMarketDataSynced = true) => {
             if (!hasActualReport || !rawReportTime) return false;
             const digits = String(rawReportTime).replace(/\D/g, '');
             if (!digits || digits.length < 8) return false;
-            const stratDigits14 = digits.padEnd(14, '0').slice(0, 14);
-            const stratDate8 = stratDigits14.slice(0, 8);
-            const stratTime6 = stratDigits14.slice(8, 14);
+            const reportDigits14 = digits.padEnd(14, '0').slice(0, 14);
 
-            if (stratDate8 < marketTradingDay8) {
-                return false;
-            } else if (stratDate8 > marketTradingDay8) {
-                return true;
-            } else {
-                // 同日 (stratDate8 === marketTradingDay8)
-                if (!isMarketDataSynced) {
-                    return true;
-                }
-                return stratTime6 >= thresholdTime6;
+            // 取得大腦最後產出時間基準 (如 2026-10-30 09:35:04 -> 20261030093504)
+            const brainStr = String((marketSyncMeta.value && marketSyncMeta.value.cloudGeneratedAt) || '').trim();
+            let brainDigits14 = brainStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+
+            // 若尚未取得大腦產出時間，以市場開市日 20:45:00 作為基準
+            if (!brainDigits14 || brainDigits14.length < 14) {
+                const mDay = String(marketTradingDay8 || (marketSyncMeta.value && marketSyncMeta.value.marketDate) || '').replace(/\D/g, '').slice(0, 8);
+                brainDigits14 = (mDay || '20261029') + '204500';
             }
+
+            // 戰報時戳 < 大腦最後產出時戳 -> 戰報較舊 = 過期 (false)
+            // 戰報時戳 >= 大腦最後產出時戳 -> 戰報較新 = 最新 (true)
+            return reportDigits14 >= brainDigits14;
         };
 
         // 將全市場快照行情與指標注入前端狀態
@@ -1197,6 +1197,16 @@ createApp({
                     const indCount = healthData.nodes && healthData.nodes.indicators ? healthData.nodes.indicators.count : '---';
                     alert(`📡【雲端大腦最新狀態已更新】\n\n• 大腦狀態：${healthData.status || '就緒'}\n• 審計開市日：${healthData.target_date || '最新'}\n• 大腦產出時間：${cloudTimeStr}\n• 審計合格檔數：${indCount} 檔\n\n💡 提示：本操作僅更新大腦運維狀態。若要將最新行情下載套用到手機，請點擊「立即同步」。`);
                 }
+
+                // 🚀 自動感應大腦時間：若大腦產出時間新於本機下載時間，背景靜默同步最新快照 (無感秒刷)
+                const localFetchStr = localStorage.getItem('sentinel_market_fetch_time') || '';
+                const localFetchDigits = localFetchStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+                const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+                if (cloudDigits && localFetchDigits && cloudDigits > localFetchDigits && !isSyncingMarketSnapshot.value) {
+                    console.log("⚡ 檢測到雲端大腦產出時間較新，自動靜默同步最新全市場快照...");
+                    syncMarketSnapshot(true);
+                }
+
                 return healthData;
             } catch (err) {
                 console.error("刷新大腦狀態異常:", err);
@@ -1214,7 +1224,7 @@ createApp({
         };
 
         // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取)
-        const syncMarketSnapshot = async () => {
+        const syncMarketSnapshot = async (silent = false) => {
             const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
             const fallbackBaseUrl = '.';
 
