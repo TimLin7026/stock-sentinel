@@ -747,15 +747,18 @@ def calculate_all_stock_indicators(conn, lookback_days=160):
     print("⚡ [運算] 正在啟動全市場 6 大青紅燈指標與策略特徵矩陣全量滾算 (100% 對齊電腦端)...")
     start_time = time.time()
     
+    cur = conn.cursor()
+    cur.execute(f"SELECT DISTINCT trade_date FROM daily_kline ORDER BY trade_date DESC LIMIT {lookback_days}")
+    dates = [r[0] for r in cur.fetchall()]
+    min_date = dates[-1] if dates else '19700101'
+    
     query = f"""
         SELECT trade_date, stock_code, stock_name, mkt,
                open, high, low, close, volume, amount,
                foreign_buy, sitc_buy, dealers_buy, margin_balance
         FROM daily_kline
         WHERE (length(stock_code) <= 5 OR stock_code LIKE '00%')
-          AND trade_date IN (
-            SELECT DISTINCT trade_date FROM daily_kline ORDER BY trade_date DESC LIMIT {lookback_days}
-        )
+          AND trade_date >= '{min_date}'
         ORDER BY stock_code, trade_date ASC
     """
     df_all = pd.read_sql_query(query, conn)
@@ -827,13 +830,53 @@ def calculate_all_stock_indicators(conn, lookback_days=160):
         m_qty_20 = m_inc_pos.rolling(20, min_periods=1).sum()
         df_raw["Margin_Cost"] = np.where(m_qty_20 > 0, m_val_20 / m_qty_20, df_raw["BB_Mid"])
 
-        # 2. 滾算 6 大熱力青紅燈 (1: 多/紅, -1: 空/綠) (完全對齊 Stock_Sentinel.py:2566)
-        df_raw["P10_MTM_Cross"] = (df_raw["MTM"] > df_raw["MTM_MA"]).astype(int).replace(0, -1)
-        df_raw["P1_MACD_OSC"] = (df_raw["OSC"] > df_raw["OSC"].shift(1)).astype(int).replace(0, -1)
-        df_raw["P5_K_Trend"] = (df_raw["K"] > df_raw["K"].shift(1)).astype(int).replace(0, -1)
-        df_raw["P3_DIF_Trend"] = (df_raw["DIF"] > df_raw["DIF"].shift(1)).astype(int).replace(0, -1)
-        df_raw["P4_KD_Cross"] = (df_raw["K"] > df_raw["D"]).astype(int).replace(0, -1)
-        df_raw["P2_MACD_Cross"] = (df_raw["DIF"] > df_raw["MACD_S"]).astype(int).replace(0, -1)
+        # 2. 滾算 6 大熱力青紅燈 (1: 多/紅, -1: 空/綠) (100% 對齊前端走勢圖彈窗與全站精度標準)
+        mtm_r = df_raw["MTM"].round(2)
+        mtm_ma_r = df_raw["MTM_MA"].round(2)
+        osc_r = df_raw["OSC"].round(2)
+        k_r = df_raw["K"].round(1)
+        d_r = df_raw["D"].round(1)
+        dif_r = df_raw["DIF"].round(2)
+        macd_s_r = df_raw["MACD_S"].round(2)
+
+        p_mtm_list = []
+        p_osc_list = []
+        p_k_list = []
+        p_dif_list = []
+        p_kd_list = []
+        p_macd_list = []
+
+        curr_osc_pulse = -1
+        for i in range(n):
+            if i == 0:
+                p_mtm_list.append(1 if mtm_r.iloc[i] > mtm_ma_r.iloc[i] else -1)
+                curr_osc_pulse = 1 if osc_r.iloc[i] >= 0 else -1
+                p_osc_list.append(curr_osc_pulse)
+                p_k_list.append(1)
+                p_dif_list.append(1)
+                p_kd_list.append(1 if k_r.iloc[i] > d_r.iloc[i] else -1)
+                p_macd_list.append(1 if dif_r.iloc[i] > macd_s_r.iloc[i] else -1)
+            else:
+                p_mtm_list.append(1 if mtm_r.iloc[i] > mtm_ma_r.iloc[i] else -1)
+                # OSC 縮：相等時延續維持前一日狀態
+                if osc_r.iloc[i] > osc_r.iloc[i - 1]:
+                    curr_osc_pulse = 1
+                elif osc_r.iloc[i] < osc_r.iloc[i - 1]:
+                    curr_osc_pulse = -1
+                p_osc_list.append(curr_osc_pulse)
+                # K 趨：今日 > 昨日 為 1，否則 -1 (完全對齊走勢圖彈窗 app.js:2356)
+                p_k_list.append(1 if k_r.iloc[i] > k_r.iloc[i - 1] else -1)
+                # DIF 趨：今日 > 昨日 為 1，否則 -1 (完全對齊走勢圖彈窗 app.js:2357)
+                p_dif_list.append(1 if dif_r.iloc[i] > dif_r.iloc[i - 1] else -1)
+                p_kd_list.append(1 if k_r.iloc[i] > d_r.iloc[i] else -1)
+                p_macd_list.append(1 if dif_r.iloc[i] > macd_s_r.iloc[i] else -1)
+
+        df_raw["P10_MTM_Cross"] = p_mtm_list
+        df_raw["P1_MACD_OSC"] = p_osc_list
+        df_raw["P5_K_Trend"] = p_k_list
+        df_raw["P3_DIF_Trend"] = p_dif_list
+        df_raw["P4_KD_Cross"] = p_kd_list
+        df_raw["P2_MACD_Cross"] = p_macd_list
 
         # 提取最新日與前一日紀錄
         latest_row = df_raw.iloc[-1]

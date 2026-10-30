@@ -1441,7 +1441,7 @@
                                 <select v-model="geminiModelSelection" 
                                         :class="theme === 'dark' ? 'bg-slate-950 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'"
                                         class="w-full border rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500">
-                                    <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">{{ m.label }}</option>
+                                    <option v-for="m in availableGeminiModels" :key="m.id" :value="m.id">{{ formatModelOptionLabel(m) }}</option>
                                     <option value="custom">✏️ 自訂模型 (Custom)...</option>
                                 </select>
                                 <div v-if="isModelOutOfDate" class="mt-1 text-[10px] text-amber-500 font-medium flex items-center justify-between">
@@ -3026,6 +3026,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261030.01"></script>
+    <script src="app.js?v=2.20261030.02"></script>
 </body>
 </html>

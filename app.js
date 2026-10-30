@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261030.01');
+        const appVersion = ref('v2.20261030.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5527,6 +5527,113 @@ createApp({
         const availableGeminiModels = ref((Array.isArray(cachedModels) && cachedModels.length > 0) ? cachedModels : defaultModels);
         const isFetchingModels = ref(false);
 
+        // ─── 💎 Google Gemini AI 模型每日配額智慧估算系統 (今日 已用/總量 估算) ───
+        const geminiUsageVersion = ref(1);
+        const GEMINI_DEFAULT_QUOTAS = {
+            'gemini-3.8-flash': 20,
+            'gemini-3.7-flash': 20,
+            'gemini-3.6-flash': 20,
+            'gemini-3.5-flash-lite': 1500,
+            'gemini-3.5-flash': 1500,
+            'gemini-flash-latest': 1500
+        };
+
+        const getGeminiUsageStorageKey = () => {
+            const d = new Date();
+            const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+            return `sentinel_gemini_usage_${ymd}`;
+        };
+
+        const getGeminiUsageMap = () => {
+            const _v = geminiUsageVersion.value; // 建立 Vue 響應式相依性
+            try {
+                const raw = localStorage.getItem(getGeminiUsageStorageKey());
+                return raw ? JSON.parse(raw) : {};
+            } catch (e) {
+                return {};
+            }
+        };
+
+        const getGeminiModelLimit = (modelId) => {
+            try {
+                const customLimits = JSON.parse(localStorage.getItem('sentinel_gemini_custom_limits') || '{}');
+                if (customLimits[modelId]) return customLimits[modelId];
+            } catch (e) {}
+            return GEMINI_DEFAULT_QUOTAS[modelId] || 20;
+        };
+
+        const getGeminiModelUsage = (modelId) => {
+            const map = getGeminiUsageMap();
+            return map[modelId] || 0;
+        };
+
+        const recordGeminiUsage = (modelId, count = 1) => {
+            if (!modelId) return;
+            try {
+                const key = getGeminiUsageStorageKey();
+                const map = getGeminiUsageMap();
+                map[modelId] = (map[modelId] || 0) + count;
+                localStorage.setItem(key, JSON.stringify(map));
+                geminiUsageVersion.value++;
+            } catch (e) {}
+        };
+
+        const markGeminiModelQuotaExceeded = (modelId, officialLimit = null, retrySeconds = null) => {
+            if (!modelId) return;
+            try {
+                const limit = officialLimit || getGeminiModelLimit(modelId);
+                if (officialLimit) {
+                    const customLimits = JSON.parse(localStorage.getItem('sentinel_gemini_custom_limits') || '{}');
+                    customLimits[modelId] = officialLimit;
+                    localStorage.setItem('sentinel_gemini_custom_limits', JSON.stringify(customLimits));
+                }
+                const key = getGeminiUsageStorageKey();
+                const map = getGeminiUsageMap();
+                map[modelId] = Math.max(map[modelId] || 0, limit);
+                localStorage.setItem(key, JSON.stringify(map));
+
+                if (retrySeconds) {
+                    const cooldowns = JSON.parse(localStorage.getItem('sentinel_gemini_cooldowns') || '{}');
+                    cooldowns[modelId] = Date.now() + (retrySeconds * 1000);
+                    localStorage.setItem('sentinel_gemini_cooldowns', JSON.stringify(cooldowns));
+                }
+                geminiUsageVersion.value++;
+            } catch (e) {}
+        };
+
+        const isGeminiModelExceeded = (modelId) => {
+            const usage = getGeminiModelUsage(modelId);
+            const limit = getGeminiModelLimit(modelId);
+            if (usage >= limit) return true;
+            try {
+                const cooldowns = JSON.parse(localStorage.getItem('sentinel_gemini_cooldowns') || '{}');
+                if (cooldowns[modelId] && Date.now() < cooldowns[modelId]) return true;
+            } catch (e) {}
+            return false;
+        };
+
+        const formatModelOptionLabel = (m) => {
+            const _v = geminiUsageVersion.value;
+            if (!m || !m.id) return '';
+            const id = m.id;
+            const usage = getGeminiModelUsage(id);
+            const limit = getGeminiModelLimit(id);
+            const exceeded = isGeminiModelExceeded(id);
+
+            let baseName = m.label || id;
+            if (id === 'gemini-3.8-flash') baseName = '3.8 Flash (全方位協助 · 免費主力推薦 🚀)';
+            else if (id === 'gemini-3.7-flash') baseName = '3.7 Flash (免費主力 💎)';
+            else if (id === 'gemini-3.6-flash') baseName = '3.6 Flash (免費快速 ⚡)';
+            else if (id === 'gemini-3.5-flash-lite') baseName = '3.5 Flash-Lite (回覆最快 🍃)';
+            else if (id === 'gemini-3.5-flash') baseName = '3.5 Flash (穩定備用 🛡️)';
+            else if (id === 'gemini-flash-latest') baseName = 'Gemini Flash (自動最新 🔄)';
+
+            if (exceeded) {
+                return `${baseName} [今日已滿 ${usage}/${limit} ⚠️]`;
+            }
+            return `${baseName} [今日: ${usage}/${limit} 🟢]`;
+        };
+
         const isKnownModel = availableGeminiModels.value.some(m => m.id === storedModel);
         const geminiModelSelection = ref(isKnownModel ? storedModel : 'custom');
         const geminiCustomModel = ref(isKnownModel ? '' : storedModel);
@@ -5733,6 +5840,7 @@ createApp({
             const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
                 const model = getActiveGeminiModel();
+                recordGeminiUsage(model, 1);
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
                 const res = await fetch(url, {
                     method: 'POST',
@@ -5775,6 +5883,13 @@ createApp({
                             `👉 請點擊「⚡ 自動測選」讓系統自動為您尋找最佳可用模型！`
                         );
                     } else {
+                        if (res.status === 429) {
+                            const matchLimit = msg.match(/limit:\s*(\d+)/i);
+                            const limitVal = matchLimit ? parseInt(matchLimit[1], 10) : null;
+                            const matchRetry = msg.match(/retry\s+in\s+(\d+(?:\.\d+)?)/i);
+                            const retrySec = matchRetry ? parseFloat(matchRetry[1]) : 3600;
+                            markGeminiModelQuotaExceeded(model, limitVal, retrySec);
+                        }
                         alert(`❌ 連線測試失敗 (HTTP ${res.status})：\n${msg}`);
                     }
                 }
@@ -5822,6 +5937,11 @@ createApp({
             try {
                 // 🛡️ 嚴格單程線性走訪：每個模型只測 1 次，絕不回頭重試，保證 0 迴圈
                 for (const candidate of probeCandidates) {
+                    if (isGeminiModelExceeded(candidate.id)) {
+                        failureLogs.push(`• ${candidate.name}: 今日配額已滿 (${getGeminiModelUsage(candidate.id)}/${getGeminiModelLimit(candidate.id)})，智慧略過 ⚡`);
+                        continue;
+                    }
+                    recordGeminiUsage(candidate.id, 1);
                     autoProbeStatusText.value = `測 ${candidate.name}...`;
                     const startTime = performance.now();
                     const controller = new AbortController();
@@ -5850,6 +5970,11 @@ createApp({
                         } else {
                             const errJson = await res.json().catch(() => ({}));
                             const errMsg = errJson.error ? errJson.error.message : `HTTP ${res.status}`;
+                            if (res.status === 429) {
+                                const matchLimit = errMsg.match(/limit:\s*(\d+)/i);
+                                const limitVal = matchLimit ? parseInt(matchLimit[1], 10) : null;
+                                markGeminiModelQuotaExceeded(candidate.id, limitVal);
+                            }
                             failureLogs.push(`• ${candidate.name}: ${errMsg}`);
                         }
                     } catch (eProbe) {
@@ -5988,6 +6113,7 @@ createApp({
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 90000);
 
+                recordGeminiUsage(model, 1);
                 const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -6011,6 +6137,13 @@ createApp({
                         return;
                     }
 
+                    if (res.status === 429) {
+                        const matchLimit = errMsg.match(/limit:\s*(\d+)/i);
+                        const limitVal = matchLimit ? parseInt(matchLimit[1], 10) : null;
+                        const matchRetry = errMsg.match(/retry\s+in\s+(\d+(?:\.\d+)?)/i);
+                        const retrySec = matchRetry ? parseFloat(matchRetry[1]) : 3600;
+                        markGeminiModelQuotaExceeded(model, limitVal, retrySec);
+                    }
                     if (res.status === 429 && errMsg.includes('limit: 0')) {
                         geminiModelSelection.value = 'gemini-3.8-flash';
                         localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
@@ -9811,6 +9944,8 @@ createApp({
             copyGasScriptAndOpen,
             availableGeminiModels,
             isFetchingModels,
+            formatModelOptionLabel,
+            geminiUsageVersion,
             fetchAvailableGeminiModels,
             geminiModelSelection,
             geminiCustomModel,
