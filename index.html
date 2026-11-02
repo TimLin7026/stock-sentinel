@@ -2681,7 +2681,7 @@
              style="overscroll-behavior: contain;">
             
             <div :class="[
-                chartOrientation === 'portrait' && chartLayoutMode === 'single' ? 'max-w-md w-full max-w-full' : (chartLayoutMode === 'double' ? 'w-full max-w-[98vw]' : 'max-w-6xl w-full max-w-full'),
+                chartOrientation === 'portrait' && chartLayoutMode === 'single' ? 'max-w-md w-full' : 'max-w-5xl w-full',
                 theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'
             ]" class="flex flex-col h-full shadow-2xl border-x transition-all duration-200 relative overflow-hidden w-full max-w-full">
                 
@@ -3159,6 +3159,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.05"></script>
+    <script src="app.js?v=2.20261102.06"></script>
 </body>
 </html>
