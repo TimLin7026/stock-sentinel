@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.02');
+        const appVersion = ref('v2.20261102.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2752,23 +2752,30 @@ createApp({
 
         // 📱/🖥️ 圖表直式與橫式版面切換 (預設直式 portrait)
         const chartOrientation = ref(localStorage.getItem('sentinel_chart_orientation') || 'portrait');
+        const chartLayoutMode = ref(localStorage.getItem('sentinel_chart_layout_mode') || 'single');
 
-        const resizeAllStockCharts = () => {
-            const klineTargetHeight = isKlinePinned.value ? 184 : 336;
-            const elKline = document.getElementById('chart-kline');
-            if (elKline) {
-                elKline.style.height = klineTargetHeight + 'px';
-            }
-            Object.keys(chartInstances).forEach(k => {
-                const chart = chartInstances[k];
+        const toggleChartLayoutMode = () => {
+            chartLayoutMode.value = chartLayoutMode.value === 'single' ? 'double' : 'single';
+            localStorage.setItem('sentinel_chart_layout_mode', chartLayoutMode.value);
+            Vue.nextTick(() => {
+                resizeAllStockCharts();
+                setTimeout(() => { resizeAllStockCharts(); }, 60);
+                setTimeout(() => { resizeAllStockCharts(); }, 200);
+            });
+        };
+
+                const resizeAllStockCharts = () => {
+            if (!showStockChartModal.value) return;
+            const isDouble = chartLayoutMode.value === 'double';
+            const klineTargetHeight = isDouble ? 135 : (isKlinePinned.value ? 184 : 336);
+            const subTargetHeight = isDouble ? 135 : 144;
+            Object.entries(chartInstances).forEach(([k, chart]) => {
                 if (chart && typeof chart.resize === 'function') {
-                    try {
-                        if (k === 'kline') {
-                            chart.resize({ height: klineTargetHeight });
-                        } else {
-                            chart.resize();
-                        }
-                    } catch(e) {}
+                    if (k === 'kline') {
+                        chart.resize({ height: klineTargetHeight });
+                    } else {
+                        chart.resize({ height: subTargetHeight });
+                    }
                 }
             });
         };
@@ -10193,6 +10200,8 @@ createApp({
             toggleTheme,
             chartOrientation,
             toggleChartOrientation,
+            chartLayoutMode,
+            toggleChartLayoutMode,
             currentTab,
             cloudSettingsTab,
             changeCloudSettingsTab,

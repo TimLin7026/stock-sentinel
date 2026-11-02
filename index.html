@@ -2905,8 +2905,11 @@
                         <div id="chart-kline" class="w-full" :style="{ height: isKlinePinned ? '11.5rem' : '21rem' }"></div>
                     </div>
 
-                    <!-- 圖 2 (原 3)：MACD / OSC (DIF 亮黃, MACD_S 亮藍) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                    <!-- 圖 2 (原 3)：MACD / OSC (雙欄時 order-3) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-3 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
@@ -2917,11 +2920,14 @@
                                 <span :class="Number(crosshairData.osc) >= 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'">OSC:{{ crosshairData.osc }}{{ crosshairData.arrows?.osc }}</span>
                             </span>
                         </div>
-                        <div id="chart-macd" class="w-full h-36"></div>
+                        <div id="chart-macd" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
                     </div>
 
-                    <!-- 圖 3 (原 4)：KD 指標 (7, 3, 3) (7K 亮黃, 7D 亮藍) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                    <!-- 圖 3 (原 4)：KD 指標 (雙欄時 order-5) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-5 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
@@ -2930,11 +2936,14 @@
                                 <span class="text-sky-400 font-bold">7D:{{ crosshairData.kdD }}{{ crosshairData.arrows?.kdD }}</span>
                             </span>
                         </div>
-                        <div id="chart-kd" class="w-full h-36"></div>
+                        <div id="chart-kd" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
                     </div>
 
-                    <!-- 圖 4 (原 2)：成交量與融資餘額 (融資線 亮黃, 量 亮藍) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                    <!-- 圖 4 (原 2)：成交量與融資餘額 (雙欄時 order-2) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-2 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
@@ -2943,11 +2952,14 @@
                                 <span class="text-sky-400 font-bold">量:{{ formatNumber(crosshairData.vol) }}{{ crosshairData.arrows?.vol }}</span>
                             </span>
                         </div>
-                        <div id="chart-vol" class="w-full h-36"></div>
+                        <div id="chart-vol" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
                     </div>
 
-                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (代表字專色 + 數值紅/綠/灰) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative">
+                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (雙欄時 order-4) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-4 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼</span>
                             <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
@@ -2967,11 +2979,14 @@
                                 </span>
                             </span>
                         </div>
-                        <div id="chart-chip" class="w-full h-36"></div>
+                        <div id="chart-chip" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
                     </div>
 
-                    <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (支援 Tab 切換，預設青紅燈) -->
-                    <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2.5 rounded-2xl border relative space-y-1.5">
+                    <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (雙欄時 order-6) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-6 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative space-y-1.5">
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 (比照圖 1) -->
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
                             <span class="flex items-center whitespace-nowrap">
@@ -3026,7 +3041,7 @@
                                 <span :class="parseFloat(crosshairData.clv) >= 0.15 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) <= -0.15 ? 'text-emerald-400 font-bold' : 'text-slate-400')">{{ crosshairData.clvStatus }}</span>
                             </template>
                         </div>
-                        <div id="chart-mtm" class="w-full h-36"></div>
+                        <div id="chart-mtm" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
                     </div>
                 </template>
             </div>
@@ -3122,6 +3137,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.02"></script>
+    <script src="app.js?v=2.20261102.03"></script>
 </body>
 </html>
