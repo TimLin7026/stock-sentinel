@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.08');
+        const appVersion = ref('v2.20261102.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2757,12 +2757,16 @@ createApp({
 
         // 📱/🖥️ 圖表直式與橫式版面切換 (預設直式 portrait)
         const chartOrientation = ref(localStorage.getItem('sentinel_chart_orientation') || 'portrait');
-        const chartLayoutMode = ref(chartOrientation.value === 'portrait' ? 'single' : (localStorage.getItem('sentinel_chart_layout_mode') || 'single'));
+        // 🌟 獨立記憶橫式下的單/雙欄偏好 (預設為雙欄 double)
+        const landscapeChartLayoutMode = ref(localStorage.getItem('sentinel_landscape_layout_mode') || 'double');
+        // 當前實際生效的排版 (若為直式則強制單欄，若為橫式則精確採用橫式偏好)
+        const chartLayoutMode = ref(chartOrientation.value === 'portrait' ? 'single' : landscapeChartLayoutMode.value);
 
         const toggleChartLayoutMode = () => {
             if (chartOrientation.value === 'portrait') return; // 🌟 直式模式僅支援單欄，不支援雙欄
-            chartLayoutMode.value = chartLayoutMode.value === 'single' ? 'double' : 'single';
-            localStorage.setItem('sentinel_chart_layout_mode', chartLayoutMode.value);
+            landscapeChartLayoutMode.value = landscapeChartLayoutMode.value === 'single' ? 'double' : 'single';
+            localStorage.setItem('sentinel_landscape_layout_mode', landscapeChartLayoutMode.value);
+            chartLayoutMode.value = landscapeChartLayoutMode.value;
             const elKline = document.getElementById('chart-kline');
             if (elKline) {
                 if (chartLayoutMode.value === 'double') {
@@ -2812,10 +2816,11 @@ createApp({
             chartOrientation.value = chartOrientation.value === 'portrait' ? 'landscape' : 'portrait';
             // 直 預設顯示 20 日圖，橫 預設顯示 60 日圖
             chartDaysCount.value = (chartOrientation.value === 'landscape') ? 60 : 20;
-            // 🌟 切換為直式時強制重置為單欄，不支援雙欄
+            // 🌟 直式強制單欄；切回橫式時完美還原使用者的橫式偏好 (如雙欄)！
             if (chartOrientation.value === 'portrait') {
                 chartLayoutMode.value = 'single';
-                localStorage.setItem('sentinel_chart_layout_mode', 'single');
+            } else {
+                chartLayoutMode.value = landscapeChartLayoutMode.value;
             }
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
@@ -10234,6 +10239,7 @@ createApp({
             chartOrientation,
             toggleChartOrientation,
             chartLayoutMode,
+            landscapeChartLayoutMode,
             toggleChartLayoutMode,
             currentTab,
             cloudSettingsTab,
