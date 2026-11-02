@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.04');
+        const appVersion = ref('v2.20261102.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1595,6 +1595,7 @@ createApp({
         // 📌 圖 1 (主 K 線) LINE 風格置頂開關 (開啟時高度減半吸頂，方便對照圖 2~6，預設未釘選)
         const isKlinePinned = ref(false);
         const togglePinKline = () => {
+            if (chartLayoutMode.value === 'double') return; // 🌟 雙欄滿版自適應模式下不啟用釘選
             isKlinePinned.value = !isKlinePinned.value;
             localStorage.setItem('sentinel_pin_kline', isKlinePinned.value);
             
@@ -2204,8 +2205,12 @@ createApp({
             // 1. 主圖：K線 + 均線 + 布林通道 + 籌碼成本線 (依 klineLayers 動態組裝)
             const elKline = document.getElementById('chart-kline');
             if (elKline) {
-                const curKlineHeight = isKlinePinned.value ? 184 : 336;
-                elKline.style.height = curKlineHeight + 'px';
+                if (chartLayoutMode.value === 'double') {
+                    elKline.style.height = '';
+                } else {
+                    const curKlineHeight = isKlinePinned.value ? 184 : 336;
+                    elKline.style.height = curKlineHeight + 'px';
+                }
                 const chart = echarts.init(elKline);
                 
                 const klineSeries = [
@@ -2757,6 +2762,14 @@ createApp({
         const toggleChartLayoutMode = () => {
             chartLayoutMode.value = chartLayoutMode.value === 'single' ? 'double' : 'single';
             localStorage.setItem('sentinel_chart_layout_mode', chartLayoutMode.value);
+            const elKline = document.getElementById('chart-kline');
+            if (elKline) {
+                if (chartLayoutMode.value === 'double') {
+                    elKline.style.height = '';
+                } else {
+                    elKline.style.height = (isKlinePinned.value ? 184 : 336) + 'px';
+                }
+            }
             Vue.nextTick(() => {
                 resizeAllStockCharts();
                 setTimeout(() => { resizeAllStockCharts(); }, 60);
@@ -2767,6 +2780,15 @@ createApp({
                 const resizeAllStockCharts = () => {
             if (!showStockChartModal.value) return;
             const isDouble = chartLayoutMode.value === 'double';
+            const elKline = document.getElementById('chart-kline');
+            if (elKline) {
+                if (isDouble) {
+                    elKline.style.height = '';
+                } else {
+                    const klineTargetHeight = isKlinePinned.value ? 184 : 336;
+                    elKline.style.height = klineTargetHeight + 'px';
+                }
+            }
             Object.entries(chartInstances).forEach(([k, chart]) => {
                 if (chart && typeof chart.resize === 'function') {
                     if (isDouble) {

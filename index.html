@@ -2842,7 +2842,7 @@
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
                             <span class="flex items-center whitespace-nowrap">
                                 <!-- 📌 LINE 原版風格圖釘按鈕 (風格一：LINE 綠色圓底) -->
-                                <button @click="togglePinKline" 
+                                <button v-if="chartLayoutMode !== 'double'" @click="togglePinKline" 
                                         :class="isKlinePinned ? 'bg-[#22c55e] text-white shadow-md shadow-emerald-500/40 border-none' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-white'"
                                         class="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 mr-1.5 active:scale-90"
                                         :title="isKlinePinned ? '點擊解除置頂 (恢復全尺寸整體滾動)' : '點擊釘選置頂 (高度減半，對照圖2~6)'">
@@ -2924,7 +2924,7 @@
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}{{ crosshairData.arrows?.foreignCost }}</span>
                         </div>
 
-                        <div id="chart-kline" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : ''" :style="{ height: chartLayoutMode === 'double' ? '' : (isKlinePinned ? '11.5rem' : '21rem') }"></div>
+                        <div id="chart-kline" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0 h-full' : ''" :style="{ height: chartLayoutMode === 'double' ? '' : (isKlinePinned ? '11.5rem' : '21rem') }"></div>
                     </div>
 
                     <!-- 圖 2 (原 3)：MACD / OSC (雙欄時 order-3 滿版自適應) -->
@@ -3159,6 +3159,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.04"></script>
+    <script src="app.js?v=2.20261102.05"></script>
 </body>
 </html>
