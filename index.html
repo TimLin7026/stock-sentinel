@@ -3002,6 +3002,8 @@
                                 <span :class="crosshairData.heatLights?.kd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.kd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">KD{{ crosshairData.heatLights?.kd === 1 ? '🔴' : (crosshairData.heatLights?.kd === -1 ? '🟢' : '⚪') }}</span>
                                 <span>·</span>
                                 <span :class="crosshairData.heatLights?.macd === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.macd === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MACD{{ crosshairData.heatLights?.macd === 1 ? '🔴' : (crosshairData.heatLights?.macd === -1 ? '🟢' : '⚪') }}</span>
+                                <span>·</span>
+                                <span :class="crosshairData.heatLights?.rsi12 === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.rsi12 === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">RSI12{{ crosshairData.heatLights?.rsi12 === 1 ? '🔴' : (crosshairData.heatLights?.rsi12 === -1 ? '🟢' : '⚪') }}</span>
                             </template>
                             <template v-else-if="subOscTab === 'MTM'">
                                 <span class="text-amber-400 font-bold">MTM3:{{ crosshairData.mtm }}{{ crosshairData.arrows?.mtm }}</span>
@@ -3120,6 +3122,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.01"></script>
+    <script src="app.js?v=2.20261102.02"></script>
 </body>
 </html>

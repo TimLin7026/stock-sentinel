@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.01');
+        const appVersion = ref('v2.20261102.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1678,7 +1678,7 @@ createApp({
             rsi12: '--',
             wr3: '--',
             wr50: '--',
-            heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0 },
+            heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0, rsi12: 0 },
             arrows: {}
         });
 
@@ -1691,6 +1691,7 @@ createApp({
             const rawRows = stockHistoryCache[rawCode] || stockHistoryCache[rawCode.padStart(4, '0')] || [];
             const rows = rawRows.slice(-chartDaysCount.value);
             if (rows.length > 0) {
+                calcHistoricalPulses(rows);
                 updateCrosshairValuesFromRow(rows[rows.length - 1], rows.length > 1 ? rows[rows.length - 2] : null);
             }
         };
@@ -1760,7 +1761,7 @@ createApp({
             return '=';
         };
 
-        // 🌟 計算全量歷史時序之動能燈號 (落實 OSC縮「=」時繼承前一日燈號準則)
+        // 🌟 計算全量歷史時序之動能燈號 (落實 OSC縮「=」時繼承前一日燈號準則，並計算 RSI12 搶反彈與預估賣三態燈號)
         const calcHistoricalPulses = (arr) => {
             if (!arr || !Array.isArray(arr) || arr.length === 0) return;
             let prevOscPulse = -1;
@@ -1780,19 +1781,70 @@ createApp({
                     prevOscPulse = Number(r[13]) >= 0 ? 1 : -1;
                 }
                 r._oscPulse = prevOscPulse;
+
+                // 🎯 計算 RSI12 搶反彈與預估賣三態狀態 (1: 搶反彈紅, -1: 反彈賣綠, 0: 常態灰)
+                // 若為最後一日 (最新開市日)，優先對齊個股快照中已精算之 lights.RSI12
+                if (i === arr.length - 1 && activeChartStock.value && activeChartStock.value.lights && activeChartStock.value.lights.RSI12 !== undefined) {
+                    r._rsi12Pulse = Number(activeChartStock.value.lights.RSI12);
+                } else {
+                    const currRsi = Number(r[24]);
+                    const currP = Number(r[4]);
+                    if (isNaN(currRsi)) {
+                        r._rsi12Pulse = 0;
+                    } else if (currRsi <= 30.0) {
+                        r._rsi12Pulse = 1; // 觸發搶反彈低點
+                    } else {
+                        // 檢查過去 15 天最低 RSI12 與反彈賣點
+                        const windowSlice = arr.slice(Math.max(0, i - 14), i + 1);
+                        let minRsi = 100;
+                        let minRsiIdxInArr = -1;
+                        for (let w = 0; w < windowSlice.length; w++) {
+                            const wr = Number(windowSlice[w][24]);
+                            if (!isNaN(wr) && wr < minRsi) {
+                                minRsi = wr;
+                                minRsiIdxInArr = Math.max(0, i - 14) + w;
+                            }
+                        }
+                        const hasReboundEvent = (minRsi < 30.0);
+                        const daysSinceMin = i - minRsiIdxInArr;
+                        const isOutdated = (!hasReboundEvent || daysSinceMin > 10);
+
+                        // 橫盤冷卻
+                        let isSideways = false;
+                        if (i >= 5) {
+                            const r5 = arr.slice(i - 4, i + 1);
+                            let maxH5 = 0, minL5 = 999999;
+                            r5.forEach(x => {
+                                const h5 = Number(x[2]), l5 = Number(x[3]);
+                                if (h5 > maxH5) maxH5 = h5;
+                                if (l5 < minL5) minL5 = l5;
+                            });
+                            if (minL5 > 0 && ((maxH5 - minL5) / minL5) < 0.03) {
+                                isSideways = true;
+                            }
+                        }
+
+                        if (!isOutdated && !isSideways && (currRsi > minRsi + 10)) {
+                            r._rsi12Pulse = -1; // 觸發已反彈預估賣點
+                        } else {
+                            r._rsi12Pulse = 0; // 常態
+                        }
+                    }
+                }
             }
         };
 
         // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA 與各指標漲跌直箭頭)
         const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
-            // 計算 6 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平)
+            // 計算 7 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平/常態)
             const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
             const oscVal = r._oscPulse !== undefined ? r._oscPulse : (prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : (Number(r[13]) < Number(prevR[13]) ? -1 : (prevR._oscPulse !== undefined ? prevR._oscPulse : -1))) : (Number(r[13]) >= 0 ? 1 : -1));
             const kVal = prevR ? (Number(r[14]) > Number(prevR[14]) ? 1 : -1) : 1;
             const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
             const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
             const macdVal = (Number(r[11]) > Number(r[12])) ? 1 : -1;
+            const rsi12Val = r._rsi12Pulse !== undefined ? r._rsi12Pulse : (Number(r[24]) <= 30 ? 1 : 0);
 
             // 計算三維籌碼：Pivot、VWAP、CLV
             const h = Number(r[2]), l = Number(r[3]), c = Number(r[4]);
@@ -1905,7 +1957,8 @@ createApp({
                     k: kVal,
                     dif: difVal,
                     kd: kdVal,
-                    macd: macdVal
+                    macd: macdVal,
+                    rsi12: rsi12Val
                 },
                 arrows: arrows
             };
@@ -2407,9 +2460,9 @@ createApp({
             let yAxisConfig = { ...commonYAxis };
 
             if (subOscTab.value === '青紅燈') {
-                // 🔥 熱力青紅燈 (6 大信號：MTM金, OSC縮, K趨, DIF趨, KD金, MACD金)
-                // Y 軸由下至上排列: MACD金, KD金, DIF趨, K趨, OSC縮, MTM金 (與電腦端 Stock_Sentinel 100% 對齊)
-                const yLabels = ['MACD金', 'KD金', 'DIF趨', 'K趨', 'OSC縮', 'MTM金'];
+                // 🔥 熱力青紅燈 (7 大信號：MTM金, OSC縮, K趨, DIF趨, KD金, MACD金, RSI12)
+                // Y 軸由下至上排列: RSI12, MACD金, KD金, DIF趨, K趨, OSC縮, MTM金 (畫面上由上至下依序為 MTM金 ~ RSI12，100% 對齊卡片順序)
+                const yLabels = ['RSI12', 'MACD金', 'KD金', 'DIF趨', 'K趨', 'OSC縮', 'MTM金'];
                 calcHistoricalPulses(rows);
                 const heatData = [];
                 for (let i = 0; i < rows.length; i++) {
@@ -2422,10 +2475,11 @@ createApp({
                     const difVal = prevR ? (Number(r[11]) > Number(prevR[11]) ? 1 : -1) : 1;
                     const kdVal = (Number(r[14]) > Number(r[15])) ? 1 : -1;
                     const macdVal = (Number(r[11]) > Number(r[12])) ? 1 : -1;
+                    const rsi12Val = r._rsi12Pulse !== undefined ? r._rsi12Pulse : (Number(r[24]) <= 30 ? 1 : 0);
 
-                    // index 0: MACD金, 1: KD金, 2: DIF趨, 3: K趨, 4: OSC縮, 5: MTM金
-                    const vals = [macdVal, kdVal, difVal, kVal, oscVal, mtmVal];
-                    for (let yIdx = 0; yIdx < 6; yIdx++) {
+                    // index 0: RSI12, 1: MACD金, 2: KD金, 3: DIF趨, 4: K趨, 5: OSC縮, 6: MTM金
+                    const vals = [rsi12Val, macdVal, kdVal, difVal, kVal, oscVal, mtmVal];
+                    for (let yIdx = 0; yIdx < 7; yIdx++) {
                         const v = vals[yIdx];
                         heatData.push({
                             value: [i, yIdx, v],
