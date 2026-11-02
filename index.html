@@ -2681,7 +2681,7 @@
              style="overscroll-behavior: contain;">
             
             <div :class="[
-                chartOrientation === 'portrait' ? 'max-w-md w-full max-w-full' : 'max-w-5xl w-full max-w-full',
+                chartOrientation === 'portrait' && chartLayoutMode === 'single' ? 'max-w-md w-full max-w-full' : (chartLayoutMode === 'double' ? 'w-full max-w-[98vw]' : 'max-w-6xl w-full max-w-full'),
                 theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'
             ]" class="flex flex-col h-full shadow-2xl border-x transition-all duration-200 relative overflow-hidden w-full max-w-full">
                 
@@ -2712,12 +2712,19 @@
                                         :title="isCrosshairEnabled ? '📍 查價中 (點擊關閉，鎖定最新當日指標)' : '📍 查價已關 (點擊開啟查價)'">
                                     <i class="fa-solid fa-crosshairs text-xs" :class="isCrosshairEnabled ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')"></i>
                                 </button>
-                                <!-- 直/橫切換 -->
+                                <!-- 🗂️ 單/雙欄切換按鈕 (單欄 📱 / iPad 雙欄 🖥️) -->
+                                <button @click="toggleChartLayoutMode" 
+                                        :class="chartLayoutMode === 'double' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 border-indigo-500' : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')"
+                                        class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                        :title="chartLayoutMode === 'double' ? '切換為 📱 單欄瀑布流' : '切換為 🖥️ 雙欄滿版同屏 (每Row 2圖)'">
+                                    <i class="fa-solid" :class="chartLayoutMode === 'double' ? 'fa-table-columns text-white' : 'fa-bars text-slate-400'"></i>
+                                </button>
+                                <!-- 直/橫切換 (當前為直式，圖示顯示螢幕，提示切為橫式) -->
                                 <button @click="toggleChartOrientation" 
                                         :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
                                         class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
                                         title="切換為 🖥️ 橫式/寬版">
-                                    <i class="fa-solid fa-mobile-screen text-sky-400"></i>
+                                    <i class="fa-solid fa-desktop text-emerald-400"></i>
                                 </button>
                                 <!-- 關閉按鈕 -->
                                 <button @click="closeStockChartModal" class="w-7 h-7 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition border border-slate-700 active:scale-90">
@@ -2758,12 +2765,19 @@
                                     <i class="fa-solid fa-crosshairs text-xs" :class="isCrosshairEnabled ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')"></i>
                                 </button>
 
-                                <!-- 直/橫切換 -->
+                                <!-- 🗂️ 單/雙欄切換按鈕 (單欄 📱 / iPad 雙欄 🖥️) -->
+                                <button @click="toggleChartLayoutMode" 
+                                        :class="chartLayoutMode === 'double' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 border-indigo-500' : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')"
+                                        class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
+                                        :title="chartLayoutMode === 'double' ? '切換為 📱 單欄瀑布流' : '切換為 🖥️ 雙欄滿版同屏 (每Row 2圖)'">
+                                    <i class="fa-solid" :class="chartLayoutMode === 'double' ? 'fa-table-columns text-white' : 'fa-bars text-slate-400'"></i>
+                                </button>
+                                <!-- 直/橫切換 (當前為橫式，圖示顯示手機，提示切為直式窄版) -->
                                 <button @click="toggleChartOrientation" 
                                         :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
                                         class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
-                                        title="切換為 📱 直式手機版面">
-                                    <i class="fa-solid fa-desktop text-emerald-400"></i>
+                                        title="切換為 📱 直式手機窄版">
+                                    <i class="fa-solid fa-mobile-screen text-sky-400"></i>
                                 </button>
 
                                 <!-- 期間選擇 (10 / 20 / 60 / 120) -->
@@ -2794,9 +2808,14 @@
                     </div>
                 </div>
 
-            <!-- 2. 圖表滾動主體 (順序：1 K線布林 ➔ 2 MACD ➔ 3 KD ➔ 4 成交量融資 ➔ 5 三大法人 ➔ 6 MTM/RSI/WR) -->
-            <div class="flex-1 overflow-y-auto no-scrollbar space-y-2.5 w-full max-w-full"
-                 :class="isKlinePinned ? 'pt-0 px-2.5 pb-2.5' : 'p-2.5'"
+            <!-- 2. 圖表滾動主體 (支援單欄縱向 vs 雙欄電腦/iPad 零滑動自適應滿版) -->
+            <div class="flex-1 no-scrollbar w-full max-w-full"
+                 :class="[
+                     chartLayoutMode === 'double' 
+                         ? 'grid grid-cols-2 gap-2 p-2 overflow-hidden h-full flex-1' 
+                         : (isKlinePinned ? 'overflow-y-auto pt-0 px-2.5 pb-2.5 space-y-2.5' : 'overflow-y-auto p-2.5 space-y-2.5')
+                 ]"
+                 :style="chartLayoutMode === 'double' ? { gridTemplateRows: 'repeat(3, minmax(0, 1fr))' } : {}"
                  style="overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;">
                 
                 <!-- 載入中骨架屏 -->
@@ -2806,15 +2825,18 @@
                 </div>
 
                 <template v-else>
-                    <!-- 圖 1 (主圖)：K線蠟燭圖 + MA/布林/成本 篩選開關與 3 Rows 動態看板 -->
+                    <!-- 圖 1 (主圖)：K線蠟燭圖 + MA/布林/成本 篩選開關 (雙欄時 order-1 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900' : 'bg-white',
-                        isKlinePinned 
-                            ? (theme === 'dark' 
-                                ? 'sticky top-0 z-20 border-2 border-indigo-500/80 shadow-[0_6px_16px_rgba(0,0,0,0.6)]' 
-                                : 'sticky top-0 z-20 border-2 border-indigo-500 shadow-[0_6px_16px_rgba(99,102,241,0.18),0_2px_4px_rgba(0,0,0,0.06)]') 
-                            : (theme === 'dark' ? 'border border-slate-800' : 'border border-slate-200 shadow-sm')
-                    ]" class="p-2.5 rounded-2xl relative space-y-1.5 transition-all duration-200 overflow-hidden">
+                        chartLayoutMode === 'double' 
+                            ? 'order-1 p-2 space-y-1 border rounded-2xl flex flex-col h-full min-h-0' 
+                            : (isKlinePinned 
+                                ? (theme === 'dark' 
+                                    ? 'sticky top-0 z-20 border-2 border-indigo-500/80 shadow-[0_6px_16px_rgba(0,0,0,0.6)] p-2.5 rounded-2xl space-y-1.5' 
+                                    : 'sticky top-0 z-20 border-2 border-indigo-500 shadow-[0_6px_16px_rgba(99,102,241,0.18),0_2px_4px_rgba(0,0,0,0.06)] p-2.5 rounded-2xl space-y-1.5') 
+                                : 'border p-2.5 rounded-2xl space-y-1.5'),
+                        theme === 'dark' ? 'border-slate-800' : 'border-slate-200 shadow-sm'
+                    ]" class="relative transition-all duration-200 overflow-hidden">
                         
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 -->
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
@@ -2902,13 +2924,13 @@
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}{{ crosshairData.arrows?.foreignCost }}</span>
                         </div>
 
-                        <div id="chart-kline" class="w-full" :style="{ height: isKlinePinned ? '11.5rem' : '21rem' }"></div>
+                        <div id="chart-kline" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : ''" :style="{ height: chartLayoutMode === 'double' ? '' : (isKlinePinned ? '11.5rem' : '21rem') }"></div>
                     </div>
 
-                    <!-- 圖 2 (原 3)：MACD / OSC (雙欄時 order-3) -->
+                    <!-- 圖 2 (原 3)：MACD / OSC (雙欄時 order-3 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-3 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                        chartLayoutMode === 'double' ? 'order-3 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標</span>
@@ -2920,13 +2942,13 @@
                                 <span :class="Number(crosshairData.osc) >= 0 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'">OSC:{{ crosshairData.osc }}{{ crosshairData.arrows?.osc }}</span>
                             </span>
                         </div>
-                        <div id="chart-macd" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
+                        <div id="chart-macd" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
-                    <!-- 圖 3 (原 4)：KD 指標 (雙欄時 order-5) -->
+                    <!-- 圖 3 (原 4)：KD 指標 (雙欄時 order-5 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-5 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                        chartLayoutMode === 'double' ? 'order-5 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標</span>
@@ -2936,13 +2958,13 @@
                                 <span class="text-sky-400 font-bold">7D:{{ crosshairData.kdD }}{{ crosshairData.arrows?.kdD }}</span>
                             </span>
                         </div>
-                        <div id="chart-kd" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
+                        <div id="chart-kd" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
-                    <!-- 圖 4 (原 2)：成交量與融資餘額 (雙欄時 order-2) -->
+                    <!-- 圖 4 (原 2)：成交量與融資餘額 (雙欄時 order-2 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-2 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                        chartLayoutMode === 'double' ? 'order-2 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資</span>
@@ -2952,13 +2974,13 @@
                                 <span class="text-sky-400 font-bold">量:{{ formatNumber(crosshairData.vol) }}{{ crosshairData.arrows?.vol }}</span>
                             </span>
                         </div>
-                        <div id="chart-vol" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
+                        <div id="chart-vol" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
-                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (雙欄時 order-4) -->
+                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (雙欄時 order-4 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-4 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                        chartLayoutMode === 'double' ? 'order-4 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼</span>
@@ -2979,13 +3001,13 @@
                                 </span>
                             </span>
                         </div>
-                        <div id="chart-chip" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
+                        <div id="chart-chip" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
-                    <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (雙欄時 order-6) -->
+                    <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (雙欄時 order-6 滿版自適應) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-6 p-2 space-y-1' : 'p-2.5 space-y-1.5'
+                        chartLayoutMode === 'double' ? 'order-6 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative space-y-1.5">
                         <!-- Row 1：左側標題 + 右側藥丸開關按鈕組 (比照圖 1) -->
                         <div class="flex justify-between items-center text-[11px] font-bold text-slate-300">
@@ -3041,7 +3063,7 @@
                                 <span :class="parseFloat(crosshairData.clv) >= 0.15 ? 'text-rose-400 font-bold' : (parseFloat(crosshairData.clv) <= -0.15 ? 'text-emerald-400 font-bold' : 'text-slate-400')">{{ crosshairData.clvStatus }}</span>
                             </template>
                         </div>
-                        <div id="chart-mtm" class="w-full" :style="{ height: chartLayoutMode === 'double' ? '135px' : '144px' }"></div>
+                        <div id="chart-mtm" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
                 </template>
             </div>
@@ -3137,6 +3159,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.03"></script>
+    <script src="app.js?v=2.20261102.04"></script>
 </body>
 </html>

@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.03');
+        const appVersion = ref('v2.20261102.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2767,14 +2767,16 @@ createApp({
                 const resizeAllStockCharts = () => {
             if (!showStockChartModal.value) return;
             const isDouble = chartLayoutMode.value === 'double';
-            const klineTargetHeight = isDouble ? 135 : (isKlinePinned.value ? 184 : 336);
-            const subTargetHeight = isDouble ? 135 : 144;
             Object.entries(chartInstances).forEach(([k, chart]) => {
                 if (chart && typeof chart.resize === 'function') {
-                    if (k === 'kline') {
+                    if (isDouble) {
+                        // 🌟 雙欄滿版自適應模式：讓 ECharts 自動抓取 flex-1 容器之真實寬高！
+                        chart.resize();
+                    } else if (k === 'kline') {
+                        const klineTargetHeight = isKlinePinned.value ? 184 : 336;
                         chart.resize({ height: klineTargetHeight });
                     } else {
-                        chart.resize({ height: subTargetHeight });
+                        chart.resize({ height: 144 });
                     }
                 }
             });
