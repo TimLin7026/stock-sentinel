@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.07');
+        const appVersion = ref('v2.20261102.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2757,9 +2757,10 @@ createApp({
 
         // 📱/🖥️ 圖表直式與橫式版面切換 (預設直式 portrait)
         const chartOrientation = ref(localStorage.getItem('sentinel_chart_orientation') || 'portrait');
-        const chartLayoutMode = ref(localStorage.getItem('sentinel_chart_layout_mode') || 'single');
+        const chartLayoutMode = ref(chartOrientation.value === 'portrait' ? 'single' : (localStorage.getItem('sentinel_chart_layout_mode') || 'single'));
 
         const toggleChartLayoutMode = () => {
+            if (chartOrientation.value === 'portrait') return; // 🌟 直式模式僅支援單欄，不支援雙欄
             chartLayoutMode.value = chartLayoutMode.value === 'single' ? 'double' : 'single';
             localStorage.setItem('sentinel_chart_layout_mode', chartLayoutMode.value);
             const elKline = document.getElementById('chart-kline');
@@ -2811,6 +2812,11 @@ createApp({
             chartOrientation.value = chartOrientation.value === 'portrait' ? 'landscape' : 'portrait';
             // 直 預設顯示 20 日圖，橫 預設顯示 60 日圖
             chartDaysCount.value = (chartOrientation.value === 'landscape') ? 60 : 20;
+            // 🌟 切換為直式時強制重置為單欄，不支援雙欄
+            if (chartOrientation.value === 'portrait') {
+                chartLayoutMode.value = 'single';
+                localStorage.setItem('sentinel_chart_layout_mode', 'single');
+            }
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
             if (activeChartStock.value && activeChartStock.value.code) {

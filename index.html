@@ -2712,13 +2712,6 @@
                                         :title="isCrosshairEnabled ? '📍 查價中 (點擊關閉，鎖定最新當日指標)' : '📍 查價已關 (點擊開啟查價)'">
                                     <i class="fa-solid fa-crosshairs text-xs" :class="isCrosshairEnabled ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')"></i>
                                 </button>
-                                <!-- 🗂️ 單/雙欄切換按鈕 (單欄 📱 / iPad 雙欄 🖥️) -->
-                                <button @click="toggleChartLayoutMode" 
-                                        :class="chartLayoutMode === 'double' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/40 border-indigo-500' : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')"
-                                        class="w-7 h-7 rounded-lg border flex items-center justify-center text-xs transition active:scale-90"
-                                        :title="chartLayoutMode === 'double' ? '切換為 📱 單欄瀑布流' : '切換為 🖥️ 雙欄滿版同屏 (每Row 2圖)'">
-                                    <i class="fa-solid" :class="chartLayoutMode === 'double' ? 'fa-table-columns text-white' : 'fa-bars text-slate-400'"></i>
-                                </button>
                                 <!-- 直/橫切換 (當前為直式，圖示顯示螢幕，提示切為橫式) -->
                                 <button @click="toggleChartOrientation" 
                                         :class="theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'"
@@ -3159,6 +3152,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261102.07"></script>
+    <script src="app.js?v=2.20261102.08"></script>
 </body>
 </html>
