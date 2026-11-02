@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.06');
+        const appVersion = ref('v2.20261102.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2770,11 +2770,14 @@ createApp({
                     elKline.style.height = (isKlinePinned.value ? 184 : 336) + 'px';
                 }
             }
-            Vue.nextTick(() => {
-                resizeAllStockCharts();
-                setTimeout(() => { resizeAllStockCharts(); }, 60);
-                setTimeout(() => { resizeAllStockCharts(); }, 200);
-            });
+            // 🌟 核心終極防護：切換單/雙欄時直接銷毀重建實例，徹底根除 ECharts 內部私有 _height 數值鎖死殘留！
+            if (activeChartStock.value && activeChartStock.value.code) {
+                renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
+            } else {
+                Vue.nextTick(() => {
+                    resizeAllStockCharts();
+                });
+            }
         };
 
                 const resizeAllStockCharts = () => {
@@ -2792,8 +2795,8 @@ createApp({
             Object.entries(chartInstances).forEach(([k, chart]) => {
                 if (chart && typeof chart.resize === 'function') {
                     if (isDouble) {
-                        // 🌟 雙欄滿版自適應模式：讓 ECharts 自動抓取 flex-1 容器之真實寬高！
-                        chart.resize();
+                        // 🌟 雙欄滿版自適應模式：傳入 auto 徹底覆蓋 ECharts 內部私有 _height 快取！
+                        chart.resize({ width: 'auto', height: 'auto' });
                     } else if (k === 'kline') {
                         const klineTargetHeight = isKlinePinned.value ? 184 : 336;
                         chart.resize({ height: klineTargetHeight });
