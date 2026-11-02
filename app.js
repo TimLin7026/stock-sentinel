@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261030.04');
+        const appVersion = ref('v2.20261102.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -980,8 +980,8 @@ createApp({
             throw new Error('您的瀏覽器不支援原生 DecompressionStream 解壓');
         };
 
-        // 根據快照中的 6 大指標燈號建立 4 維動態漸層標籤
-        const buildIndicatorTagsFromSnapshot = (lights = {}, prev_ind = {}, prev_lights = {}) => {
+        // 根據快照中的 7 大指標燈號建立 4 維動態漸層標籤 (前 6 燈 + RSI12 燈號)
+        const buildIndicatorTagsFromSnapshot = (lights = {}, prev_ind = {}, prev_lights = {}, rsi_info = null, rsi_val = null) => {
             const mapTag = (displayText, keyOld, keyChinese) => {
                 let currVal = lights[keyChinese] !== undefined ? lights[keyChinese] : lights[keyOld];
                 let prevVal = prev_lights[keyChinese] !== undefined ? prev_lights[keyChinese] : (prev_ind && prev_ind[keyOld] !== undefined ? prev_ind[keyOld] : currVal);
@@ -1020,13 +1020,68 @@ createApp({
                 };
             };
 
+            // 第 7 燈：RSI12 搶反彈與預估賣三態動態漸層標籤
+            const mapRsiTag = () => {
+                let currVal = lights['RSI12'];
+                let prevVal = prev_lights['RSI12'];
+
+                // 支援從 rsi_info / rsi 進行相容推導 (Fallback)
+                if (currVal === undefined && rsi_info) {
+                    const txt = String(rsi_info.text || '');
+                    const isSell = (txt.includes('一級反彈賣點') || txt.includes('二級反彈賣點') || txt.includes('三級終極賣點')) && 
+                                   !txt.includes('停止預估價位') && !txt.includes('目前無反彈賣信號');
+                    const isBuy = (rsi_val !== undefined && Number(rsi_val) <= 30.0) || 
+                                  (txt.includes('低吸點') || txt.includes('極限冰點') || txt.includes('強力反彈'));
+                    if (isBuy) currVal = 1;
+                    else if (isSell) currVal = -1;
+                    else currVal = 0;
+                }
+                if (currVal === undefined) currVal = 0;
+                if (prevVal === undefined) prevVal = currVal;
+
+                // 統一正規化為數值 1 (紅), -1 (綠), 0 (灰)
+                currVal = (currVal === 1 || currVal === 'red' || currVal === '1') ? 1 : ((currVal === -1 || currVal === 'green' || currVal === '-1') ? -1 : 0);
+                prevVal = (prevVal === 1 || prevVal === 'red' || prevVal === '1') ? 1 : ((prevVal === -1 || prevVal === 'green' || prevVal === '-1') ? -1 : 0);
+
+                const getColor = (v) => (v === 1 ? '#FF4B4B' : (v === -1 ? '#00B050' : '#64748b'));
+                const getLabel = (v) => (v === 1 ? '搶反彈低點' : (v === -1 ? '反彈預估賣' : '常態'));
+
+                const cColor = getColor(currVal);
+                const pColor = getColor(prevVal);
+                let bgStyle = '';
+                let tooltip = '';
+                let transitionType = `${prevVal}_to_${currVal}`;
+
+                if (prevVal === currVal) {
+                    bgStyle = `background: ${cColor}; color: white;`;
+                    if (currVal === 1) tooltip = 'RSI12：持續處於搶反彈低點 🔥';
+                    else if (currVal === -1) tooltip = 'RSI12：持續觸發反彈預估賣點 ⚠️';
+                    else tooltip = 'RSI12：常態平穩，無搶反彈/賣點信號 ⚪';
+                } else {
+                    bgStyle = `background: linear-gradient(90deg, ${pColor} 0%, ${pColor} 15%, ${cColor} 35%, ${cColor} 100%); color: white;`;
+                    tooltip = `RSI12：昨日${getLabel(prevVal)} ➔ 今日${getLabel(currVal)}`;
+                    if (currVal === 1) tooltip += ' (轉折翻紅搶反彈 🔥)';
+                    else if (currVal === -1) tooltip += ' (轉折翻綠預估賣 ⚠️)';
+                    else tooltip += ' (回歸常態 ⚪)';
+                }
+
+                return {
+                    text: 'RSI12',
+                    type: currVal === 1 ? 'bull' : (currVal === -1 ? 'bear' : 'neutral'),
+                    transition: transitionType,
+                    bgStyle,
+                    tooltip
+                };
+            };
+
             return [
                 mapTag('MTM金', 'trend', 'MTM金'),
                 mapTag('OSC縮', 'vol', 'OSC縮'),
                 mapTag('K趨', 'kd', 'K趨'),
                 mapTag('DIF趨', 'macd', 'DIF趨'),
                 mapTag('KD金', 'rsi', 'KD金'),
-                mapTag('MACD金', 'chip', 'MACD金')
+                mapTag('MACD金', 'chip', 'MACD金'),
+                mapRsiTag()
             ];
         };
 
@@ -1134,9 +1189,9 @@ createApp({
                         }
                     }
 
-                    // 🎯 雲端大腦全量 6 燈注入
-                    if (snap.lights) {
-                        s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind, snap.prev_lights);
+                    // 🎯 雲端大腦全量 7 燈注入
+                    if (snap.lights || snap.prev_lights) {
+                        s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind, snap.prev_lights, snap.strat ? snap.strat.rsi_info : null, snap.rsi);
                     }
 
                     if (snap.strat) {
@@ -2927,6 +2982,19 @@ createApp({
             return features;
         };
 
+        // 判定 RSI12 預估子行是否觸發實質條件 (已觸發則顯示正常文字色與加粗，未滿足則保持淡灰)
+        const isRsiSubLineActive = (sub) => {
+            if (!sub) return false;
+            const str = String(sub);
+            if (str.includes('未滿足起跌條件') || str.includes('目前無反彈賣信號') || str.includes('停止預估價位') || str.includes('暫無')) {
+                return false;
+            }
+            if (str.includes('低吸點') || str.includes('強力反彈') || str.includes('極限冰點') || str.includes('反彈賣點') || str.includes('終極賣點') || str.includes('起跌點推估') || str.includes('為起跌點')) {
+                return true;
+            }
+            return false;
+        };
+
         // ─── 核心：持股成本與股數滾算引擎 (標準移動加權平均法，修復賣出時未扣成本之 Bug) ───
         const calcHoldingSharesAndCostPure = (tradeRows) => {
             let curShares = 0;
@@ -3838,13 +3906,67 @@ createApp({
                                 };
                             };
 
+                            const getRsiIndicatorTag = () => {
+                                let currVal = hmIndicators['RSI12'] !== undefined ? hmIndicators['RSI12'] : undefined;
+                                let prevVal = hmPrevIndicators['RSI12'] !== undefined ? hmPrevIndicators['RSI12'] : undefined;
+
+                                // Fallback: 支援從 strategyIndicators.rsi_info 推導
+                                if (currVal === undefined && hmInfo.strategyIndicators && hmInfo.strategyIndicators.rsi_info) {
+                                    const txt = String(hmInfo.strategyIndicators.rsi_info.text || '');
+                                    const isSell = (txt.includes('一級反彈賣點') || txt.includes('二級反彈賣點') || txt.includes('三級終極賣點')) && 
+                                                   !txt.includes('停止預估價位') && !txt.includes('目前無反彈賣信號');
+                                    const rsiVal = hmInfo.strategyIndicators.rsi || curPrice;
+                                    const isBuy = (hmInfo.strategyIndicators.rsi !== undefined && Number(hmInfo.strategyIndicators.rsi) <= 30.0) ||
+                                                  (txt.includes('低吸點') || txt.includes('極限冰點') || txt.includes('強力反彈'));
+                                    if (isBuy) currVal = 1;
+                                    else if (isSell) currVal = -1;
+                                    else currVal = 0;
+                                }
+                                if (currVal === undefined) currVal = 0;
+                                if (prevVal === undefined) prevVal = currVal;
+
+                                currVal = (currVal === 1 || currVal === 'red' || currVal === '1') ? 1 : ((currVal === -1 || currVal === 'green' || currVal === '-1') ? -1 : 0);
+                                prevVal = (prevVal === 1 || prevVal === 'red' || prevVal === '1') ? 1 : ((prevVal === -1 || prevVal === 'green' || prevVal === '-1') ? -1 : 0);
+
+                                const getColor = (v) => (v === 1 ? '#FF4B4B' : (v === -1 ? '#00B050' : '#64748b'));
+                                const getLabel = (v) => (v === 1 ? '搶反彈低點' : (v === -1 ? '反彈預估賣' : '常態'));
+
+                                const cColor = getColor(currVal);
+                                const pColor = getColor(prevVal);
+                                let bgStyle = '';
+                                let tooltip = '';
+                                let transitionType = `${prevVal}_to_${currVal}`;
+
+                                if (prevVal === currVal) {
+                                    bgStyle = `background: ${cColor}; color: white;`;
+                                    if (currVal === 1) tooltip = 'RSI12：持續處於搶反彈低點 🔥';
+                                    else if (currVal === -1) tooltip = 'RSI12：持續觸發反彈預估賣點 ⚠️';
+                                    else tooltip = 'RSI12：常態平穩，無搶反彈/賣點信號 ⚪';
+                                } else {
+                                    bgStyle = `background: linear-gradient(90deg, ${pColor} 0%, ${pColor} 15%, ${cColor} 35%, ${cColor} 100%); color: white;`;
+                                    tooltip = `RSI12：昨日${getLabel(prevVal)} ➔ 今日${getLabel(currVal)}`;
+                                    if (currVal === 1) tooltip += ' (轉折翻紅搶反彈 🔥)';
+                                    else if (currVal === -1) tooltip += ' (轉折翻綠預估賣 ⚠️)';
+                                    else tooltip += ' (回歸常態 ⚪)';
+                                }
+
+                                return {
+                                    text: 'RSI12',
+                                    type: currVal === 1 ? 'bull' : (currVal === -1 ? 'bear' : 'neutral'),
+                                    transition: transitionType,
+                                    bgStyle,
+                                    tooltip
+                                };
+                            };
+
                             const indicatorTags = [
                                 getIndicatorTag('MTM金', ['MTM金']),
                                 getIndicatorTag('OSC縮', ['OSC縮']),
                                 getIndicatorTag('K趨', ['K趨', 'K超']),
                                 getIndicatorTag('DIF趨', ['DIF趨', 'DIF超']),
                                 getIndicatorTag('KD金', ['KD金']),
-                                getIndicatorTag('MACD金', ['MACD金'])
+                                getIndicatorTag('MACD金', ['MACD金']),
+                                getRsiIndicatorTag()
                             ];
 
                             // 時效比對 (對齊電腦端：✅ 即時新鮮 / ⚠️ 過期或落後)
@@ -10211,7 +10333,8 @@ createApp({
             fifoSubTab,
             hedgedSearchKeyword,
             filteredHedgedRecords,
-            scrollToHedgedSummary
+            scrollToHedgedSummary,
+            isRsiSubLineActive
         };
     }
 }).mount('#app');
