@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261102.09');
+        const appVersion = ref('v2.20261103.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -65,6 +65,13 @@ createApp({
             // 2. 自動同步走勢圖版面與預設天數 (直 預設顯示 20 日圖，橫 預設顯示 60 日圖)
             chartOrientation.value = isLandscape ? 'landscape' : 'portrait';
             chartDaysCount.value = isLandscape ? 60 : 20;
+            // 🌟 核心修復：手機端自動旋轉時，同步自動切換排版模式！
+            // 直 -> 橫：預設/還原橫式雙欄模式；橫 -> 直：直式只有單欄 (強制鎖定 single)
+            if (isLandscape) {
+                chartLayoutMode.value = (typeof landscapeChartLayoutMode !== 'undefined' && landscapeChartLayoutMode.value) ? landscapeChartLayoutMode.value : 'double';
+            } else {
+                chartLayoutMode.value = 'single';
+            }
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
 
@@ -97,6 +104,11 @@ createApp({
             // 若為橫向螢幕 (手機橫放或寬螢幕)，自動進入寬版；直向則自動進入手機窄版
             appLayout.value = isLand ? 'wide' : 'mobile';
             chartOrientation.value = isLand ? 'landscape' : 'portrait';
+            if (isLand) {
+                chartLayoutMode.value = (typeof landscapeChartLayoutMode !== 'undefined' && landscapeChartLayoutMode.value) ? landscapeChartLayoutMode.value : 'double';
+            } else {
+                chartLayoutMode.value = 'single';
+            }
 
             // 監聽 1: 現代標準 matchMedia
             try {
