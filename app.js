@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261103.03');
+        const appVersion = ref('v2.20261103.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6592,7 +6592,7 @@ createApp({
                             `⚠️ Google 伺服器尖峰塞車中 (HTTP 503)\n\n` +
                             `Google 官方回報目前該模型請求量瞬間暴增正在排隊中。\n` +
                             `這通常是短暫塞車（1~3 分鐘內會自動恢復）。\n\n` +
-                            `💡 建議：請稍候片刻再試，或前往「雲端同步」切換至【gemini-3.7-flash】或【gemini-3.6-flash】走快車道！`
+                            `💡 建議：請稍候片刻再試，或點擊 💎 切換至極速版【3.5 Flash-Lite】或穩定版【3.5 Flash】走快車道！`
                         );
                         return;
                     }
@@ -6694,7 +6694,7 @@ createApp({
             } catch (err) {
                 console.error("富貴 Gem 智能戰報生成失敗:", err);
                 if (err.name === 'AbortError' || (err.message && err.message.includes('aborted'))) {
-                    alert(`❌【富貴 Gem】生成逾時（超過 90 秒）：\nGoogle 伺服器目前運算量較大，請稍後再試，或至「雲端同步」切換至極速版【gemini-3.5-flash-lite】走快車道！`);
+                    alert(`❌【富貴 Gem】生成逾時（超過 90 秒）：\nGoogle 伺服器目前運算量較大，請稍後再試，或點擊 💎 彈窗切換至極速版【3.5 Flash-Lite】走快車道！`);
                 } else {
                     alert(`❌【富貴 Gem】生成失敗：\n${err.message}`);
                 }
