@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261103.04');
+        const appVersion = ref('v2.20261103.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6144,7 +6144,6 @@ createApp({
             const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
                 const model = getActiveGeminiModel();
-                recordGeminiUsage(model, 1);
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
                 const res = await fetch(url, {
                     method: 'POST',
@@ -6157,6 +6156,7 @@ createApp({
                 });
                 clearTimeout(timeoutId);
                 if (res.ok) {
+                    recordGeminiUsage(model, 1);
                     await saveGeminiSettings(true); // 🎯 測試成功自動儲存模型設定
                     alert(`🎉 連線測試成功！\n\n模型 [${model}] 正常通訊中。\n✅ 已自動為您儲存此模型設定！`);
                     fetchAvailableGeminiModels(true);
@@ -6302,7 +6302,6 @@ createApp({
                     let detailMsg = '';
 
                     try {
-                        recordGeminiUsage(m.id, 1);
                         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m.id)}:generateContent?key=${encodeURIComponent(key)}`;
                         const res = await fetch(url, {
                             method: 'POST',
@@ -6317,6 +6316,7 @@ createApp({
                         latency = Math.round(performance.now() - startTime);
 
                         if (res.ok) {
+                            recordGeminiUsage(m.id, 1);
                             status = 'ok';
                             statusText = `連線正常 (${latency}ms)`;
                         } else {
@@ -6573,7 +6573,6 @@ createApp({
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-                recordGeminiUsage(model, 1);
                 const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -6658,6 +6657,9 @@ createApp({
                 if (!parsed) {
                     throw new Error("戰報格式無法解析！");
                 }
+
+                // 🎯 戰報真正成功產出且解析無誤，才精準計入已使用次數 (503塞車、超時、失敗一律不扣額度)
+                recordGeminiUsage(model, 1);
 
                 const targetCode = parsed.code || stock.code;
                 const normalizedCode = String(targetCode).padStart(4, '0');
