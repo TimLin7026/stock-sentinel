@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261103.01');
+        const appVersion = ref('v2.20261103.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1128,6 +1128,53 @@ createApp({
             return reportDigits14 >= brainDigits14;
         };
 
+        // 🌟 核心戰略引擎：根據「OSC縮」與「RSI12」青紅燈轉折，自動標記特別關注 (轉紅 ➔ 買, 轉綠 ➔ 賣)
+        const autoCheckFocusStatusFromIndicators = (stock) => {
+            if (!stock || !Array.isArray(stock.indicatorTags)) return false;
+
+            const oscTag = stock.indicatorTags.find(t => t.text === 'OSC縮');
+            const rsiTag = stock.indicatorTags.find(t => t.text === 'RSI12');
+
+            // 1. OSC縮 轉折判定
+            // bear-bull: 昨日偏空 ➔ 今日轉折翻紅 🔥 (轉紅)
+            // bull-bear: 昨日偏多 ➔ 今日轉折翻綠 ⚠️ (轉綠)
+            const isOscTurnBull = oscTag && oscTag.transition === 'bear-bull';
+            const isOscTurnBear = oscTag && oscTag.transition === 'bull-bear';
+
+            // 2. RSI12 轉折判定 (1: 搶反彈低點/紅, -1: 反彈預估賣點/綠, 0: 常態/灰)
+            // 轉紅: 今日為 1 (搶反彈) 且昨日不是 1
+            // 轉綠: 今日為 -1 (預估賣) 且昨日不是 -1
+            const isRsiTurnBull = rsiTag && rsiTag.type === 'bull' && rsiTag.transition !== '1_to_1';
+            const isRsiTurnBear = rsiTag && rsiTag.type === 'bear' && rsiTag.transition !== '-1_to_-1';
+
+            // 3. 綜合買賣決策
+            const shouldBuy = isOscTurnBull || isRsiTurnBull;
+            const shouldSell = isOscTurnBear || isRsiTurnBear;
+
+            let targetStatus = null;
+            if (shouldBuy && !shouldSell) {
+                targetStatus = '買';
+            } else if (shouldSell && !shouldBuy) {
+                targetStatus = '賣';
+            } else if (shouldBuy && shouldSell) {
+                // 若極罕見兩者同時觸發 (例如 OSC 翻紅但 RSI12 觸發賣點)，以風險防守/賣點為優先
+                targetStatus = '賣';
+            }
+
+            // 4. 若有明確轉折且與當前標記不同，立即標記並同步寫入 SQLite
+            if (targetStatus && stock.focusStatus !== targetStatus) {
+                stock.focusStatus = targetStatus;
+                if (dbInstance) {
+                    try {
+                        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+                        dbInstance.run("UPDATE my_stock SET 特別關注 = ?, focus_updated_at = ? WHERE 股票代號 = ? AND 證券商 = ?", [targetStatus, nowStr, stock.code, stock.broker]);
+                    } catch (e) {}
+                }
+                return true;
+            }
+            return false;
+        };
+
         // 將全市場快照行情與指標注入前端狀態
         const applyMarketSnapshot = (snapshotData, meta = {}) => {
             if (!snapshotData || typeof snapshotData !== 'object') return 0;
@@ -1159,6 +1206,7 @@ createApp({
 
             // 2. 更新持股與自選股之最新行情與指標
             let matchedCount = 0;
+            let hasAnyFocusStatusChanged = false;
             stockList.value.forEach(s => {
                 const rawCode = String(s.code || '').trim();
                 const snap = snapshotData[rawCode] 
@@ -1204,6 +1252,10 @@ createApp({
                     // 🎯 雲端大腦全量 7 燈注入
                     if (snap.lights || snap.prev_lights) {
                         s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind, snap.prev_lights, snap.strat ? snap.strat.rsi_info : null, snap.rsi);
+                        // 🌟 自動關注標記引擎：OSC縮 / RSI12 轉紅標記買，轉綠標記賣
+                        if (autoCheckFocusStatusFromIndicators(s)) {
+                            hasAnyFocusStatusChanged = true;
+                        }
                     }
 
                     if (snap.strat) {
@@ -1214,6 +1266,11 @@ createApp({
                     }
                 }
             });
+
+            // 🌟 若有任何個股因青紅燈轉折自動更新特別關注，批次寫入 IndexedDB 快取
+            if (hasAnyFocusStatusChanged && typeof saveDbToIndexedDb === 'function') {
+                saveDbToIndexedDb();
+            }
 
             renderAssetChart();
             return matchedCount;
