@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261103.02');
+        const appVersion = ref('v2.20261103.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -3631,10 +3631,14 @@ createApp({
 
                     // 2. 偏好模型智慧合流：若 DB 內有模型記錄，繼承至選單；若 DB 為空但本機有，反向補入 DB
                     if (dbGemini.model) {
-                        if (!localModel || localModel !== dbGemini.model) {
-                            geminiModelSelection.value = dbGemini.model;
-                            localStorage.setItem('sentinel_gemini_model', dbGemini.model);
-                            console.log(`💎 已成功從資料庫繼承 Gemini 偏好模型: ${dbGemini.model}`);
+                        let cleanModel = dbGemini.model;
+                        if (checkModelIsObsolete(cleanModel)) {
+                            cleanModel = 'gemini-3.8-flash';
+                        }
+                        if (!localModel || localModel !== cleanModel) {
+                            geminiModelSelection.value = cleanModel;
+                            localStorage.setItem('sentinel_gemini_model', cleanModel);
+                            console.log(`💎 已成功從資料庫繼承 Gemini 偏好模型: ${cleanModel}`);
                         }
                     } else if (localModel) {
                         writeGeminiSettingsToDbPure(dbInstance, null, localModel, null);
@@ -5983,7 +5987,7 @@ createApp({
             if (m === 'custom') {
                 m = (geminiCustomModel.value || '').trim() || 'gemini-3.8-flash';
             }
-            if (m === 'gemini-2.5-flash') {
+            if (checkModelIsObsolete(m)) {
                 m = 'gemini-3.8-flash';
             }
             return m || 'gemini-3.8-flash';
@@ -6139,7 +6143,7 @@ createApp({
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 12000);
             try {
-                const model = customModel || getActiveGeminiModel();
+                const model = getActiveGeminiModel();
                 recordGeminiUsage(model, 1);
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
                 const res = await fetch(url, {
@@ -6250,8 +6254,13 @@ createApp({
                 return;
             }
             targetSingleStock.value = stock;
-            // 預設為 3.5-Lite，若已滿則退避至 3.5
-            selectedSingleModel.value = isGeminiModelExceeded('gemini-3.5-flash-lite') ? 'gemini-3.5-flash' : 'gemini-3.5-flash-lite';
+            // 🎯 優先還原上次使用的模型偏好，若未記錄或已限額則自動退避
+            const saved = localStorage.getItem('sentinel_last_single_model');
+            if (saved && CORE_4_MODELS.some(m => m.id === saved) && !isGeminiModelExceeded(saved)) {
+                selectedSingleModel.value = saved;
+            } else {
+                selectedSingleModel.value = isGeminiModelExceeded('gemini-3.5-flash-lite') ? 'gemini-3.5-flash' : 'gemini-3.5-flash-lite';
+            }
             showSingleReportModal.value = true;
         };
 
@@ -6260,6 +6269,9 @@ createApp({
             if (!targetSingleStock.value) return;
             const stock = targetSingleStock.value;
             const modelToUse = selectedSingleModel.value || 'gemini-3.5-flash-lite';
+            try {
+                localStorage.setItem('sentinel_last_single_model', modelToUse);
+            } catch (e) {}
             showSingleReportModal.value = false;
             generateGeminiReportForStock(stock, modelToUse);
         };
@@ -6538,8 +6550,8 @@ createApp({
                 // 2. 獲取富貴 Gem 系統提示詞
                 const systemPrompt = await fetchGeminiPrompt();
 
-                // 3. 呼叫 Gemini REST API
-                const model = getActiveGeminiModel();
+                // 3. 呼叫 Gemini REST API (優先使用自選之 customModel，如 3.8 Flash)
+                const model = customModel || getActiveGeminiModel();
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
 
                 const payload = {
@@ -6598,7 +6610,7 @@ createApp({
                         fetchAvailableGeminiModels(true);
                         showToast(`🔄 偵測到原模型為付費專用，已自動切換為免費主力【gemini-3.8-flash】並重新產出戰報...`, 4000);
                         stock.isGeneratingGemini = false;
-                        return generateGeminiReportForStock(stock);
+                        return generateGeminiReportForStock(stock, 'gemini-3.8-flash');
                     }
 
                     if (isModelDeprecatedError(errMsg, res.status)) {
@@ -6618,7 +6630,7 @@ createApp({
                             fetchAvailableGeminiModels(true);
                             showToast(`🔄 已為您自動切換至【${recommendedModel}】並更新預設值，正在為【${stock.code}】重新產出戰報...`, 4000);
                             stock.isGeneratingGemini = false;
-                            return generateGeminiReportForStock(stock);
+                            return generateGeminiReportForStock(stock, recommendedModel);
                         } else {
                             stock.isGeneratingGemini = false;
                             alert(`⚠️ 已取消戰報生成。建議您前往「雲端同步 ➔ Google Gemini AI」點擊「🔄 同步官方」更新最新清單。`);
@@ -10002,7 +10014,8 @@ createApp({
                                 }
                             }
                             if (batchMergedCount > 0) {
-                                console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報！`);
+                                recordGeminiUsage('gemini-3.5-flash-lite', batchMergedCount);
+                                console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報並累加用量！`);
                             }
                         }
                     }
