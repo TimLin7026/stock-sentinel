@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261103.05');
+        const appVersion = ref('v2.20261104.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1252,10 +1252,6 @@ createApp({
                     // 🎯 雲端大腦全量 7 燈注入
                     if (snap.lights || snap.prev_lights) {
                         s.indicatorTags = buildIndicatorTagsFromSnapshot(snap.lights, snap.prev_ind, snap.prev_lights, snap.strat ? snap.strat.rsi_info : null, snap.rsi);
-                        // 🌟 自動關注標記引擎：OSC縮 / RSI12 轉紅標記買，轉綠標記賣
-                        if (autoCheckFocusStatusFromIndicators(s)) {
-                            hasAnyFocusStatusChanged = true;
-                        }
                     }
 
                     if (snap.strat) {
@@ -1266,11 +1262,6 @@ createApp({
                     }
                 }
             });
-
-            // 🌟 若有任何個股因青紅燈轉折自動更新特別關注，批次寫入 IndexedDB 快取
-            if (hasAnyFocusStatusChanged && typeof saveDbToIndexedDb === 'function') {
-                saveDbToIndexedDb();
-            }
 
             renderAssetChart();
             return matchedCount;
@@ -4658,6 +4649,136 @@ createApp({
         };
 
         // 特別關注切換循環：否 ➔ 買 (▲) ➔ 賣 (▼) ➔ 否
+        // ─── ⚡ 特別關注：依青紅燈指標全新標記模組 ───
+        const showAutoTagModal = ref(false);
+        const defaultAutoTagPrefs = {
+            oscChange: true,
+            rsiChange: true,
+            rsiKeep: true,
+            clearOld: true
+        };
+        let storedAutoTagPrefs = defaultAutoTagPrefs;
+        try {
+            const rawPrefs = localStorage.getItem('sentinel_autotag_prefs');
+            if (rawPrefs) {
+                storedAutoTagPrefs = { ...defaultAutoTagPrefs, ...JSON.parse(rawPrefs) };
+            }
+        } catch (e) {}
+
+        const autoTagOptions = reactive({ ...storedAutoTagPrefs });
+
+        const openAutoTagModal = () => {
+            showAutoTagModal.value = true;
+        };
+
+        const runAutoTagIndicators = async () => {
+            if (!autoTagOptions.oscChange && !autoTagOptions.rsiChange && !autoTagOptions.rsiKeep) {
+                alert('⚠️ 請至少勾選一項指標規則（OSC縮 變、RSI12 變 或 RSI12 持續）！');
+                return;
+            }
+
+            // 儲存勾選偏好
+            try {
+                localStorage.setItem('sentinel_autotag_prefs', JSON.stringify({
+                    oscChange: autoTagOptions.oscChange,
+                    rsiChange: autoTagOptions.rsiChange,
+                    rsiKeep: autoTagOptions.rsiKeep,
+                    clearOld: autoTagOptions.clearOld
+                }));
+            } catch (e) {}
+
+            showAutoTagModal.value = false;
+
+            const list = stockList.value || [];
+            if (list.length === 0) {
+                showToast('⚠️ 目前清單中無任何股票！', 2500);
+                return;
+            }
+
+            let buyCount = 0;
+            let sellCount = 0;
+            let resetCount = 0;
+            let changedCount = 0;
+            const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+            for (const stock of list) {
+                const tags = Array.isArray(stock.indicatorTags) ? stock.indicatorTags : [];
+                const oscTag = tags.find(t => t.text === 'OSC縮');
+                const rsiTag = tags.find(t => t.text === 'RSI12');
+
+                let shouldBuy = false;
+                let shouldSell = false;
+
+                // 1. 【OSC縮 變】（昨今轉折：轉紅 ➔ 買，轉綠 ➔ 賣）
+                if (autoTagOptions.oscChange && oscTag) {
+                    if (oscTag.transition === 'bear-bull') shouldBuy = true;
+                    if (oscTag.transition === 'bull-bear') shouldSell = true;
+                }
+
+                // 2. 【RSI12 變】（昨今轉折：轉紅搶反彈 ➔ 買，轉綠預估賣 ➔ 賣）
+                if (autoTagOptions.rsiChange && rsiTag) {
+                    if (rsiTag.type === 'bull' && rsiTag.transition !== '1_to_1') shouldBuy = true;
+                    if (rsiTag.type === 'bear' && rsiTag.transition !== '-1_to_-1') shouldSell = true;
+                }
+
+                // 3. 【RSI12 持續】（狀態持續：紅紅 ➔ 買，綠綠 ➔ 賣，灰灰不管）
+                if (autoTagOptions.rsiKeep && rsiTag) {
+                    if (rsiTag.transition === '1_to_1') shouldBuy = true;
+                    if (rsiTag.transition === '-1_to_-1') shouldSell = true;
+                }
+
+                // 綜合判定
+                let targetStatus = '否';
+                if (shouldBuy && !shouldSell) {
+                    targetStatus = '買';
+                    buyCount++;
+                } else if (shouldSell && !shouldBuy) {
+                    targetStatus = '賣';
+                    sellCount++;
+                } else if (shouldBuy && shouldSell) {
+                    // 若同時出現買與賣，以風險防守「賣」為優先
+                    targetStatus = '賣';
+                    sellCount++;
+                } else {
+                    // 皆未成立
+                    if (autoTagOptions.clearOld) {
+                        targetStatus = '否';
+                        if (stock.focusStatus && stock.focusStatus !== '否') resetCount++;
+                    } else {
+                        // 累加模式：保留原來的標記
+                        targetStatus = stock.focusStatus || '否';
+                    }
+                }
+
+                // 若狀態改變，覆蓋更新記憶體並寫入 SQLite (以 股票代號, 證券商 獨立覆蓋)
+                if (stock.focusStatus !== targetStatus) {
+                    stock.focusStatus = targetStatus;
+                    changedCount++;
+                    if (dbInstance) {
+                        try {
+                            dbInstance.run(
+                                "UPDATE my_stock SET 特別關注 = ?, focus_updated_at = ? WHERE 股票代號 = ? AND 證券商 = ?",
+                                [targetStatus, nowStr, stock.code, stock.broker]
+                            );
+                        } catch (eDb) {}
+                    }
+                }
+            }
+
+            if (dbInstance && changedCount > 0) {
+                try {
+                    await saveDbToIndexedDb();
+                    hasUnsyncedChanges.value = true;
+                } catch (eSave) {}
+            }
+
+            let msg = `🎉 指標標記完成！共標記 ${buyCount} 檔關注買、${sellCount} 檔關注賣`;
+            if (autoTagOptions.clearOld && resetCount > 0) {
+                msg += `（重置 ${resetCount} 檔舊標記）`;
+            }
+            showToast(msg, 4000);
+        };
+
         const cycleFocusStatus = (stock) => {
             if (!stock.focusStatus || stock.focusStatus === '否') {
                 stock.focusStatus = '買';
@@ -10358,6 +10479,10 @@ createApp({
             summary,
             isExpanded,
             toggleStockExpand,
+            showAutoTagModal,
+            autoTagOptions,
+            openAutoTagModal,
+            runAutoTagIndicators,
             cycleFocusStatus,
             setFocusStatus,
             formatNumber,
