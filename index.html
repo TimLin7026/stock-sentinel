@@ -1422,7 +1422,7 @@
                             </a>
                         </div>
 
-                        <!-- 1. 個人 Gemini API Key -->
+                        <!-- Row 1: 個人 Gemini API Key -->
                         <div class="space-y-1.5">
                             <label class="block text-[11px] font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">個人 Gemini API Key：</label>
                             <div class="flex items-center space-x-1.5">
@@ -1437,28 +1437,7 @@
                             </div>
                         </div>
 
-                        <!-- 2. AI 模型檢測與金鑰操作 (極簡清爽：一鍵檢測4大模型 + 儲存設定) -->
-                        <div class="space-y-2 pt-1">
-                            <div class="grid grid-cols-2 gap-2">
-                                <button @click="run4ModelsDiagnosis" :disabled="isDiagnosingModels || !geminiApiKey"
-                                        :class="theme === 'dark' ? 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border-emerald-700/60' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'"
-                                        class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition disabled:opacity-40 shadow-sm"
-                                        title="依序檢測 4 大核心模型之通訊狀態、延遲(ms)與今日配額清單">
-                                    <i class="fa-solid fa-stethoscope text-[12px]" :class="isDiagnosingModels ? 'fa-bounce text-amber-400' : ''"></i>
-                                    <span class="truncate">{{ isDiagnosingModels ? diagnosisProgressText : '⚡ 檢測 4 大模型' }}</span>
-                                </button>
-                                <button @click="saveGeminiSettings(false)" 
-                                        class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 px-2 rounded-xl text-xs shadow-sm transition active:scale-95 flex items-center justify-center space-x-1.5">
-                                    <i class="fa-solid fa-floppy-disk text-[11px]"></i>
-                                    <span>儲存設定</span>
-                                </button>
-                            </div>
-                            <div class="text-[10px] text-slate-400 leading-tight">
-                                💡 個股戰報於點擊 💎 時直接自選 4 大模型；批次派發自動預設海量 3.5-Lite (每日 1500 次)。
-                            </div>
-                        </div>
-
-                        <!-- 4. ☁️ 個人戰報 GAS 網址 (支援離線背景批次推導) -->
+                        <!-- Row 2: 個人戰報 GAS 網址 (支援離線背景批次推導) -->
                         <div class="pt-3 border-t" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
                             <div class="flex items-center justify-between mb-1.5">
                                 <label class="block text-[11px] font-semibold" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
@@ -1505,6 +1484,27 @@
                                     <div><b>⑤ 貼回儲存：</b> 點擊部署完成授權，複製產生的「網頁應用程式網址」並貼回此欄位，點擊「儲存」即可！</div>
                                 </div>
                             </details>
+                        </div>
+
+                        <!-- Row 3: AI 模型檢測與金鑰儲存操作 (移至最底部) -->
+                        <div class="pt-3 border-t space-y-2" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button @click="run4ModelsDiagnosis" :disabled="isDiagnosingModels || !geminiApiKey"
+                                        :class="theme === 'dark' ? 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border-emerald-700/60' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'"
+                                        class="border py-2.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition disabled:opacity-40 shadow-sm"
+                                        title="依序檢測 3 大核心模型之通訊狀態、延遲(ms)與今日配額清單">
+                                    <i class="fa-solid fa-stethoscope text-[12px]" :class="isDiagnosingModels ? 'fa-bounce text-amber-400' : ''"></i>
+                                    <span class="truncate">{{ isDiagnosingModels ? diagnosisProgressText : '⚡ 檢測核心模型' }}</span>
+                                </button>
+                                <button @click="saveGeminiSettings(false)" 
+                                        class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 px-2 rounded-xl text-xs shadow-sm transition active:scale-95 flex items-center justify-center space-x-1.5">
+                                    <i class="fa-solid fa-floppy-disk text-[11px]"></i>
+                                    <span>儲存設定</span>
+                                </button>
+                            </div>
+                            <div class="text-[10px] text-slate-400 leading-tight">
+                                💡 個股戰報於點擊 💎 時直接自選 3 大真實模型；批次派發自動預設海量 3.5-Lite (每日 500 次)。
+                            </div>
                         </div>
 
                         <div class="text-[10px] text-slate-400 leading-relaxed pt-1">
@@ -3280,6 +3280,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261104.05"></script>
+    <script src="app.js?v=2.20261104.06"></script>
 </body>
 </html>
