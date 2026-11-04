@@ -1,7 +1,7 @@
 // 📱 鈔能戰情室・手機網頁版前端核心邏輯 (app.js)
 // 支援 WebAssembly SQLite (sql.js) + Google Drive API v3 + IndexedDB 離線快取
 
-const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
 
 createApp({
     setup() {
@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261104.01');
+        const appVersion = ref('v2.20261104.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
