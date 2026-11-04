@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261104.06');
+        const appVersion = ref('v2.20261104.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1706,6 +1706,7 @@ createApp({
             high: '--',
             low: '--',
             close: '--',
+            prevClose: null,
             vol: '--',
             ma5: '--',
             ma10: '--',
@@ -1742,6 +1743,17 @@ createApp({
             heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0, rsi12: 0 },
             arrows: {}
         });
+
+        // 🎨 開高低收券商級動態色彩判定 helper (放大且清晰對齊昨收)
+        const getCrosshairPriceClass = (val) => {
+            if (val == null || val === '--') return theme.value === 'dark' ? 'text-slate-100 font-bold' : 'text-slate-800 font-bold';
+            const num = parseFloat(val);
+            const base = parseFloat(crosshairData.value?.prevClose);
+            if (isNaN(num) || isNaN(base)) return theme.value === 'dark' ? 'text-slate-100 font-bold' : 'text-slate-800 font-bold';
+            if (num > base) return 'text-rose-500 font-bold';
+            if (num < base) return 'text-emerald-500 font-bold';
+            return theme.value === 'dark' ? 'text-slate-100 font-bold' : 'text-slate-800 font-bold';
+        };
 
         const isCrosshairEnabled = ref(false); // 移動查價開關 (每次打開走勢預設為 false，杜絕手機滑動誤觸)
 
@@ -1979,6 +1991,7 @@ createApp({
                 high: r[2],
                 low: r[3],
                 close: r[4],
+                prevClose: prevR ? prevR[4] : null,
                 vol: r[5],
                 ma5: r[6],
                 ma10: r[7],
@@ -2271,7 +2284,7 @@ createApp({
                     const curKlineHeight = isKlinePinned.value ? 184 : 336;
                     elKline.style.height = curKlineHeight + 'px';
                 }
-                const chart = echarts.init(elKline);
+                const chart = echarts.init(elKline, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
                 
                 const klineSeries = [
                     {
@@ -2376,7 +2389,7 @@ createApp({
             // 2. MACD / OSC (DIF 亮黃, MACD_S 亮藍)
             const elMacd = document.getElementById('chart-macd');
             if (elMacd) {
-                const chart = echarts.init(elMacd);
+                const chart = echarts.init(elMacd, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
                 chart.setOption({
                     animation: false,
                     grid: commonGrid,
@@ -2395,7 +2408,7 @@ createApp({
             // 3. KD 指標 (7, 3, 3) (7K 亮黃, 7D 亮藍)
             const elKd = document.getElementById('chart-kd');
             if (elKd) {
-                const chart = echarts.init(elKd);
+                const chart = echarts.init(elKd, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
                 chart.setOption({
                     animation: false,
                     grid: commonGrid,
@@ -2422,7 +2435,7 @@ createApp({
             // 4. 成交量與融資餘額 (融資線 亮黃)
             const elVol = document.getElementById('chart-vol');
             if (elVol) {
-                const chart = echarts.init(elVol);
+                const chart = echarts.init(elVol, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
                 chart.setOption({
                     animation: false,
                     grid: { ...commonGrid, right: 48, left: 10 },
@@ -2443,7 +2456,7 @@ createApp({
             // 5. 三大法人買賣超 (外資 亮藍, 投信 亮黃, 自營 亮紫)
             const elChip = document.getElementById('chart-chip');
             if (elChip) {
-                const chart = echarts.init(elChip);
+                const chart = echarts.init(elChip, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
                 chart.setOption({
                     animation: false,
                     grid: commonGrid,
@@ -2498,7 +2511,7 @@ createApp({
                 try { chartInstances.mtm.dispose(); } catch(e) {}
             }
 
-            const chart = echarts.init(elMtm);
+            const chart = echarts.init(elMtm, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
             const isDark = theme.value === 'dark';
             const bgText = isDark ? '#94a3b8' : '#475569';
             const gridBorder = isDark ? '#334155' : '#cbd5e1';
@@ -4495,7 +4508,7 @@ createApp({
                 }
 
                 const isDark = theme.value === 'dark';
-                chartInstance = echarts.init(chartDom, isDark ? 'dark' : null, { renderer: 'canvas' });
+                chartInstance = echarts.init(chartDom, isDark ? 'dark' : null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
 
                 const chartData = filteredHoldingStocks.value.map(s => ({
                     name: `${s.name} (${s.code})`,
@@ -10609,6 +10622,7 @@ createApp({
             isKlinePinned,
             togglePinKline,
             crosshairData,
+            getCrosshairPriceClass,
             isCrosshairEnabled,
             toggleCrosshair,
             openStockChartModal,
