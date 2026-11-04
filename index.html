@@ -720,33 +720,33 @@
                 </div>
 
                 <!-- 特別關注分頁的子過濾器 (對齊地端：全部 / ▲ 關注買 / ▼ 關注賣) -->
-                <div v-if="stockSubTab === 'starred'" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center space-x-2 p-2 rounded-xl border text-xs">
-                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold mr-1">篩選：</span>
+                <div v-if="stockSubTab === 'starred'" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-xl border text-xs overflow-x-auto no-scrollbar">
+                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold mr-0.5 whitespace-nowrap shrink-0">篩選：</span>
                     <button @click="starredSubFilter = '全部'" 
                             :class="starredSubFilter === '全部' ? (theme === 'dark' ? 'bg-slate-700 text-white font-bold' : 'bg-slate-800 text-white font-bold') : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600 hover:text-slate-900')"
-                            class="px-2.5 py-1 rounded-lg text-xs transition flex items-center space-x-1">
-                        <span class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 whitespace-nowrap shrink-0">
+                        <span class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
                         <span>全部</span>
                     </button>
                     <button @click="starredSubFilter = '買'" 
                             :class="starredSubFilter === '買' ? 'bg-rose-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-rose-300' : 'text-slate-600 hover:text-rose-600')"
-                            class="px-2.5 py-1 rounded-lg text-xs transition flex items-center space-x-1 border border-rose-500/30">
+                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border border-rose-500/30 whitespace-nowrap shrink-0">
                         <span :class="starredSubFilter === '買' ? 'text-white' : 'triangle-buy'" class="text-sm leading-none">▲</span>
                         <span>關注買</span>
                     </button>
                     <button @click="starredSubFilter = '賣'" 
                             :class="starredSubFilter === '賣' ? 'bg-emerald-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-emerald-300' : 'text-slate-600 hover:text-emerald-600')"
-                            class="px-2.5 py-1 rounded-lg text-xs transition flex items-center space-x-1 border border-emerald-500/30">
+                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border border-emerald-500/30 whitespace-nowrap shrink-0">
                         <span :class="starredSubFilter === '賣' ? 'text-white' : 'triangle-sell'" class="text-sm leading-none">▼</span>
                         <span>關注賣</span>
                     </button>
-                    <!-- ⚡ 依青紅燈指標全新標記按鈕 (靠右對齊) -->
+                    <!-- ⚡ 依青紅燈指標全新標記按鈕 (靠右對齊，手機端純圖示，大螢幕顯示文字) -->
                     <button @click="openAutoTagModal" 
                             :class="theme === 'dark' ? 'bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 border-indigo-700/60' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'"
-                            class="ml-auto px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0"
+                            class="ml-auto px-2 py-1 sm:px-2.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
                             title="依當前 OSC縮 與 RSI12 燈號轉折/狀態自選標記關注買賣">
-                        <i class="fa-solid fa-wand-magic-sparkles text-[11px] text-amber-400"></i>
-                        <span>指標標記</span>
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-xs"></i>
+                        <span class="hidden sm:inline">指標標記</span>
                     </button>
                 </div>
 
@@ -3296,6 +3296,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261104.09"></script>
+    <script src="app.js?v=2.20261104.10"></script>
 </body>
 </html>
