@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261104.03');
+        const appVersion = ref('v2.20261104.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -5915,14 +5915,11 @@ createApp({
             localStorage.setItem('sentinel_gemini_model', 'gemini-3.8-flash');
         }
 
-        // 預設與快取的可用模型清單 (精準純免費 3.5 ~ 3.8 Flash 陣容)
+        // 預設與快取的可用模型清單 (100% 精準對齊 Google AI Studio 真實後台)
         const defaultModels = [
-            { id: 'gemini-3.8-flash', label: '3.8 Flash (全方位協助 · 免費主力推薦 🚀)' },
-            { id: 'gemini-3.7-flash', label: '3.7 Flash (免費主力 💎)' },
-            { id: 'gemini-3.6-flash', label: '3.6 Flash (免費快速 ⚡)' },
-            { id: 'gemini-3.5-flash-lite', label: '3.5 Flash-Lite (回覆最快 🍃)' },
-            { id: 'gemini-3.5-flash', label: '3.5 Flash (穩定備用 🛡️)' },
-            { id: 'gemini-flash-latest', label: 'Gemini Flash (自動最新 🔄)' }
+            { id: 'gemini-3.5-flash-lite', label: '3.5 Flash-Lite (海量主力 · 每日 500 次 🍃)' },
+            { id: 'gemini-3.6-flash', label: '3.6 Flash (快速分析 · 每日 20 次 ⚡)' },
+            { id: 'gemini-3.8-flash', label: '3.8 Flash (深度旗艦 · 每日 20 次 🚀)' }
         ];
 
         let cachedModels = null;
@@ -5955,12 +5952,9 @@ createApp({
         // ─── 💎 Google Gemini AI 模型每日配額智慧估算系統 (今日 已用/總量 估算) ───
         const geminiUsageVersion = ref(1);
         const GEMINI_DEFAULT_QUOTAS = {
-            'gemini-3.8-flash': 20,
-            'gemini-3.7-flash': 20,
+            'gemini-3.5-flash-lite': 500,
             'gemini-3.6-flash': 20,
-            'gemini-3.5-flash-lite': 1500,
-            'gemini-3.5-flash': 1500,
-            'gemini-flash-latest': 1500
+            'gemini-3.8-flash': 20
         };
 
         const getGeminiUsageStorageKey = () => {
@@ -6046,11 +6040,9 @@ createApp({
             const exceeded = isGeminiModelExceeded(id);
 
             let baseName = m.label || id;
-            if (id === 'gemini-3.8-flash') baseName = '3.8 Flash (全方位協助 · 免費主力推薦 🚀)';
-            else if (id === 'gemini-3.7-flash') baseName = '3.7 Flash (免費主力 💎)';
-            else if (id === 'gemini-3.6-flash') baseName = '3.6 Flash (免費快速 ⚡)';
-            else if (id === 'gemini-3.5-flash-lite') baseName = '3.5 Flash-Lite (回覆最快 🍃)';
-            else if (id === 'gemini-3.5-flash') baseName = '3.5 Flash (穩定備用 🛡️)';
+            if (id === 'gemini-3.5-flash-lite') baseName = '3.5 Flash-Lite (海量主力 · 每日 500 次 🍃)';
+            else if (id === 'gemini-3.6-flash') baseName = '3.6 Flash (快速分析 · 每日 20 次 ⚡)';
+            else if (id === 'gemini-3.8-flash') baseName = '3.8 Flash (深度旗艦 · 每日 20 次 🚀)';
             else if (id === 'gemini-flash-latest') baseName = 'Gemini Flash (自動最新 🔄)';
 
             if (exceeded) {
@@ -6169,26 +6161,19 @@ createApp({
                     const mapped = filtered.map(m => {
                         const id = m.name.replace(/^models\//, '');
                         let label = id;
-                        if (id === 'gemini-3.8-flash') label = '3.8 Flash (全方位協助 · 免費主力推薦 🚀)';
-                        else if (id === 'gemini-3.7-flash') label = '3.7 Flash (免費主力 💎)';
-                        else if (id === 'gemini-3.6-flash') label = '3.6 Flash (免費快速 ⚡)';
-                        else if (id === 'gemini-3.5-flash-lite') label = '3.5 Flash-Lite (回覆最快 🍃)';
-                        else if (id === 'gemini-3.5-flash') label = '3.5 Flash (穩定備用 🛡️)';
+                        if (id === 'gemini-3.5-flash-lite') label = '3.5 Flash-Lite (海量主力 · 每日 500 次 🍃)';
+                        else if (id === 'gemini-3.6-flash') label = '3.6 Flash (快速分析 · 每日 20 次 ⚡)';
+                        else if (id === 'gemini-3.8-flash') label = '3.8 Flash (深度旗艦 · 每日 20 次 🚀)';
                         else if (id === 'gemini-flash-latest') label = 'Gemini Flash (自動最新 🔄)';
-                        else if (id === 'gemini-flash-lite-latest') label = 'Flash-Lite (極速輕量 · 自動最新 🍃)';
                         else label = `${id} (免費可用)`;
                         return { id: id, label: label };
                     });
 
-                    // 智慧排序：3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5-lite ➔ 3.5 ➔ latest
+                    // 智慧排序：3.5-lite ➔ 3.6 ➔ 3.8
                     const orderMap = {
-                        'gemini-3.8-flash': 1,
-                        'gemini-3.7-flash': 2,
-                        'gemini-3.6-flash': 3,
-                        'gemini-3.5-flash-lite': 4,
-                        'gemini-3.5-flash': 5,
-                        'gemini-flash-latest': 6,
-                        'gemini-flash-lite-latest': 7
+                        'gemini-3.5-flash-lite': 1,
+                        'gemini-3.6-flash': 2,
+                        'gemini-3.8-flash': 3
                     };
                     mapped.sort((a, b) => {
                         const oa = orderMap[a.id] || 99;
@@ -6342,17 +6327,16 @@ createApp({
         const targetSingleStock = ref(null);
         const selectedSingleModel = ref('gemini-3.5-flash-lite');
 
-        const CORE_4_MODELS = [
-            { id: 'gemini-3.5-flash-lite', name: '3.5 Flash-Lite', desc: '海量主力 · 極速', limit: 1500, tag: '推薦預設' },
-            { id: 'gemini-3.5-flash', name: '3.5 Flash', desc: '穩定海量', limit: 1500, tag: '' },
-            { id: 'gemini-3.7-flash', name: '3.7 Flash', desc: '免費主力', limit: 20, tag: '' },
-            { id: 'gemini-3.8-flash', name: '3.8 Flash', desc: '頂級精讀 · 旗艦深度', limit: 20, tag: '' }
+        const CORE_3_MODELS = [
+            { id: 'gemini-3.5-flash-lite', name: '3.5 Flash-Lite', desc: '每日 500 次 · 極速主力', limit: 500, tag: '推薦預設' },
+            { id: 'gemini-3.6-flash', name: '3.6 Flash', desc: '每日 20 次 · 快速分析', limit: 20, tag: '' },
+            { id: 'gemini-3.8-flash', name: '3.8 Flash', desc: '每日 20 次 · 深度精讀', limit: 20, tag: '' }
         ];
 
-        // 單檔彈窗 4 選 1 動態選項 (響應式包含即時配額)
+        // 單檔彈窗 3 選 1 動態選項 (響應式包含即時配額，100% 對齊後台)
         const singleReportOptions = computed(() => {
             const _v = geminiUsageVersion.value;
-            return CORE_4_MODELS.map(m => {
+            return CORE_3_MODELS.map(m => {
                 const usage = getGeminiModelUsage(m.id);
                 const limit = getGeminiModelLimit(m.id);
                 const exceeded = isGeminiModelExceeded(m.id);
@@ -6375,12 +6359,18 @@ createApp({
                 return;
             }
             targetSingleStock.value = stock;
-            // 🎯 優先還原上次使用的模型偏好，若未記錄或已限額則自動退避
+            // 🎯 優先還原上次使用的模型偏好，若未記錄或已限額則自動依序退避 (3.5-Lite ➔ 3.6 ➔ 3.8)
             const saved = localStorage.getItem('sentinel_last_single_model');
-            if (saved && CORE_4_MODELS.some(m => m.id === saved) && !isGeminiModelExceeded(saved)) {
+            if (saved && CORE_3_MODELS.some(m => m.id === saved) && !isGeminiModelExceeded(saved)) {
                 selectedSingleModel.value = saved;
             } else {
-                selectedSingleModel.value = isGeminiModelExceeded('gemini-3.5-flash-lite') ? 'gemini-3.5-flash' : 'gemini-3.5-flash-lite';
+                if (!isGeminiModelExceeded('gemini-3.5-flash-lite')) {
+                    selectedSingleModel.value = 'gemini-3.5-flash-lite';
+                } else if (!isGeminiModelExceeded('gemini-3.6-flash')) {
+                    selectedSingleModel.value = 'gemini-3.6-flash';
+                } else {
+                    selectedSingleModel.value = 'gemini-3.8-flash';
+                }
             }
             showSingleReportModal.value = true;
         };
@@ -6411,7 +6401,7 @@ createApp({
             diagnosisReportList.value = [];
 
             try {
-                for (const m of CORE_4_MODELS) {
+                for (const m of CORE_3_MODELS) {
                     diagnosisProgressText.value = `測 ${m.name}...`;
                     const startTime = performance.now();
                     const controller = new AbortController();
@@ -6498,14 +6488,11 @@ createApp({
             }
             if (isAutoProbing.value || isTestingGemini.value) return;
 
-            // 🎯 單程線性探測清單：依序 3.8 ➔ 3.7 ➔ 3.6 ➔ 3.5-lite ➔ 3.5 ➔ latest
+            // 🎯 單程線性探測清單：依序 3.5-lite ➔ 3.6 ➔ 3.8
             const probeCandidates = [
-                { id: 'gemini-3.8-flash', name: '3.8 Flash' },
-                { id: 'gemini-3.7-flash', name: '3.7 Flash' },
-                { id: 'gemini-3.6-flash', name: '3.6 Flash' },
                 { id: 'gemini-3.5-flash-lite', name: '3.5 Flash-Lite' },
-                { id: 'gemini-3.5-flash', name: '3.5 Flash' },
-                { id: 'gemini-flash-latest', name: 'Gemini Flash (自動最新)' }
+                { id: 'gemini-3.6-flash', name: '3.6 Flash' },
+                { id: 'gemini-3.8-flash', name: '3.8 Flash' }
             ];
 
             isAutoProbing.value = true;
@@ -6712,7 +6699,7 @@ createApp({
                             `⚠️ Google 伺服器尖峰塞車中 (HTTP 503)\n\n` +
                             `Google 官方回報目前該模型請求量瞬間暴增正在排隊中。\n` +
                             `這通常是短暫塞車（1~3 分鐘內會自動恢復）。\n\n` +
-                            `💡 建議：請稍候片刻再試，或點擊 💎 切換至極速版【3.5 Flash-Lite】或穩定版【3.5 Flash】走快車道！`
+                            `💡 建議：請稍候片刻再試，或點擊 💎 切換至極速主力【3.5 Flash-Lite】(每日 500 次) 走快車道！`
                         );
                         return;
                     }
@@ -7220,7 +7207,7 @@ createApp({
                 // 3. 發送至 GAS Web App (採用非同步秒派工 Fire-and-Forget，不阻斷手機端)
                 const payload = {
                     apiKey: apiKey,
-                    model: 'gemini-3.5-flash-lite', // 🛡️ 批次派工鎖定 3.5-Lite 海量 1500 次模型，絕不耗損 3.8 珍貴限額
+                    model: 'gemini-3.5-flash-lite', // 🛡️ 批次派工鎖定 3.5-Lite 每日 500 次高額度主力模型，絕不耗損 3.8 珍貴限額
                     gasUrl: gasUrl,
                     stocks: payloadStocks
                 };
