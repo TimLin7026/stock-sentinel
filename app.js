@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.06');
+        const appVersion = ref('v2.20261105.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1815,7 +1815,14 @@ createApp({
         if (savedLayersStr) {
             try { initialLayers = { ...defaultKlineLayers, ...JSON.parse(savedLayersStr) }; } catch(e) {}
         }
+        if (initialLayers.trades === undefined) initialLayers.trades = true;
         const klineLayers = ref(initialLayers);
+        
+        // 🌟 全域常駐個股多券商交易與在席庫存時序對照表 (確保隨時查價皆有值)
+        const currentChartTradeMaps = {
+            holding: {},
+            action: {}
+        };
 
         // 📌 圖 1 (主 K 線) LINE 風格置頂開關 (開啟時高度減半吸頂，方便對照圖 2~6，預設未釘選)
         const isKlinePinned = ref(false);
@@ -1841,28 +1848,26 @@ createApp({
         };
 
         const toggleKlineLayer = (layerKey) => {
-            if (klineLayers.value[layerKey] !== undefined) {
-                if (layerKey === 'pivot') {
-                    const nextVal = !klineLayers.value.pivot;
-                    klineLayers.value.pivot = nextVal;
-                    if (nextVal) {
-                        // 開啟均價模式：互斥關閉 MA、布林通道、成本線
-                        klineLayers.value.ma = false;
-                        klineLayers.value.bollinger = false;
-                        klineLayers.value.cost = false;
-                    } else {
-                        // 關閉均價模式：預設還原 MA 線
-                        klineLayers.value.ma = true;
-                    }
+            if (layerKey === 'pivot') {
+                const nextVal = !klineLayers.value.pivot;
+                klineLayers.value.pivot = nextVal;
+                if (nextVal) {
+                    // 開啟均價模式：互斥關閉 MA、布林通道、成本線
+                    klineLayers.value.ma = false;
+                    klineLayers.value.bollinger = false;
+                    klineLayers.value.cost = false;
                 } else {
-                    // 點選 MA、布林、成本：自動退出均價模式
-                    klineLayers.value[layerKey] = !klineLayers.value[layerKey];
-                    klineLayers.value.pivot = false;
+                    // 關閉均價模式：預設還原 MA 線
+                    klineLayers.value.ma = true;
                 }
-                localStorage.setItem('sentinel_kline_layers', JSON.stringify(klineLayers.value));
-                if (activeChartStock.value && activeChartStock.value.code) {
-                    renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
-                }
+            } else {
+                // 點選 MA、布林、成本、買賣點：自動翻轉布林值 (容錯 undefined)
+                klineLayers.value[layerKey] = !Boolean(klineLayers.value[layerKey]);
+                klineLayers.value.pivot = false;
+            }
+            localStorage.setItem('sentinel_kline_layers', JSON.stringify(klineLayers.value));
+            if (activeChartStock.value && activeChartStock.value.code) {
+                renderAllStockCharts(activeChartStock.value.code, chartDaysCount.value);
             }
         };
         const crosshairData = ref({
@@ -2112,13 +2117,19 @@ createApp({
         // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA 與各指標漲跌直箭頭)
         const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
-            // 讀取當前個股在該日的個人交易與在庫總庫存
-            if (r._tradeAction !== undefined) {
+            // 讀取當前個股在該日的個人交易與在庫總庫存 (優先自全域時序字典查詢)
+            const dDigits = String(r[0] || '').replace(/\D/g, '').slice(0, 8);
+            if (currentChartTradeMaps.action && currentChartTradeMaps.action[dDigits]) {
+                crosshairData.value.tradeAction = currentChartTradeMaps.action[dDigits];
+            } else if (r._tradeAction !== undefined) {
                 crosshairData.value.tradeAction = r._tradeAction;
             } else {
                 crosshairData.value.tradeAction = '';
             }
-            if (r._holdingShares !== undefined) {
+
+            if (currentChartTradeMaps.holding && currentChartTradeMaps.holding[dDigits] !== undefined) {
+                crosshairData.value.holdingShares = currentChartTradeMaps.holding[dDigits];
+            } else if (r._holdingShares !== undefined) {
                 crosshairData.value.holdingShares = r._holdingShares;
             } else {
                 crosshairData.value.holdingShares = null;
@@ -2391,6 +2402,8 @@ createApp({
                 }
                 fullHoldingMap[digits] = accHolding;
             });
+            currentChartTradeMaps.holding = fullHoldingMap;
+            currentChartTradeMaps.action = fullTradeActionMap;
 
             // 綁定到當前視圖序列
             const tradeMarkPoints = [];
@@ -2414,11 +2427,12 @@ createApp({
 
                 const t = tradesByDate[digits];
                 if (t) {
+                    // 🌟 採用 ECharts 官方最穩健的索引座標 [i, 價格] 絕對定位！
                     if (t.buyShares > 0) {
                         const avgP = t.buyAmount > 0 ? (t.buyAmount / t.buyShares).toFixed(1) : '';
                         tradeMarkPoints.push({
                             name: '買進',
-                            coord: [dStr, r[3]],
+                            coord: [i, Number(r[3])], // 最低價
                             value: `▲買${t.buyShares >= 1000 ? (t.buyShares / 1000) + '張' : t.buyShares + '股'}${avgP ? '@' + avgP : ''}`,
                             symbol: 'pin',
                             symbolSize: [52, 28],
@@ -2431,7 +2445,7 @@ createApp({
                         const avgP = t.sellAmount > 0 ? (t.sellAmount / t.sellShares).toFixed(1) : '';
                         tradeMarkPoints.push({
                             name: '賣出',
-                            coord: [dStr, r[2]],
+                            coord: [i, Number(r[2])], // 最高價
                             value: `▼賣${t.sellShares >= 1000 ? (t.sellShares / 1000) + '張' : t.sellShares + '股'}${avgP ? '@' + avgP : ''}`,
                             symbol: 'pin',
                             symbolSize: [52, 28],
@@ -2795,10 +2809,9 @@ createApp({
                         {
                             name: '在庫庫存',
                             type: 'line',
-                            step: 'end',
-                            data: holdingData,
-                            smooth: false,
+                            smooth: true, // 🌟 像圖 4 融資黃線一樣優雅平滑！
                             showSymbol: false,
+                            data: holdingData,
                             lineStyle: { color: '#818cf8', width: 2 },
                             areaStyle: {
                                 color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -2811,14 +2824,16 @@ createApp({
                             name: '買進股數',
                             type: 'bar',
                             data: buySharesData,
-                            barWidth: '50%',
+                            barWidth: '60%',
+                            barGap: '-100%', // 🌟 100% 絕對置中對齊垂直刻度虛線！
                             itemStyle: { color: '#ef4444' }
                         },
                         {
                             name: '賣出股數',
                             type: 'bar',
                             data: sellSharesData,
-                            barWidth: '50%',
+                            barWidth: '60%',
+                            barGap: '-100%', // 🌟 100% 絕對置中對齊垂直刻度虛線！
                             itemStyle: { color: '#10b981' }
                         }
                     ],
