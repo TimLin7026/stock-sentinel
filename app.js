@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.09');
+        const appVersion = ref('v2.20261105.10');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -2834,18 +2834,29 @@ createApp({
                             ...commonYAxis, 
                             position: 'right', 
                             name: '股數', 
+                            scale: true,
+                            min: (val) => val.min > 0 ? Math.max(0, Math.floor(val.min * 0.95)) : 0,
+                            max: (val) => val.max > 0 ? Math.ceil(val.max * 1.05) : 10,
                             nameTextStyle: { color: bgText, fontSize: 9 },
                             axisLabel: { 
                                 color: bgText, 
                                 fontSize: 9, 
                                 formatter: (val) => val >= 1000 ? (val / 1000) + '張' : val 
                             }
+                        },
+                        {
+                            ...commonYAxis,
+                            position: 'left',
+                            show: false,
+                            min: 0,
+                            max: (val) => Math.max(10, Math.ceil((val.max || 0) * 2.5))
                         }
                     ],
                     series: [
                         {
                             name: '在庫庫存',
                             type: 'line',
+                            yAxisIndex: 0,
                             smooth: true, // 🌟 像圖 4 融資黃線一樣優雅平滑！
                             showSymbol: false,
                             data: holdingData,
@@ -2860,6 +2871,7 @@ createApp({
                         {
                             name: '買進股數',
                             type: 'bar',
+                            yAxisIndex: 1,
                             data: buySharesData,
                             barWidth: '60%',
                             barGap: '-100%', // 🌟 100% 絕對置中對齊垂直刻度虛線！
@@ -2868,6 +2880,7 @@ createApp({
                         {
                             name: '賣出股數',
                             type: 'bar',
+                            yAxisIndex: 1,
                             data: sellSharesData,
                             barWidth: '60%',
                             barGap: '-100%', // 🌟 100% 絕對置中對齊垂直刻度虛線！
