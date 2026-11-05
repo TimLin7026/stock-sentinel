@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.03');
+        const appVersion = ref('v2.20261105.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -747,7 +747,7 @@ createApp({
             }
         };
 
-        // ⏰ 智慧計算下一次開市日抓取時間 (對齊三班制：14:05 盤後第一時間 / 16:45 法人籌碼 / 21:10 全量資券校準)
+        // ⏰ 智慧計算下一次開市日抓取時間 (對齊三班制：14:40 盤後行情 / 16:30 法人籌碼 / 21:10 全量資券校準)
         const nextCrawlTimeInfo = computed(() => {
             if (marketSyncMeta.value.nextScheduledRun) {
                 return {
@@ -760,13 +760,42 @@ createApp({
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
             const twNow = new Date(utc + (3600000 * 8));
 
+            // 🌟 智慧排程緩衝狀態：若今日為開市日，且剛過排程點 25 分鐘內，檢查是否今日該場次尚未出爐
+            if (!isMarketHoliday(twNow)) {
+                const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
+                const pad = (n) => String(n).padStart(2, '0');
+                const todayStr = `${twNow.getFullYear()}${pad(twNow.getMonth() + 1)}${pad(twNow.getDate())}`;
+                const localFetchStr = (marketSyncMeta.value.marketDate || localStorage.getItem('sentinel_market_date') || '').replace(/\D/g, '');
+
+                // 三大排程點與緩衝區間 (分)：14:40~15:05, 16:30~16:55, 21:10~21:35
+                const scheduleWindows = [
+                    { start: 14 * 60 + 40, end: 15 * 60 + 5, name: '盤後行情', hour: 14 },
+                    { start: 16 * 60 + 30, end: 16 * 60 + 55, name: '三大法人', hour: 16 },
+                    { start: 21 * 60 + 10, end: 21 * 60 + 35, name: '資券籌碼', hour: 21 }
+                ];
+
+                for (const win of scheduleWindows) {
+                    if (totalMinutes >= win.start && totalMinutes <= win.end) {
+                        const localFetchTime = localStorage.getItem('sentinel_market_fetch_time') || '';
+                        const fetchHour = localFetchTime ? parseInt(localFetchTime.replace(/\D/g, '').slice(8, 10) || '0', 10) : 0;
+                        if (localFetchStr !== todayStr || fetchHour < win.hour) {
+                            return {
+                                label: `🔄 今日${win.name}清洗發布中`,
+                                countdown: '稍候即將出爐',
+                                tag: '排程執行中'
+                            };
+                        }
+                    }
+                }
+            }
+
             for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
                 const target = new Date(twNow.getTime() + dayOffset * 86400000);
                 if (isMarketHoliday(target)) continue;
 
                 const slots = [
-                    { h: 14, m: 45, tag: '盤後就緒' },
-                    { h: 16, m: 35, tag: '法人就緒' },
+                    { h: 14, m: 40, tag: '盤後就緒' },
+                    { h: 16, m: 30, tag: '法人就緒' },
                     { h: 21, m: 10, tag: '資券就緒' }
                 ];
                 for (const slot of slots) {
@@ -788,7 +817,7 @@ createApp({
                     }
                 }
             }
-            return { label: '開市日 14:45 / 16:35 / 20:35', countdown: '', tag: '三班就緒排程' };
+            return { label: '開市日 14:40 / 16:30 / 21:10', countdown: '', tag: '三班就緒排程' };
         });
 
         // 📅 核心計算：台灣日曆當前最新已收盤開市日 vs 本機快照收錄日 (三班就緒感知：14:45盤後 / 16:35法人 / 20:35資券)
@@ -954,21 +983,24 @@ createApp({
                 targetSlot = {
                     key: '2110',
                     type: 'full_chip',
-                    title: '📊 資券籌碼已清洗就緒 (21:10)',
+                    baseTitle: '📊 資券籌碼已清洗完畢',
+                    fallbackTime: '21:10',
                     message: '全量融資融券與全市場清洗審計完畢，請點擊同步！'
                 };
             } else if (totalMinutes >= (16 * 60 + 30)) {
                 targetSlot = {
                     key: '1630',
                     type: 'chip_market',
-                    title: '🏢 法人籌碼已清洗就緒 (16:30)',
+                    baseTitle: '🏢 法人籌碼已清洗完畢',
+                    fallbackTime: '16:30',
                     message: '外資、投信與自營商進出動向已就緒，請點擊同步！'
                 };
             } else if (totalMinutes >= (14 * 60 + 40)) {
                 targetSlot = {
                     key: '1440',
                     type: 'post_market',
-                    title: '📈 盤後行情已清洗就緒 (14:40)',
+                    baseTitle: '📈 盤後行情已清洗完畢',
+                    fallbackTime: '14:40',
                     message: '今日收盤價與 6 大青紅燈指標已更新，請點擊同步！'
                 };
             }
@@ -1014,11 +1046,21 @@ createApp({
                     return;
                 }
 
-                // 4. 三重檢驗皆 100% 通過：大腦已真實發布新資料，彈出提示橫條！
+                // 4. 三重檢驗皆 100% 通過：提取大腦真實就緒時間，彈出提示橫條！
+                let readyTime = targetSlot.fallbackTime;
+                const rawTime = healthData.run_time || healthData.timestamp || '';
+                if (rawTime) {
+                    const timeMatch = String(rawTime).match(/(\d{1,2}:\d{2})/);
+                    if (timeMatch) {
+                        readyTime = timeMatch[1];
+                    }
+                }
+                const dynamicTitle = `${targetSlot.baseTitle} (${readyTime} 就緒)`;
+
                 activeSyncNotice.value = {
                     show: true,
                     type: targetSlot.type,
-                    title: targetSlot.title,
+                    title: dynamicTitle,
                     message: targetSlot.message,
                     slot: targetSlot.key
                 };
