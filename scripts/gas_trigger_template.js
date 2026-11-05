@@ -1,6 +1,6 @@
 /**
  * 🚀 鈔能戰情室 - GitHub Actions 秒級精準排程觸發器 (Google Apps Script)
- * 觸發時段：週一至週五 14:40 (收盤即時)、16:30 (全量法人)、20:30 (融資籌碼)
+ * 觸發時段：週一至週五 14:40 (收盤即時)、16:30 (全量法人)、21:10 (融資籌碼)
  */
 
 // ⚙️ 請確認您的 GitHub 個人存取權杖 (PAT) 與倉庫資訊
@@ -55,7 +55,7 @@ function triggerMarketSync(targetDate = '', scanDays = '0') {
 
 /**
  * 🌟【一鍵全自動設定排程】（請點選此函式並按下「執行」）
- * 自動清除舊排程，並為您建立：週一至週五 14:40、16:30、20:30 三個精準定時器！
+ * 自動清除舊排程，並為您建立：週一至週五 14:40、16:30、21:10 三個精準定時器！
  */
 function setupTriggers() {
   // 1. 先清除現有的所有定時器，避免重複堆疊
@@ -71,7 +71,7 @@ function setupTriggers() {
   const scheduleTimes = [
     { hour: 14, minute: 40, label: '盤後收盤即時' },
     { hour: 16, minute: 30, label: '全量法人結算' },
-    { hour: 20, minute: 30, label: '融資籌碼校準' }
+    { hour: 21, minute: 10, label: '融資籌碼校準' }
   ];
 
   scheduleTimes.forEach(slot => {

@@ -442,7 +442,7 @@ createApp({
                 const slots = [
                     { h: 14, m: 40, tag: 'GAS收盤即時' },
                     { h: 16, m: 30, tag: 'GAS全量法人' },
-                    { h: 20, m: 30, tag: 'GAS融資籌碼' }
+                    { h: 21, m: 10, tag: 'GAS融資籌碼' }
                 ];
                 for (const slot of slots) {
                     const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
@@ -463,7 +463,7 @@ createApp({
                     }
                 }
             }
-            return { label: '開市日 GAS 14:40 / 16:30 / 20:30', countdown: '', tag: 'GAS排程' };
+            return { label: '開市日 GAS 14:40 / 16:30 / 21:10', countdown: '', tag: 'GAS排程' };
         });
 
         const resetCustomDateToLatest = () => {

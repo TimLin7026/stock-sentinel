@@ -1,7 +1,7 @@
 name: Market Daily Data & Health Sync
 
 on:
-  # 已全面改由 Google Apps Script (GAS) 透過 REST API 秒級定時觸發 (14:40 / 16:30 / 20:30)，徹底消除 GitHub cron 排隊延遲
+  # 已全面改由 Google Apps Script (GAS) 透過 REST API 秒級定時觸發 (14:40 / 16:30 / 21:10)，徹底消除 GitHub cron 排隊延遲
   workflow_dispatch:
     inputs:
       target_date:

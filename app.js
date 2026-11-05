@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261104.10');
+        const appVersion = ref('v2.20261105.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -722,7 +722,7 @@ createApp({
                 const slots = [
                     { h: 14, m: 45, tag: '盤後就緒' },
                     { h: 16, m: 35, tag: '法人就緒' },
-                    { h: 20, m: 35, tag: '資券就緒' }
+                    { h: 21, m: 10, tag: '資券就緒' }
                 ];
                 for (const slot of slots) {
                     const slotDate = new Date(target.getFullYear(), target.getMonth(), target.getDate(), slot.h, slot.m, 0);
@@ -1117,7 +1117,7 @@ createApp({
             const brainStr = String((marketSyncMeta.value && marketSyncMeta.value.cloudGeneratedAt) || '').trim();
             let brainDigits14 = brainStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
 
-            // 若尚未取得大腦產出時間，以市場開市日 20:45:00 作為基準
+            // 若尚未取得大腦產出時間，以市場開市日 21:10:00 作為基準
             if (!brainDigits14 || brainDigits14.length < 14) {
                 const mDay = String(marketTradingDay8 || (marketSyncMeta.value && marketSyncMeta.value.marketDate) || '').replace(/\D/g, '').slice(0, 8);
                 brainDigits14 = (mDay || '20261029') + '204500';
@@ -1338,8 +1338,8 @@ createApp({
             await fetchBrainHealthStatusPure(false);
         };
 
-        // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取)
-        const syncMarketSnapshot = async (silent = false) => {
+        // 執行全市場行情快照同步 (直連 Raw 破除 CDN 快取，支援智慧略過重複下載)
+        const syncMarketSnapshot = async (silent = false, force = false) => {
             const rawBaseUrl = 'https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main';
             const fallbackBaseUrl = '.';
 
@@ -1365,6 +1365,35 @@ createApp({
 
             if (healthData.status !== 'READY') {
                 throw new Error(`雲端大腦目前狀態為【${healthData.status}】，可能正在結算清洗中，請稍候重試。`);
+            }
+
+            // 🌟 核心智慧防禦：先比對「本機下載時間」與「雲端大腦產出時間」
+            // 若本機下載時間 >= 大腦產出時間，代表本機快照已是最新，直接略過下載！
+            const cloudTimeStr = healthData.run_time || healthData.timestamp || '';
+            const localFetchStr = localStorage.getItem('sentinel_market_fetch_time') || '';
+            const localFetchDigits = localFetchStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+            const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+
+            if (!force && cloudDigits && localFetchDigits && localFetchDigits >= cloudDigits) {
+                console.log(`⚡【智慧略過重複下載】本機快照已是最新 (本機: ${localFetchStr} >= 大腦: ${cloudTimeStr})，略過下載快照！`);
+                
+                // 即時刷新大腦最新狀態與排程資訊至卡片 (不覆蓋本機下載時間)
+                let marketDateStr = String(healthData.target_date || '');
+                if (marketDateStr.length === 8) {
+                    marketDateStr = `${marketDateStr.slice(0, 4)}/${marketDateStr.slice(4, 6)}/${marketDateStr.slice(6, 8)}`;
+                }
+                const nextRunStr = healthData.next_scheduled_run || '';
+                marketSyncMeta.value = {
+                    ...marketSyncMeta.value,
+                    marketDate: marketDateStr || marketSyncMeta.value.marketDate,
+                    cloudGeneratedAt: cloudTimeStr,
+                    nextScheduledRun: nextRunStr,
+                    status: healthData.status
+                };
+                localStorage.setItem('sentinel_market_cloud_time', cloudTimeStr);
+                if (nextRunStr) localStorage.setItem('sentinel_market_next_run', nextRunStr);
+
+                return { skipped: true, reason: 'ALREADY_LATEST', healthData };
             }
 
             // 2. 下載 gzip 快照二進位串流
@@ -1401,7 +1430,7 @@ createApp({
                 marketDateStr = `${marketDateStr.slice(0, 4)}/${marketDateStr.slice(4, 6)}/${marketDateStr.slice(6, 8)}`;
             }
 
-            const cloudTimeStr = healthData.run_time || healthData.timestamp || '---';
+            // cloudTimeStr 沿用上方宣告
             const nextRunStr = healthData.next_scheduled_run || '';
 
             marketSyncMeta.value = {
@@ -1586,19 +1615,24 @@ createApp({
             let snapInfo = null;
 
             try {
-                // 1. 同步全台股行情快照
+                // 1. 同步全台股行情快照 (內部自動判斷本機下載時間 >= 大腦產出時間時智慧略過)
                 snapInfo = await syncMarketSnapshot();
             } catch (err) {
                 console.error("行情快照同步失敗:", err);
                 showToast(`⚠️ 行情同步提醒: ${err.message}`, 4000);
             }
 
-            try {
-                // 1.1 同步最新 60D 歷史技術指標時序包 (確保一鍵複製與走勢圖同步推移至最新開市日)
-                syncStatus.value.message = '正在同步歷史技術指標時序...';
-                await loadAllStockHistory(true);
-            } catch (errHist) {
-                console.warn("歷史時序同步提醒:", errHist);
+            if (snapInfo && snapInfo.skipped) {
+                // ⚡ 本機快照已是最新：略過 60D 歷史包下載，直接執行個人帳本雙向同步 (無感秒殺)
+                showToast("⚡ 本機行情已是最新，略過重複下載，同步資料庫", 2200);
+            } else {
+                try {
+                    // 1.1 大腦有新產出，同步最新 60D 歷史技術指標時序包 (確保一鍵複製與走勢圖同步推移至最新開市日)
+                    syncStatus.value.message = '正在同步歷史技術指標時序...';
+                    await loadAllStockHistory(true);
+                } catch (errHist) {
+                    console.warn("歷史時序同步提醒:", errHist);
+                }
             }
 
             // 2. 若有 Google 登入，同時執行個人帳本雙向同步
