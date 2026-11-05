@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.04');
+        const appVersion = ref('v2.20261105.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1011,46 +1011,62 @@ createApp({
                 return;
             }
 
-            // 檢查該時段是否已在今日主動通知或手動關閉過
-            const alreadyNotified = localStorage.getItem(`sentinel_notified_${targetSlot.key}_${todayDateStr}`);
-            if (alreadyNotified) {
-                if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
-                return;
-            }
-
-            // 🌟 核心關鍵：三大時段統一先探測刷新 GitHub 大腦狀態 (market_health.json)
-            // 確保定時排程已執行完畢發布 (READY) 且確有新快照才提示！
+            // 🌟 核心關鍵：先取得 GitHub 大腦狀態 (支援背景探測與快取雙重容錯)
             try {
-                const healthData = await fetchBrainHealthStatusPure(true);
+                let healthData = await fetchBrainHealthStatusPure(true);
+                if (!healthData) {
+                    const cachedTime = marketSyncMeta.value.cloudGeneratedAt || localStorage.getItem('sentinel_market_cloud_time') || '';
+                    const cachedStatus = marketSyncMeta.value.status || localStorage.getItem('sentinel_market_status') || 'READY';
+                    if (cachedTime) {
+                        healthData = {
+                            run_time: cachedTime,
+                            status: cachedStatus,
+                            target_date: todayDateStr
+                        };
+                    }
+                }
                 if (!healthData) return;
 
-                // 1. 大腦狀態必須為 READY
-                if (healthData.status !== 'READY') return;
+                // 1. 大腦狀態檢查 (READY 或快照已更新)
+                if (healthData.status && healthData.status !== 'READY') return;
 
-                // 2. 審計目標日必須為今日開市日
+                // 2. 審計目標日檢查
                 const brainTargetDate = String(healthData.target_date || '').replace(/\D/g, '');
                 if (brainTargetDate && brainTargetDate !== todayDateStr) {
                     // 大腦日期尚未推進至今日開市日，代表今日排程尚未跑完發布，安靜等待
                     return;
                 }
 
-                // 3. 大腦產出時間必須新於本機下載時間 (代表真的有新資料待同步)
-                const cloudTimeStr = healthData.run_time || healthData.timestamp || '';
+                // 3. 大腦產出時間戳與本機下載時間戳比對
+                const cloudTimeStr = healthData.run_time || healthData.timestamp || marketSyncMeta.value.cloudGeneratedAt || '';
+                const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
                 const localFetchStr = localStorage.getItem('sentinel_market_fetch_time') || '';
                 const localFetchDigits = localFetchStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
-                const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
 
-                if (cloudDigits && localFetchDigits && cloudDigits <= localFetchDigits) {
-                    // 本機已經在該大腦產出後同步過了，絕不彈出重複提示！
+                // 4. 智慧時間戳忽略感知 (Timestamp-Based Dismissal)
+                // 只有使用者曾主動點擊 ✕ 且當前大腦時間戳未推進時，才保持靜默
+                const dismissedTime = localStorage.getItem('sentinel_dismissed_brain_time') || '';
+                if (dismissedTime && cloudDigits && dismissedTime >= cloudDigits) {
                     if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
                     return;
                 }
 
-                // 4. 三重檢驗皆 100% 通過：提取大腦真實就緒時間，彈出提示橫條！
+                // 5. 雙重感知判斷是否需同步：
+                // 條件 A: 大腦產出時間明確新於本機下載時間
+                const isCloudNewer = Boolean(cloudDigits && localFetchDigits && cloudDigits > localFetchDigits);
+                // 條件 B: 日曆比對顯示今日行情已就緒但本機快照尚未收錄今日
+                const isCalendarNeeded = Boolean(calendarMarketStatus.value && calendarMarketStatus.value.isNeedsSync);
+
+                if (!isCloudNewer && !isCalendarNeeded) {
+                    // 本機已經是今日最新且已同步過此大腦快照，安靜不擾民
+                    if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
+                    return;
+                }
+
+                // 6. 100% 確定有新資料就緒：提取大腦真實就緒時間，彈出提示橫條！
                 let readyTime = targetSlot.fallbackTime;
-                const rawTime = healthData.run_time || healthData.timestamp || '';
-                if (rawTime) {
-                    const timeMatch = String(rawTime).match(/(\d{1,2}:\d{2})/);
+                if (cloudTimeStr) {
+                    const timeMatch = String(cloudTimeStr).match(/(\d{1,2}:\d{2})/);
                     if (timeMatch) {
                         readyTime = timeMatch[1];
                     }
@@ -1070,15 +1086,11 @@ createApp({
         };
 
         const dismissSyncNotice = () => {
-            if (activeSyncNotice.value.slot) {
-                const now = new Date();
-                const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-                const twNow = new Date(utc + (3600000 * 8));
-                const y = twNow.getFullYear();
-                const m = String(twNow.getMonth() + 1).padStart(2, '0');
-                const d = String(twNow.getDate()).padStart(2, '0');
-                const todayDateStr = `${y}${m}${d}`;
-                localStorage.setItem(`sentinel_notified_${activeSyncNotice.value.slot}_${todayDateStr}`, 'true');
+            // 記錄當前大腦產出時間戳，僅忽略這一次產出，絕不永久盲鎖
+            const cloudTimeStr = marketSyncMeta.value.cloudGeneratedAt || localStorage.getItem('sentinel_market_cloud_time') || '';
+            const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+            if (cloudDigits) {
+                localStorage.setItem('sentinel_dismissed_brain_time', cloudDigits);
             }
             activeSyncNotice.value.show = false;
         };
@@ -1769,10 +1781,8 @@ createApp({
                 const m = String(twNow.getMonth() + 1).padStart(2, '0');
                 const d = String(twNow.getDate()).padStart(2, '0');
                 const todayDateStr = `${y}${m}${d}`;
-                const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
-                if (totalMinutes >= 870 && totalMinutes < 1020) { // 14:30~17:00
-                    localStorage.setItem(`sentinel_notified_1500_${todayDateStr}`, 'true');
-                }
+                // 同步完成後清除忽略記錄與主動提示橫條
+                localStorage.removeItem('sentinel_dismissed_brain_time');
                 activeSyncNotice.value.show = false;
             } catch(e) {}
             // 同步完成 (已移除重複彈出的黑色 Toast 提示框，維持簡潔視覺體驗)

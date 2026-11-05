@@ -314,14 +314,14 @@
                         :disabled="syncStatus.loading"
                         :class="[
                             syncStatus.loading ? 'opacity-80 cursor-not-allowed' : '',
-                            (hasUnsyncedChanges || activeSyncNotice.show)
+                            (hasUnsyncedChanges || activeSyncNotice.show || (calendarMarketStatus && calendarMarketStatus.isNeedsSync))
                                 ? 'bg-rose-500 hover:bg-rose-600 text-white font-bold shadow-md shadow-rose-500/40 animate-pulse border-rose-400' 
                                 : (theme === 'dark' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300')
                         ]"
                         class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs transition border shadow-sm"
                         title="同步">
                     <i v-if="syncStatus.loading" class="fa-solid fa-arrows-rotate fa-spin text-xs text-sky-400"></i>
-                    <i v-else class="fa-solid fa-rotate text-xs" :class="(hasUnsyncedChanges || activeSyncNotice.show) ? 'text-white' : 'text-sky-400'"></i>
+                    <i v-else class="fa-solid fa-rotate text-xs" :class="(hasUnsyncedChanges || activeSyncNotice.show || (calendarMarketStatus && calendarMarketStatus.isNeedsSync)) ? 'text-white' : 'text-sky-400'"></i>
                     <span class="text-[11px] font-medium">{{ syncStatus.loading ? '同步中' : '同步' }}</span>
                 </button>
 
@@ -3341,6 +3341,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261105.04"></script>
+    <script src="app.js?v=2.20261105.05"></script>
 </body>
 </html>
