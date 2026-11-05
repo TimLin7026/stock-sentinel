@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.05');
+        const appVersion = ref('v2.20261105.06');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1799,8 +1799,17 @@ createApp({
         const subOscTab = ref('青紅燈'); // '青紅燈' | 'MTM' | 'RSI' | 'WR' | 'CLV'
         const isChartLoading = ref(false);
         
-        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 均價)，預設 MA+布林開啟
-        const defaultKlineLayers = { ma: true, bollinger: true, cost: false, pivot: false };
+        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 均價 | 買賣點)，預設 MA+布林+買賣點開啟
+        const defaultKlineLayers = { ma: true, bollinger: true, cost: false, pivot: false, trades: true };
+        const subVolumeTab = ref(localStorage.getItem('sentinel_sub_volume_tab') || 'vol'); // 'vol' | 'chip'
+        const changeSubVolumeTab = (tab) => {
+            subVolumeTab.value = tab;
+            localStorage.setItem('sentinel_sub_volume_tab', tab);
+            Vue.nextTick(() => {
+                if (tab === 'vol' && chartInstances.vol) chartInstances.vol.resize();
+                if (tab === 'chip' && chartInstances.chip) chartInstances.chip.resize();
+            });
+        };
         const savedLayersStr = localStorage.getItem('sentinel_kline_layers');
         let initialLayers = { ...defaultKlineLayers };
         if (savedLayersStr) {
@@ -1896,6 +1905,8 @@ createApp({
             rsi12: '--',
             wr3: '--',
             wr50: '--',
+            tradeAction: '',
+            holdingShares: null,
             heatLights: { mtm: 0, osc: 0, k: 0, dif: 0, kd: 0, macd: 0, rsi12: 0 },
             arrows: {}
         });
@@ -1911,7 +1922,42 @@ createApp({
             return theme.value === 'dark' ? 'text-slate-100 font-bold' : 'text-slate-800 font-bold';
         };
 
-        const isCrosshairEnabled = ref(false); // 移動查價開關 (每次打開走勢預設為 false，杜絕手機滑動誤觸)
+        const isCrosshairEnabled = ref(true); // 移動查價開關 (預設開啟，進入即時查價)
+
+        // 🔍 多券商交易紀錄萃取與時序合併計算 (支援同一股票跨多券商自動合併)
+        const getStockTradeHistory = (stockCode) => {
+            if (!dbInstance) return { tradesByDate: {} };
+            const code = String(stockCode || '').trim();
+            try {
+                const res = dbInstance.exec("SELECT 動作, 成交股數, 成交價, 證券商, 交易時間 FROM trade_log WHERE 股票代號 = ? OR 股票代號 = ? ORDER BY 交易時間 ASC", [code, code.padStart(4, '0')]);
+                const tradesByDate = {};
+                if (res.length > 0 && res[0].values) {
+                    res[0].values.forEach(row => {
+                        const [action, shares, price, broker, timeStr] = row;
+                        const cleanDate = String(timeStr || '').replace(/\D/g, '').slice(0, 8);
+                        if (!cleanDate) return;
+                        if (!tradesByDate[cleanDate]) {
+                            tradesByDate[cleanDate] = { buyShares: 0, sellShares: 0, buyAmount: 0, sellAmount: 0, details: [] };
+                        }
+                        const s = Number(shares) || 0;
+                        const p = Number(price) || 0;
+                        const isBuy = String(action).includes('買');
+                        if (isBuy) {
+                            tradesByDate[cleanDate].buyShares += s;
+                            tradesByDate[cleanDate].buyAmount += (s * p);
+                        } else {
+                            tradesByDate[cleanDate].sellShares += s;
+                            tradesByDate[cleanDate].sellAmount += (s * p);
+                        }
+                        tradesByDate[cleanDate].details.push({ action, shares: s, price: p, broker });
+                    });
+                }
+                return { tradesByDate };
+            } catch (e) {
+                console.warn("讀取個人交易紀錄異常:", e);
+                return { tradesByDate: {} };
+            }
+        };
 
         // 重置十字準心看板數值為當前個股最新一日 (最後一筆)
         const resetCrosshairToLatest = () => {
@@ -2066,6 +2112,17 @@ createApp({
         // 更新十字準心即時數值看板 (支援對照前一日計算 6 燈動態趨勢與三維籌碼即時計算，及 5/10/20/60/120 均價 MA 與各指標漲跌直箭頭)
         const updateCrosshairValuesFromRow = (r, prevR, vmaObj = null) => {
             if (!r) return;
+            // 讀取當前個股在該日的個人交易與在庫總庫存
+            if (r._tradeAction !== undefined) {
+                crosshairData.value.tradeAction = r._tradeAction;
+            } else {
+                crosshairData.value.tradeAction = '';
+            }
+            if (r._holdingShares !== undefined) {
+                crosshairData.value.holdingShares = r._holdingShares;
+            } else {
+                crosshairData.value.holdingShares = null;
+            }
             // 計算 7 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平/常態)
             const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
             const oscVal = r._oscPulse !== undefined ? r._oscPulse : (prevR ? (Number(r[13]) > Number(prevR[13]) ? 1 : (Number(r[13]) < Number(prevR[13]) ? -1 : (prevR._oscPulse !== undefined ? prevR._oscPulse : -1))) : (Number(r[13]) >= 0 ? 1 : -1));
@@ -2305,8 +2362,87 @@ createApp({
             const gridBorder = isDark ? '#334155' : '#cbd5e1';
             const splitColor = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(203, 213, 225, 0.6)';
 
+            // 👤 萃取個人多券商歷史交易並計算在庫庫存水位
+            const { tradesByDate } = getStockTradeHistory(stockCode);
+            let accHolding = 0;
+            const fullHoldingMap = {};
+            const fullTradeActionMap = {};
+            const fullBuyMap = {};
+            const fullSellMap = {};
+
+            rawRows.forEach(r => {
+                const digits = String(r[0]).replace(/\D/g, '').slice(0, 8);
+                const t = tradesByDate[digits];
+                if (t) {
+                    const buyS = t.buyShares || 0;
+                    const sellS = t.sellShares || 0;
+                    accHolding = Math.max(0, accHolding + buyS - sellS);
+                    fullBuyMap[digits] = buyS;
+                    fullSellMap[digits] = sellS;
+                    if (buyS > 0 && sellS > 0) {
+                        fullTradeActionMap[digits] = `買${buyS}股 / 賣${sellS}股`;
+                    } else if (buyS > 0) {
+                        const avgP = t.buyAmount > 0 ? (t.buyAmount / buyS).toFixed(1) : '';
+                        fullTradeActionMap[digits] = `買進:${buyS}股${avgP ? '@' + avgP : ''}`;
+                    } else if (sellS > 0) {
+                        const avgP = t.sellAmount > 0 ? (t.sellAmount / sellS).toFixed(1) : '';
+                        fullTradeActionMap[digits] = `賣出:${sellS}股${avgP ? '@' + avgP : ''}`;
+                    }
+                }
+                fullHoldingMap[digits] = accHolding;
+            });
+
+            // 綁定到當前視圖序列
+            const tradeMarkPoints = [];
+            const holdingData = [];
+            const buySharesData = [];
+            const sellSharesData = [];
+
             // 解析各維度數值
-            const dates = rows.map(r => String(r[0]).length === 8 ? `${String(r[0]).slice(4,6)}/${String(r[0]).slice(6,8)}` : String(r[0]));
+            const dates = rows.map((r, i) => {
+                const dStr = String(r[0]).length === 8 ? `${String(r[0]).slice(4,6)}/${String(r[0]).slice(6,8)}` : String(r[0]);
+                const digits = String(r[0]).replace(/\D/g, '').slice(0, 8);
+                const hVal = fullHoldingMap[digits] !== undefined ? fullHoldingMap[digits] : 0;
+                r._holdingShares = hVal;
+                r._tradeAction = fullTradeActionMap[digits] || '';
+                holdingData.push(hVal);
+
+                const bVal = fullBuyMap[digits] || null;
+                const sVal = fullSellMap[digits] || null;
+                buySharesData.push(bVal);
+                sellSharesData.push(sVal);
+
+                const t = tradesByDate[digits];
+                if (t) {
+                    if (t.buyShares > 0) {
+                        const avgP = t.buyAmount > 0 ? (t.buyAmount / t.buyShares).toFixed(1) : '';
+                        tradeMarkPoints.push({
+                            name: '買進',
+                            coord: [dStr, r[3]],
+                            value: `▲買${t.buyShares >= 1000 ? (t.buyShares / 1000) + '張' : t.buyShares + '股'}${avgP ? '@' + avgP : ''}`,
+                            symbol: 'pin',
+                            symbolSize: [52, 28],
+                            symbolOffset: [0, 16],
+                            itemStyle: { color: '#ef4444' },
+                            label: { fontSize: 9, color: '#ffffff', fontWeight: 'bold' }
+                        });
+                    }
+                    if (t.sellShares > 0) {
+                        const avgP = t.sellAmount > 0 ? (t.sellAmount / t.sellShares).toFixed(1) : '';
+                        tradeMarkPoints.push({
+                            name: '賣出',
+                            coord: [dStr, r[2]],
+                            value: `▼賣${t.sellShares >= 1000 ? (t.sellShares / 1000) + '張' : t.sellShares + '股'}${avgP ? '@' + avgP : ''}`,
+                            symbol: 'pin',
+                            symbolSize: [52, 28],
+                            symbolOffset: [0, -16],
+                            itemStyle: { color: '#10b981' },
+                            label: { fontSize: 9, color: '#ffffff', fontWeight: 'bold' }
+                        });
+                    }
+                }
+                return dStr;
+            });
             const fullDates = rows.map(r => String(r[0]));
             const ohlc = rows.map(r => [r[1], r[4], r[3], r[2]]); // [Open, Close, Low, High]
             const volumes = rows.map((r, i) => ({
@@ -2452,7 +2588,11 @@ createApp({
                             color0: '#10b981',
                             borderColor: '#ef4444',
                             borderColor0: '#10b981'
-                        }
+                        },
+                        markPoint: (klineLayers.value.trades && tradeMarkPoints.length > 0) ? {
+                            silent: false,
+                            data: tradeMarkPoints
+                        } : undefined
                     }
                 ];
 
@@ -2609,7 +2749,7 @@ createApp({
                 chartInstances.vol = chart;
             }
 
-            // 5. 三大法人買賣超 (外資 亮藍, 投信 亮黃, 自營 亮紫)
+            // 4B. 三大法人買賣超 (外資 亮藍, 投信 亮黃, 自營 亮紫)
             const elChip = document.getElementById('chart-chip');
             if (elChip) {
                 const chart = echarts.init(elChip, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
@@ -2626,6 +2766,77 @@ createApp({
                     ]
                 });
                 chartInstances.chip = chart;
+            }
+
+            // 5. 🌟 全新「個人持股與買賣」指標圖 (多券商合併計算，買賣柱 + 庫存階梯面積圖)
+            const elHolding = document.getElementById('chart-holding');
+            if (elHolding) {
+                const chart = echarts.init(elHolding, null, { renderer: 'canvas', devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2) });
+                const hasAnyTrade = Object.keys(tradesByDate).length > 0;
+                chart.setOption({
+                    animation: false,
+                    grid: { ...commonGrid, right: 48, left: 10 },
+                    tooltip: commonTooltip,
+                    xAxis: { ...commonXAxis, axisLabel: { show: false } },
+                    yAxis: [
+                        { 
+                            ...commonYAxis, 
+                            position: 'right', 
+                            name: '股數', 
+                            nameTextStyle: { color: bgText, fontSize: 9 },
+                            axisLabel: { 
+                                color: bgText, 
+                                fontSize: 9, 
+                                formatter: (val) => val >= 1000 ? (val / 1000) + '張' : val 
+                            }
+                        }
+                    ],
+                    series: [
+                        {
+                            name: '在庫庫存',
+                            type: 'line',
+                            step: 'end',
+                            data: holdingData,
+                            smooth: false,
+                            showSymbol: false,
+                            lineStyle: { color: '#818cf8', width: 2 },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(129, 140, 248, 0.45)' },
+                                    { offset: 1, color: 'rgba(129, 140, 248, 0.05)' }
+                                ])
+                            }
+                        },
+                        {
+                            name: '買進股數',
+                            type: 'bar',
+                            data: buySharesData,
+                            barWidth: '50%',
+                            itemStyle: { color: '#ef4444' }
+                        },
+                        {
+                            name: '賣出股數',
+                            type: 'bar',
+                            data: sellSharesData,
+                            barWidth: '50%',
+                            itemStyle: { color: '#10b981' }
+                        }
+                    ],
+                    graphic: !hasAnyTrade ? [
+                        {
+                            type: 'text',
+                            left: 'center',
+                            top: 'middle',
+                            style: {
+                                text: '尚無此個股交易紀錄 (可於持股區登錄買賣)',
+                                fill: isDark ? '#475569' : '#94a3b8',
+                                fontSize: 11,
+                                fontFamily: 'sans-serif'
+                            }
+                        }
+                    ] : []
+                });
+                chartInstances.holding = chart;
             }
 
             // 6. MTM / RSI / 威廉指標
@@ -2856,8 +3067,8 @@ createApp({
         const openStockChartModal = (stock) => {
             if (!stock) return;
 
-            // 📍 移動查價狀態：每次進入走勢圖一律強制預設為關閉 (OFF)，杜絕手機滑動誤觸
-            isCrosshairEnabled.value = false;
+            // 📍 移動查價狀態：每次進入走勢圖預設開啟 (ON)，即刻就緒查價
+            isCrosshairEnabled.value = true;
 
             // 📌 走勢打開時的釘選狀態判斷：
             // 若彈窗原本是關閉狀態 (外部首次點開)，預設為未釘選
@@ -10810,6 +11021,8 @@ createApp({
             activeChartStock,
             chartDaysCount,
             subOscTab,
+            subVolumeTab,
+            changeSubVolumeTab,
             isChartLoading,
             klineLayers,
             toggleKlineLayer,

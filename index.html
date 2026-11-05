@@ -3060,6 +3060,11 @@
                                         class="px-2 py-0.5 rounded transition whitespace-nowrap" title="開關 當日均價線 (VWAP)">
                                     均價
                                 </button>
+                                <button @click="toggleKlineLayer('trades')" 
+                                        :class="klineLayers.trades ? 'bg-rose-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-2 py-0.5 rounded transition whitespace-nowrap" title="開關 個人買賣落點標記">
+                                    買賣點
+                                </button>
                             </div>
                         </div>
 
@@ -3143,30 +3148,37 @@
                         <div id="chart-kd" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
-                    <!-- 圖 4 (原 2)：成交量與融資餘額 (雙欄時 order-2 滿版自適應) -->
+                    <!-- 圖 4：市場量能與籌碼 (雙欄時 order-2 滿版自適應，支援成交量與三大法人膠囊頁籤切換) -->
                     <div :class="[
                         theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
                         chartLayoutMode === 'double' ? 'order-2 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-chart-column text-sky-400 mr-1.5"></i>4. 成交量與融資</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            <span class="flex items-center">
+                                <i :class="subVolumeTab === 'vol' ? 'fa-chart-column text-sky-400' : 'fa-building-columns text-indigo-400'" class="fa-solid mr-1.5"></i>4. 市場量能與籌碼
+                            </span>
+                            <!-- 右側：成交量 / 三大法人 膠囊頁籤組 -->
+                            <div class="flex bg-slate-800/90 p-0.5 rounded-lg text-[10px] font-mono border border-slate-700/80 space-x-0.5 shrink-0">
+                                <button @click="changeSubVolumeTab('vol')"
+                                        :class="subVolumeTab === 'vol' ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-1.5 py-0.5 rounded transition">
+                                    成交量
+                                </button>
+                                <button @click="changeSubVolumeTab('chip')"
+                                        :class="subVolumeTab === 'chip' ? 'bg-indigo-600 text-white font-bold shadow' : 'text-slate-400 hover:text-slate-200'"
+                                        class="px-1.5 py-0.5 rounded transition">
+                                    三大法人
+                                </button>
+                            </div>
+                        </div>
+                        <!-- 動態看板 -->
+                        <div class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-1 whitespace-nowrap overflow-x-auto no-scrollbar">
+                            <template v-if="subVolumeTab === 'vol'">
                                 <span class="text-amber-400 font-bold">融資:{{ formatNumber(crosshairData.marginBal) }}{{ crosshairData.arrows?.marginBal }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">量:{{ formatNumber(crosshairData.vol) }}{{ crosshairData.arrows?.vol }}</span>
-                            </span>
-                        </div>
-                        <div id="chart-vol" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
-                    </div>
-
-                    <!-- 圖 5 (原 5)：三大法人籌碼買賣超 (雙欄時 order-4 滿版自適應) -->
-                    <div :class="[
-                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
-                        chartLayoutMode === 'double' ? 'order-4 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
-                    ]" class="rounded-2xl border relative">
-                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
-                            <span class="flex items-center"><i class="fa-solid fa-building-columns text-indigo-400 mr-1.5"></i>5. 三大法人籌碼</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            </template>
+                            <template v-else>
                                 <span>
                                     <span class="text-sky-400 font-bold">外:</span>
                                     <span :class="Number(crosshairData.fb) > 0 ? 'text-rose-400 font-bold' : (Number(crosshairData.fb) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">{{ formatNumber(crosshairData.fb) }}{{ crosshairData.arrows?.fb }}</span>
@@ -3181,9 +3193,29 @@
                                     <span class="text-purple-400 font-bold">自:</span>
                                     <span :class="Number(crosshairData.db) > 0 ? 'text-rose-400 font-bold' : (Number(crosshairData.db) < 0 ? 'text-emerald-400 font-bold' : 'text-slate-400 font-bold')">{{ formatNumber(crosshairData.db) }}{{ crosshairData.arrows?.db }}</span>
                                 </span>
+                            </template>
+                        </div>
+                        <div id="chart-vol" v-show="subVolumeTab === 'vol'" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
+                        <div id="chart-chip" v-show="subVolumeTab === 'chip'" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
+                    </div>
+
+                    <!-- 圖 5：個人持股與買賣 (雙欄時 order-4 滿版自適應，多券商合併計算) -->
+                    <div :class="[
+                        theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm',
+                        chartLayoutMode === 'double' ? 'order-4 p-2 space-y-1 flex flex-col h-full min-h-0' : 'p-2.5 space-y-1.5'
+                    ]" class="rounded-2xl border relative">
+                        <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
+                            <span class="flex items-center"><i class="fa-solid fa-user-tag text-emerald-400 mr-1.5"></i>5. 個人持股與買賣</span>
+                            <span class="text-[10px] font-mono flex items-center space-x-1.5 text-slate-400 overflow-x-auto no-scrollbar">
+                                <span v-if="crosshairData.tradeAction" :class="crosshairData.tradeAction.includes('買') ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'">
+                                    {{ crosshairData.tradeAction }}
+                                </span>
+                                <span v-else class="text-slate-500">買賣:--</span>
+                                <span>·</span>
+                                <span class="text-indigo-400 font-bold">庫存:{{ crosshairData.holdingShares != null ? (crosshairData.holdingShares + '股') : '--' }}</span>
                             </span>
                         </div>
-                        <div id="chart-chip" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
+                        <div id="chart-holding" class="w-full" :class="chartLayoutMode === 'double' ? 'flex-1 min-h-0' : 'h-36'"></div>
                     </div>
 
                     <!-- 圖 6 (原 6)：熱力青紅燈 / MTM / RSI / 威廉指標 (雙欄時 order-6 滿版自適應) -->
@@ -3341,6 +3373,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261105.05"></script>
+    <script src="app.js?v=2.20261105.06"></script>
 </body>
 </html>
