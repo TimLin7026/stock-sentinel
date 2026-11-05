@@ -3064,7 +3064,7 @@
                         </div>
 
                         <!-- Row 2：均線與布林通道數值行 (靠右對齊，僅在勾選 MA 或 布林時呈現) -->
-                        <div v-if="klineLayers.ma || klineLayers.bollinger" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
+                        <div v-if="klineLayers.ma || klineLayers.bollinger" class="flex justify-end items-center text-xs sm:text-[13px] font-mono font-bold tracking-tight text-slate-400 space-x-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
                             <template v-if="klineLayers.ma">
                                 <span class="text-amber-400 font-bold">5M:{{ crosshairData.ma5 }}{{ crosshairData.arrows?.ma5 }}</span>
                                 <span>·</span>
@@ -3085,7 +3085,7 @@
                         </div>
 
                         <!-- Row 均價專屬數值行 (僅在點擊「均價」時呈現，動態展示當日均價與 5/10/20/60/120 均價 MA) -->
-                        <div v-if="klineLayers.pivot" class="flex justify-end items-center text-[10px] font-mono space-x-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
+                        <div v-if="klineLayers.pivot" class="flex justify-end items-center text-xs sm:text-[13px] font-mono font-bold tracking-tight space-x-1.5 whitespace-nowrap overflow-x-auto no-scrollbar">
                             <span class="text-fuchsia-400 font-bold">均價:{{ crosshairData.vwap }}{{ crosshairData.arrows?.vwap }}</span>
                             <span>·</span>
                             <span class="text-amber-400 font-bold">5V:{{ crosshairData.vma5 }}{{ crosshairData.arrows?.vma5 }}</span>
@@ -3100,7 +3100,7 @@
                         </div>
 
                         <!-- Row 3：籌碼成本線數值行 (僅在勾選成本時呈現) -->
-                        <div v-if="klineLayers.cost" class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40 overflow-x-auto no-scrollbar">
+                        <div v-if="klineLayers.cost" class="flex justify-end items-center text-xs sm:text-[13px] font-mono font-bold tracking-tight text-slate-400 space-x-2 whitespace-nowrap pt-0.5 border-t border-slate-800/40 overflow-x-auto no-scrollbar">
                             <span class="text-emerald-400 font-bold">融資成本:{{ crosshairData.marginCost }}{{ crosshairData.arrows?.marginCost }}</span>
                             <span>·</span>
                             <span class="text-rose-500 font-bold">外資成本:{{ crosshairData.foreignCost }}{{ crosshairData.arrows?.foreignCost }}</span>
@@ -3116,7 +3116,7 @@
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-water text-cyan-400 mr-1.5"></i>2. MACD 指標</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            <span class="text-xs sm:text-[13px] font-mono font-bold tracking-tight flex items-center space-x-1 text-slate-400">
                                 <span class="text-amber-400 font-bold">DIF:{{ crosshairData.dif }}{{ crosshairData.arrows?.dif }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">MACD:{{ crosshairData.macdS }}{{ crosshairData.arrows?.macdS }}</span>
@@ -3134,7 +3134,7 @@
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>3. KD 指標</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1 text-slate-400">
+                            <span class="text-xs sm:text-[13px] font-mono font-bold tracking-tight flex items-center space-x-1 text-slate-400">
                                 <span class="text-amber-400 font-bold">7K:{{ crosshairData.kdK }}{{ crosshairData.arrows?.kdK }}</span>
                                 <span>·</span>
                                 <span class="text-sky-400 font-bold">7D:{{ crosshairData.kdD }}{{ crosshairData.arrows?.kdD }}</span>
@@ -3167,7 +3167,7 @@
                             </div>
                         </div>
                         <!-- 動態看板 -->
-                        <div class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-1 whitespace-nowrap overflow-x-auto no-scrollbar">
+                        <div class="flex justify-end items-center text-xs sm:text-[13px] font-mono font-bold tracking-tight text-slate-400 space-x-1 whitespace-nowrap overflow-x-auto no-scrollbar">
                             <template v-if="subVolumeTab === 'vol'">
                                 <span class="text-amber-400 font-bold">融資:{{ formatNumber(crosshairData.marginBal) }}{{ crosshairData.arrows?.marginBal }}</span>
                                 <span>·</span>
@@ -3201,7 +3201,7 @@
                     ]" class="rounded-2xl border relative">
                         <div class="flex justify-between items-center mb-1 text-[11px] font-bold text-slate-300">
                             <span class="flex items-center"><i class="fa-solid fa-user-tag text-emerald-400 mr-1.5"></i>5. 個人持股與買賣</span>
-                            <span class="text-[10px] font-mono flex items-center space-x-1.5 text-slate-400 overflow-x-auto no-scrollbar">
+                            <span class="text-xs sm:text-[13px] font-mono font-bold tracking-tight flex items-center space-x-1.5 text-slate-400 overflow-x-auto no-scrollbar">
                                 <span v-if="crosshairData.tradeAction" :class="crosshairData.tradeAction.includes('買') ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'">
                                     {{ crosshairData.tradeAction }}
                                 </span>
@@ -3235,7 +3235,7 @@
                         </div>
 
                         <!-- Row 2：動態指標數值與 6 大青紅燈看板 (比照圖 1 右對齊整齊展開) -->
-                        <div class="flex justify-end items-center text-[10px] font-mono text-slate-400 space-x-1.5 whitespace-nowrap pt-0.5 overflow-x-auto no-scrollbar">
+                        <div class="flex justify-end items-center text-xs sm:text-[13px] font-mono font-bold tracking-tight text-slate-400 space-x-1.5 whitespace-nowrap pt-0.5 overflow-x-auto no-scrollbar">
                             <template v-if="subOscTab === '青紅燈'">
                                 <span :class="crosshairData.heatLights?.mtm === 1 ? 'text-rose-400 font-bold' : (crosshairData.heatLights?.mtm === -1 ? 'text-emerald-400 font-bold' : 'text-slate-400')">MTM{{ crosshairData.heatLights?.mtm === 1 ? '🔴' : (crosshairData.heatLights?.mtm === -1 ? '🟢' : '⚪') }}</span>
                                 <span>·</span>
@@ -3293,7 +3293,7 @@
                 </button>
 
                 <!-- 中間進度提示 -->
-                <div v-if="currentFilteredStocks && currentFilteredStocks.length > 0" class="text-[10px] font-mono text-slate-400 px-1 text-center shrink-0">
+                <div v-if="currentFilteredStocks && currentFilteredStocks.length > 0" class="text-[11px] font-mono text-slate-400 px-1 text-center shrink-0">
                     <span class="font-bold text-sky-400">{{ currentChartStockIndex >= 0 ? currentChartStockIndex + 1 : 1 }}</span>
                     <span>/</span>
                     <span>{{ currentFilteredStocks.length }}</span>
@@ -3368,6 +3368,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261105.08"></script>
+    <script src="app.js?v=2.20261105.09"></script>
 </body>
 </html>

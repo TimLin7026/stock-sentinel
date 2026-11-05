@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.08');
+        const appVersion = ref('v2.20261105.09');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1930,6 +1930,22 @@ createApp({
         const isCrosshairEnabled = ref(true); // 移動查價開關 (預設開啟，進入即時查價)
 
         // 🔍 多券商交易紀錄萃取與時序合併計算 (支援同一股票跨多券商自動合併)
+        // 📊 取得個股在所有券商之當前最新在庫總持有股數 (跨券商自動合併，排除關注清單)
+        const getStockCurrentHoldingShares = (stockCode) => {
+            if (!dbInstance) return 0;
+            const code = String(stockCode || '').trim();
+            try {
+                const res = dbInstance.exec("SELECT SUM(個股股數) FROM my_stock WHERE (股票代號 = ? OR 股票代號 = ?) AND 證券商 != '關注' AND 個股股數 > 0", [code, code.padStart(4, '0')]);
+                if (res.length > 0 && res[0].values && res[0].values[0] && res[0].values[0][0] != null) {
+                    return Number(res[0].values[0][0]) || 0;
+                }
+                return 0;
+            } catch (e) {
+                console.warn("讀取個股當前庫存總股數異常:", e);
+                return 0;
+            }
+        };
+
         const getStockTradeHistory = (stockCode) => {
             if (!dbInstance) return { tradesByDate: {} };
             const code = String(stockCode || '').trim();
@@ -2373,35 +2389,60 @@ createApp({
             const gridBorder = isDark ? '#334155' : '#cbd5e1';
             const splitColor = isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(203, 213, 225, 0.6)';
 
-            // 👤 萃取個人多券商歷史交易並計算在庫庫存水位
+            // 👤 萃取個人多券商歷史交易並計算在庫庫存水位 (支援多券商合併與逆向錨定)
             const { tradesByDate } = getStockTradeHistory(stockCode);
-            let accHolding = 0;
+            const currentTotalShares = getStockCurrentHoldingShares(stockCode);
             const fullHoldingMap = {};
             const fullTradeActionMap = {};
             const fullBuyMap = {};
             const fullSellMap = {};
 
+            // 1. 先萃取每日買賣量與交易文字 (依使用者要求改為 `買進: 3股 * 101.0` 清晰排版)
             rawRows.forEach(r => {
                 const digits = String(r[0]).replace(/\D/g, '').slice(0, 8);
                 const t = tradesByDate[digits];
                 if (t) {
                     const buyS = t.buyShares || 0;
                     const sellS = t.sellShares || 0;
-                    accHolding = Math.max(0, accHolding + buyS - sellS);
                     fullBuyMap[digits] = buyS;
                     fullSellMap[digits] = sellS;
                     if (buyS > 0 && sellS > 0) {
-                        fullTradeActionMap[digits] = `買${buyS}股 / 賣${sellS}股`;
+                        const bAvg = t.buyAmount > 0 ? (t.buyAmount / buyS).toFixed(1) : '';
+                        const sAvg = t.sellAmount > 0 ? (t.sellAmount / sellS).toFixed(1) : '';
+                        fullTradeActionMap[digits] = `買進: ${buyS}股${bAvg ? ' * ' + bAvg : ''} · 賣出: ${sellS}股${sAvg ? ' * ' + sAvg : ''}`;
                     } else if (buyS > 0) {
                         const avgP = t.buyAmount > 0 ? (t.buyAmount / buyS).toFixed(1) : '';
-                        fullTradeActionMap[digits] = `買進:${buyS}股${avgP ? '@' + avgP : ''}`;
+                        fullTradeActionMap[digits] = `買進: ${buyS}股${avgP ? ' * ' + avgP : ''}`;
                     } else if (sellS > 0) {
                         const avgP = t.sellAmount > 0 ? (t.sellAmount / sellS).toFixed(1) : '';
-                        fullTradeActionMap[digits] = `賣出:${sellS}股${avgP ? '@' + avgP : ''}`;
+                        fullTradeActionMap[digits] = `賣出: ${sellS}股${avgP ? ' * ' + avgP : ''}`;
                     }
                 }
-                fullHoldingMap[digits] = accHolding;
             });
+
+            // 2. 計算時序在庫持股水位
+            if (currentTotalShares > 0 && rawRows.length > 0) {
+                // 🌟 當前在席持股大於 0：以 my_stock 多券商合併總庫存 (如 432 股) 作為最新一日的錨點，往前回推歷史
+                let curH = currentTotalShares;
+                for (let i = rawRows.length - 1; i >= 0; i--) {
+                    const digits = String(rawRows[i][0]).replace(/\D/g, '').slice(0, 8);
+                    fullHoldingMap[digits] = curH;
+                    // 當日收盤為 curH，若當日有買賣，則當日開盤 (前一日收盤) 為 curH - buyS + sellS
+                    const b = fullBuyMap[digits] || 0;
+                    const s = fullSellMap[digits] || 0;
+                    curH = Math.max(0, curH - b + s);
+                }
+            } else {
+                // 若目前在庫持股為 0 (已結清或純觀察歷史)，則自歷史第一筆正向累計
+                let accHolding = 0;
+                rawRows.forEach(r => {
+                    const digits = String(r[0]).replace(/\D/g, '').slice(0, 8);
+                    const b = fullBuyMap[digits] || 0;
+                    const s = fullSellMap[digits] || 0;
+                    accHolding = Math.max(0, accHolding + b - s);
+                    fullHoldingMap[digits] = accHolding;
+                });
+            }
             currentChartTradeMaps.holding = fullHoldingMap;
             currentChartTradeMaps.action = fullTradeActionMap;
 
@@ -2874,8 +2915,10 @@ createApp({
             // 🚀 主動雙重自適應尺寸校準，徹底消除初次開啟空白
             Vue.nextTick(() => {
                 resizeAllStockCharts();
+                resetCrosshairToLatest(); // 🌟 彈窗剛開啟時立即鎖定最新當日，同步圖 5 與全看板指標
                 setTimeout(() => {
                     resizeAllStockCharts();
+                    resetCrosshairToLatest();
                 }, 80);
             });
         };
