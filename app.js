@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.07');
+        const appVersion = ref('v2.20261105.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1799,8 +1799,8 @@ createApp({
         const subOscTab = ref('青紅燈'); // '青紅燈' | 'MTM' | 'RSI' | 'WR' | 'CLV'
         const isChartLoading = ref(false);
         
-        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 均價 | 買賣點)，預設 MA+布林+買賣點開啟
-        const defaultKlineLayers = { ma: true, bollinger: true, cost: false, pivot: false, trades: true };
+        // 圖 1 (K線主圖) 指標圖層開關 (MA | 布林 | 成本 | 均價)，預設 MA+布林開啟，保持純粹走勢
+        const defaultKlineLayers = { ma: true, bollinger: true, cost: false, pivot: false };
         const subVolumeTab = ref(localStorage.getItem('sentinel_sub_volume_tab') || 'vol'); // 'vol' | 'chip'
         const changeSubVolumeTab = (tab) => {
             subVolumeTab.value = tab;
@@ -2119,20 +2119,18 @@ createApp({
             if (!r) return;
             // 讀取當前個股在該日的個人交易與在庫總庫存 (優先自全域時序字典查詢)
             const dDigits = String(r[0] || '').replace(/\D/g, '').slice(0, 8);
+            let currentTradeAction = '';
             if (currentChartTradeMaps.action && currentChartTradeMaps.action[dDigits]) {
-                crosshairData.value.tradeAction = currentChartTradeMaps.action[dDigits];
+                currentTradeAction = currentChartTradeMaps.action[dDigits];
             } else if (r._tradeAction !== undefined) {
-                crosshairData.value.tradeAction = r._tradeAction;
-            } else {
-                crosshairData.value.tradeAction = '';
+                currentTradeAction = r._tradeAction;
             }
 
+            let currentHolding = null;
             if (currentChartTradeMaps.holding && currentChartTradeMaps.holding[dDigits] !== undefined) {
-                crosshairData.value.holdingShares = currentChartTradeMaps.holding[dDigits];
+                currentHolding = currentChartTradeMaps.holding[dDigits];
             } else if (r._holdingShares !== undefined) {
-                crosshairData.value.holdingShares = r._holdingShares;
-            } else {
-                crosshairData.value.holdingShares = null;
+                currentHolding = r._holdingShares;
             }
             // 計算 7 燈狀態 (1: 偏多/紅, -1: 偏空/綠, 0: 平/常態)
             const mtmVal = (Number(r[21]) > Number(r[22])) ? 1 : -1;
@@ -2215,6 +2213,8 @@ createApp({
                 high: r[2],
                 low: r[3],
                 close: r[4],
+                tradeAction: currentTradeAction,
+                holdingShares: currentHolding != null ? (typeof currentHolding === 'number' ? (Number.isInteger(currentHolding) ? currentHolding.toLocaleString() : currentHolding.toFixed(2)) : currentHolding) : null,
                 prevClose: prevR ? prevR[4] : null,
                 vol: r[5],
                 ma5: r[6],
@@ -2602,11 +2602,7 @@ createApp({
                             color0: '#10b981',
                             borderColor: '#ef4444',
                             borderColor0: '#10b981'
-                        },
-                        markPoint: (klineLayers.value.trades && tradeMarkPoints.length > 0) ? {
-                            silent: false,
-                            data: tradeMarkPoints
-                        } : undefined
+                        }
                     }
                 ];
 
