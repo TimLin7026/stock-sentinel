@@ -719,35 +719,80 @@
                     </button>
                 </div>
 
-                <!-- 特別關注分頁的子過濾器 (對齊地端：全部 / ▲ 關注買 / ▼ 關注賣) -->
-                <div v-if="stockSubTab === 'starred'" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-xl border text-xs overflow-x-auto no-scrollbar">
-                    <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold mr-0.5 whitespace-nowrap shrink-0">篩選：</span>
-                    <button @click="starredSubFilter = '全部'" 
-                            :class="starredSubFilter === '全部' ? (theme === 'dark' ? 'bg-slate-700 text-white font-bold' : 'bg-slate-800 text-white font-bold') : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600 hover:text-slate-900')"
-                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 whitespace-nowrap shrink-0">
-                        <span class="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
-                        <span>全部</span>
-                    </button>
-                    <button @click="starredSubFilter = '買'" 
-                            :class="starredSubFilter === '買' ? 'bg-rose-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-rose-300' : 'text-slate-600 hover:text-rose-600')"
-                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border border-rose-500/30 whitespace-nowrap shrink-0">
-                        <span :class="starredSubFilter === '買' ? 'text-white' : 'triangle-buy'" class="text-sm leading-none">▲</span>
-                        <span>關注買</span>
-                    </button>
-                    <button @click="starredSubFilter = '賣'" 
-                            :class="starredSubFilter === '賣' ? 'bg-emerald-600 text-white font-bold shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-emerald-300' : 'text-slate-600 hover:text-emerald-600')"
-                            class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border border-emerald-500/30 whitespace-nowrap shrink-0">
-                        <span :class="starredSubFilter === '賣' ? 'text-white' : 'triangle-sell'" class="text-sm leading-none">▼</span>
-                        <span>關注賣</span>
-                    </button>
-                    <!-- ⚡ 依青紅燈指標全新標記按鈕 (靠右對齊，手機端純圖示，大螢幕顯示文字) -->
-                    <button @click="openAutoTagModal" 
-                            :class="theme === 'dark' ? 'bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 border-indigo-700/60' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'"
-                            class="ml-auto px-2 py-1 sm:px-2.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
-                            title="依當前 OSC縮 與 RSI12 燈號轉折/狀態自選標記關注買賣">
-                        <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-xs"></i>
-                        <span class="hidden sm:inline">指標標記</span>
-                    </button>
+                <!-- 特別關注分頁的複合多維過濾器 (支援雙行手機防擠壓與指標多選) -->
+                <div v-if="stockSubTab === 'starred'" :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="p-2 sm:p-2.5 rounded-2xl border space-y-1.5 text-xs">
+                    <!-- 第 1 行：買賣方向過濾 + 靠右功能鍵 -->
+                    <div class="flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar">
+                        <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                            <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold mr-0.5 whitespace-nowrap shrink-0 flex items-center space-x-1">
+                                <i class="fa-solid fa-filter text-[10px] text-sky-500"></i>
+                                <span>方向：</span>
+                            </span>
+                            <button @click="resetStarredFilters" 
+                                    :class="starredFilters.direction === '全部' && !hasActiveIndicatorFilters ? (theme === 'dark' ? 'bg-slate-700 text-white font-bold shadow' : 'bg-slate-800 text-white font-bold shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200 bg-slate-800/60' : 'text-slate-600 hover:text-slate-900 bg-slate-100')"
+                                    class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 whitespace-nowrap shrink-0">
+                                <span class="w-1.5 h-1.5 rounded-full inline-block" :class="starredFilters.direction === '全部' && !hasActiveIndicatorFilters ? 'bg-sky-400' : 'bg-slate-400'"></span>
+                                <span>全部</span>
+                            </button>
+                            <button @click="setStarredDirection(starredFilters.direction === '買' ? '全部' : '買')" 
+                                    :class="starredFilters.direction === '買' ? 'bg-rose-600 text-white font-bold shadow shadow-rose-600/30 ring-1 ring-rose-400' : (theme === 'dark' ? 'text-slate-400 hover:text-rose-300 border-rose-500/20 bg-rose-950/20' : 'text-slate-600 hover:text-rose-600 border-rose-500/30 bg-rose-50/50')"
+                                    class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                                <span :class="starredFilters.direction === '買' ? 'text-white' : 'triangle-buy'" class="text-sm leading-none">▲</span>
+                                <span>關注買</span>
+                            </button>
+                            <button @click="setStarredDirection(starredFilters.direction === '賣' ? '全部' : '賣')" 
+                                    :class="starredFilters.direction === '賣' ? 'bg-emerald-600 text-white font-bold shadow shadow-emerald-600/30 ring-1 ring-emerald-400' : (theme === 'dark' ? 'text-slate-400 hover:text-emerald-300 border-emerald-500/20 bg-emerald-950/20' : 'text-slate-600 hover:text-emerald-600 border-emerald-500/30 bg-emerald-50/50')"
+                                    class="px-2 py-1 sm:px-2.5 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                                <span :class="starredFilters.direction === '賣' ? 'text-white' : 'triangle-sell'" class="text-sm leading-none">▼</span>
+                                <span>關注賣</span>
+                            </button>
+                        </div>
+
+                        <!-- ⚡ 依青紅燈指標全新標記按鈕 (靠右對齊，純圖示膠囊風格) -->
+                        <button @click="openAutoTagModal" 
+                                :class="theme === 'dark' ? 'bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 border-indigo-700/60' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'"
+                                class="ml-auto px-2 py-1 sm:px-2.5 rounded-lg text-xs font-semibold border transition flex items-center space-x-1 shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
+                                title="依當前 OSC縮 與 RSI12 燈號轉折/狀態自選標記關注買賣">
+                            <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-xs"></i>
+                            <span class="hidden sm:inline">指標標記</span>
+                        </button>
+                    </div>
+
+                    <!-- 第 2 行：指標特徵複選過濾 (OSC變 / RSI12變 / RSI12持續) -->
+                    <div class="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t" :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-100'">
+                        <span :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'" class="text-[11px] font-bold mr-0.5 whitespace-nowrap shrink-0 flex items-center space-x-1">
+                            <i class="fa-solid fa-bolt text-[10px] text-amber-400"></i>
+                            <span>指標：</span>
+                        </span>
+                        <!-- ⚡ OSC變 -->
+                        <button @click="toggleStarredIndicator('oscChange')" 
+                                :class="starredFilters.oscChange ? 'bg-indigo-600 text-white font-bold shadow shadow-indigo-600/30 ring-1 ring-indigo-400' : (theme === 'dark' ? 'text-slate-400 hover:text-indigo-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-indigo-600 border-slate-200 bg-slate-50')"
+                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                            <span class="text-[10px]">⚡</span>
+                            <span>OSC變</span>
+                        </button>
+                        <!-- 📈 RSI12變 -->
+                        <button @click="toggleStarredIndicator('rsiChange')" 
+                                :class="starredFilters.rsiChange ? 'bg-violet-600 text-white font-bold shadow shadow-violet-600/30 ring-1 ring-violet-400' : (theme === 'dark' ? 'text-slate-400 hover:text-violet-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-violet-600 border-slate-200 bg-slate-50')"
+                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                            <span class="text-[10px]">📈</span>
+                            <span>RSI12變</span>
+                        </button>
+                        <!-- 🔁 RSI12持續 -->
+                        <button @click="toggleStarredIndicator('rsiKeep')" 
+                                :class="starredFilters.rsiKeep ? 'bg-amber-600 text-white font-bold shadow shadow-amber-600/30 ring-1 ring-amber-400' : (theme === 'dark' ? 'text-slate-400 hover:text-amber-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-amber-600 border-slate-200 bg-slate-50')"
+                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                            <span class="text-[10px]">🔁</span>
+                            <span>RSI12持續</span>
+                        </button>
+
+                        <!-- 若有啟用任何指標過濾，顯示一鍵清除指標小按鈕 -->
+                        <button v-if="hasActiveIndicatorFilters" @click="starredFilters.oscChange = false; starredFilters.rsiChange = false; starredFilters.rsiKeep = false;" 
+                                :class="theme === 'dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'"
+                                class="ml-auto text-[10px] px-1.5 py-0.5 rounded transition whitespace-nowrap shrink-0" title="清除所有指標篩選">
+                            <i class="fa-solid fa-xmark mr-0.5"></i>清除指標
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 個股卡片列表 -->
@@ -3296,6 +3341,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261105.02"></script>
+    <script src="app.js?v=2.20261105.03"></script>
 </body>
 </html>

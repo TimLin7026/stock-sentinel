@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.02');
+        const appVersion = ref('v2.20261105.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -166,7 +166,52 @@ createApp({
         // ─── 導航與分頁狀態 ───
         const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
         const stockSubTab = ref('holding'); // 預設現役持股區
-        const starredSubFilter = ref('全部'); // 特別關注子過濾 (全部 / 買 / 賣)
+                // 🌟 特別關注複合篩選器 (支援買賣方向 + 指標特徵多維複選)
+        const starredFilters = reactive({
+            direction: '全部', // '全部' | '買' | '賣'
+            oscChange: false,  // true | false (OSC縮 昨今轉折)
+            rsiChange: false,  // true | false (RSI12 昨今轉折)
+            rsiKeep: false     // true | false (RSI12 狀態持續)
+        });
+        const starredSubFilter = computed(() => starredFilters.direction); // 向下相容
+
+        const setStarredDirection = (dir) => {
+            starredFilters.direction = dir;
+        };
+
+        const toggleStarredIndicator = (key) => {
+            if (key in starredFilters) {
+                starredFilters[key] = !starredFilters[key];
+            }
+        };
+
+        const resetStarredFilters = () => {
+            starredFilters.direction = '全部';
+            starredFilters.oscChange = false;
+            starredFilters.rsiChange = false;
+            starredFilters.rsiKeep = false;
+        };
+
+        const hasActiveIndicatorFilters = computed(() => {
+            return starredFilters.oscChange || starredFilters.rsiChange || starredFilters.rsiKeep;
+        });
+
+        const checkStockIndicatorMatch = (stock, type) => {
+            const tags = Array.isArray(stock.indicatorTags) ? stock.indicatorTags : [];
+            const oscTag = tags.find(t => t.text === 'OSC縮');
+            const rsiTag = tags.find(t => t.text === 'RSI12');
+
+            if (type === 'oscChange') {
+                return !!(oscTag && (oscTag.transition === 'bear-bull' || oscTag.transition === 'bull-bear'));
+            }
+            if (type === 'rsiChange') {
+                return !!(rsiTag && ((rsiTag.type === 'bull' && rsiTag.transition !== '1_to_1') || (rsiTag.type === 'bear' && rsiTag.transition !== '-1_to_-1')));
+            }
+            if (type === 'rsiKeep') {
+                return !!(rsiTag && (rsiTag.transition === '1_to_1' || rsiTag.transition === '-1_to_-1'));
+            }
+            return false;
+        };
         const stockSearchQuery = ref('');
         const onlyExpiredReports = ref(false); // 快速篩選戰報過期/待更新個股
         const expandedStockUids = ref(new Set()); // 展開卡片集合 (以 code_broker 為唯一 UID)
@@ -4460,11 +4505,26 @@ createApp({
 
         // ─── 計算屬性：個股戰報分類與「依交易日新到舊」排序 ───
         const starredStocks = computed(() => {
-            return stockList.value.filter(s => {
-                if (starredSubFilter.value === '全部') {
-                    return s.focusStatus === '買' || s.focusStatus === '賣';
+            const list = stockList.value || [];
+            return list.filter(s => {
+                // 基礎門檻：必須是特別關注池中的標的
+                const isStarred = s.focusStatus === '買' || s.focusStatus === '賣';
+                if (!isStarred) return false;
+
+                // 1. 買賣方向過濾
+                if (starredFilters.direction === '買' && s.focusStatus !== '買') return false;
+                if (starredFilters.direction === '賣' && s.focusStatus !== '賣') return false;
+
+                // 2. 指標特徵多選過濾 (若有勾選指標特徵，需符合勾選項)
+                if (hasActiveIndicatorFilters.value) {
+                    let matchAny = false;
+                    if (starredFilters.oscChange && checkStockIndicatorMatch(s, 'oscChange')) matchAny = true;
+                    if (starredFilters.rsiChange && checkStockIndicatorMatch(s, 'rsiChange')) matchAny = true;
+                    if (starredFilters.rsiKeep && checkStockIndicatorMatch(s, 'rsiKeep')) matchAny = true;
+                    if (!matchAny) return false;
                 }
-                return s.focusStatus === starredSubFilter.value;
+
+                return true;
             });
         });
 
@@ -10528,6 +10588,11 @@ createApp({
             changeCloudSettingsTab,
             stockSubTab,
             starredSubFilter,
+            starredFilters,
+            setStarredDirection,
+            toggleStarredIndicator,
+            resetStarredFilters,
+            hasActiveIndicatorFilters,
             stockSearchQuery,
             onlyExpiredReports,
             selectedBrokerFilter,
