@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.11');
+        const appVersion = ref('v2.20261105.12');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -1928,6 +1928,8 @@ createApp({
         };
 
         const isCrosshairEnabled = ref(true); // 移動查價開關 (預設開啟，進入即時查價)
+        let isCrosshairSyncing = false; // 🛡️ 防重入互斥鎖，物理級 100% 阻斷跨圖事件死循環雪崩！
+        let crosshairRafId = null; // 🚀 requestAnimationFrame 節流調度器
 
         // 🔍 多券商交易紀錄萃取與時序合併計算 (支援同一股票跨多券商自動合併)
         // 📊 取得個股在所有券商之當前最新在庫總持有股數 (跨券商自動合併，排除關注清單)
@@ -2911,11 +2913,11 @@ createApp({
             const activeCharts = Object.values(chartInstances).filter(Boolean);
             echarts.connect(activeCharts);
 
-            // 綁定所有子圖之十字準心移動事件，確保滑動任意子圖皆能即時更新全看板 (含雙向廣播)
-            const bindAxisPointerListener = (chartInstance, chartKey) => {
+            // 綁定所有子圖之十字準心移動事件，確保滑動任意子圖皆能即時更新全看板 (輕量原生活動，絕不手動互打)
+            const bindAxisPointerListener = (chartInstance) => {
                 if (!chartInstance) return;
                 chartInstance.on('updateAxisPointer', (event) => {
-                    if (!isCrosshairEnabled.value) return; // 🌟 查價關閉時，絕對不更新看板與指標數值！
+                    if (!isCrosshairEnabled.value || isCrosshairSyncing) return; // 🌟 查價關閉或正在同步中，立即阻斷次級連鎖！
                     let dataIndex = event.dataIndex;
                     if (dataIndex === undefined && event.axesInfo && event.axesInfo.length > 0) {
                         const xInfo = event.axesInfo.find(a => a.axisDim === 'x');
@@ -2923,21 +2925,11 @@ createApp({
                     }
                     if (dataIndex !== undefined && rows[dataIndex]) {
                         updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
-                        // 🌟 若滑動其他圖表，主動通知圖 6 (含青紅燈熱力圖) 同步顯示該日指標十字線
-                        if (chartKey !== 'mtm' && chartInstances.mtm && typeof chartInstances.mtm.dispatchAction === 'function') {
-                            try {
-                                chartInstances.mtm.dispatchAction({
-                                    type: 'showTip',
-                                    dataIndex: dataIndex,
-                                    seriesIndex: 0
-                                });
-                            } catch(e) {}
-                        }
                     }
                 });
             };
 
-            Object.entries(chartInstances).forEach(([k, c]) => bindAxisPointerListener(c, k));
+            Object.values(chartInstances).forEach(c => bindAxisPointerListener(c));
 
             // 🚀 主動雙重自適應尺寸校準，徹底消除初次開啟空白
             Vue.nextTick(() => {
@@ -3131,53 +3123,58 @@ createApp({
             }, true);
             chartInstances.mtm = chart;
 
-            // 綁定十字準心與雙向廣播函式 (徹底打破青紅燈熱力圖 Heatmap 無法連動其他圖的限制)
-            const broadcastCrosshairFromDataIndex = (dataIndex) => {
-                if (!isCrosshairEnabled.value || dataIndex === undefined || dataIndex === null) return;
-                const idx = Math.max(0, Math.min(rows.length - 1, Number(dataIndex)));
-                if (rows[idx]) {
-                    updateCrosshairValuesFromRow(rows[idx], idx > 0 ? rows[idx - 1] : null);
-                    // 🌟 主動跨圖派發 showTip 給其他 5 大子圖 (K線、MACD、KD、成交量、個人持股)，強制同步十字虛線！
-                    Object.entries(chartInstances).forEach(([k, c]) => {
-                        if (c && k !== 'mtm' && typeof c.dispatchAction === 'function') {
-                            try {
-                                c.dispatchAction({
-                                    type: 'showTip',
-                                    dataIndex: idx,
-                                    seriesIndex: 0
-                                });
-                            } catch(e) {}
-                        }
-                    });
-                }
-            };
-
+            // 綁定圖 6 自身的十字準心事件 (非青紅燈時如 MTM/RSI/WR/CLV 正常接收)
             chart.on('updateAxisPointer', (event) => {
-                if (!isCrosshairEnabled.value) return;
+                if (!isCrosshairEnabled.value || isCrosshairSyncing) return;
                 let dataIndex = event.dataIndex;
                 if (dataIndex === undefined && event.axesInfo && event.axesInfo.length > 0) {
                     const xInfo = event.axesInfo.find(a => a.axisDim === 'x');
                     if (xInfo && xInfo.value !== undefined) dataIndex = xInfo.value;
                 }
-                if (dataIndex !== undefined) {
-                    broadcastCrosshairFromDataIndex(dataIndex);
+                if (dataIndex !== undefined && rows[dataIndex]) {
+                    updateCrosshairValuesFromRow(rows[dataIndex], dataIndex > 0 ? rows[dataIndex - 1] : null);
                 }
             });
 
-            // 🔥 針對青紅燈 Heatmap，透過 ZRender 原生像素座標精準轉換，滑鼠移動時毫秒級連動全站！
+            // 🔥 專屬針對青紅燈 Heatmap：透過 ZRender 像素轉換 + requestAnimationFrame 節流單向廣播 (鎖定保護，絕不回打)
             const zr = chart.getZr();
             if (zr) {
                 zr.off('mousemove');
                 zr.on('mousemove', (params) => {
-                    if (!isCrosshairEnabled.value) return;
-                    const pointInPixel = [params.offsetX, params.offsetY];
-                    if (chart.containPixel('grid', pointInPixel)) {
-                        const pointInGrid = chart.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
-                        if (pointInGrid && pointInGrid[0] !== undefined) {
-                            const xIndex = Math.round(pointInGrid[0]);
-                            broadcastCrosshairFromDataIndex(xIndex);
+                    if (!isCrosshairEnabled.value || isCrosshairSyncing) return;
+                    if (subOscTab.value !== '青紅燈') return; // 非青紅燈時已有 echarts.connect，絕不重複派發！
+
+                    if (crosshairRafId) cancelAnimationFrame(crosshairRafId);
+                    crosshairRafId = requestAnimationFrame(() => {
+                        if (isCrosshairSyncing) return;
+                        const pointInPixel = [params.offsetX, params.offsetY];
+                        if (chart.containPixel('grid', pointInPixel)) {
+                            const pointInGrid = chart.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
+                            if (pointInGrid && pointInGrid[0] !== undefined) {
+                                const idx = Math.max(0, Math.min(rows.length - 1, Math.round(pointInGrid[0])));
+                                if (rows[idx]) {
+                                    isCrosshairSyncing = true;
+                                    try {
+                                        updateCrosshairValuesFromRow(rows[idx], idx > 0 ? rows[idx - 1] : null);
+                                        // 🌟 單向派發給其他 5 圖，因 isCrosshairSyncing = true 絕不會反向觸發！
+                                        Object.entries(chartInstances).forEach(([k, c]) => {
+                                            if (c && k !== 'mtm' && typeof c.dispatchAction === 'function') {
+                                                try {
+                                                    c.dispatchAction({
+                                                        type: 'showTip',
+                                                        dataIndex: idx,
+                                                        seriesIndex: 0
+                                                    });
+                                                } catch(e) {}
+                                            }
+                                        });
+                                    } finally {
+                                        setTimeout(() => { isCrosshairSyncing = false; }, 0);
+                                    }
+                                }
+                            }
                         }
-                    }
+                    });
                 });
             }
 
