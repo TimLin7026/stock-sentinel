@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261105.01');
+        const appVersion = ref('v2.20261105.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -755,12 +755,12 @@ createApp({
             const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
             // 三班排程就緒時間（分鐘數）：
-            // 班次 1: 14:45 盤後就緒 (885分)
-            // 班次 2: 16:35 法人就緒 (995分)
-            // 班次 3: 20:35 資券就緒 (1235分)
-            const M_1445 = 14 * 60 + 45; // 885
-            const M_1635 = 16 * 60 + 35; // 995
-            const M_2035 = 20 * 60 + 35; // 1235
+            // 班次 1: 14:40 盤後就緒 (880分)
+            // 班次 2: 16:30 法人就緒 (990分)
+            // 班次 3: 21:10 資券就緒 (1270分)
+            const M_1445 = 14 * 60 + 40; // 880
+            const M_1635 = 16 * 60 + 30; // 990
+            const M_2035 = 21 * 60 + 10; // 1270 (原 20:35 全面升級對齊 21:10)
 
             // 判斷當前台灣時間若已過 14:45 (盤後行情就緒)，則今日納入已收盤開市日探測點
             const isTodayClosed = totalMinutes >= M_1445;
@@ -882,7 +882,7 @@ createApp({
             slot: ''
         });
 
-        const checkScheduledSyncReminders = () => {
+        const checkScheduledSyncReminders = async () => {
             const now = new Date();
             const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
             const twNow = new Date(utc + (3600000 * 8));
@@ -900,60 +900,85 @@ createApp({
             const todayDateStr = `${y}${m}${d}`;
             const totalMinutes = twNow.getHours() * 60 + twNow.getMinutes();
 
-            // 1. 盤後行情就緒場次提醒：14:45 ~ 15:30 (885分 ~ 930分)
-            if (totalMinutes >= 885 && totalMinutes < 930) {
-                if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1445_${todayDateStr}`);
-                    if (!alreadyNotified) {
-                        activeSyncNotice.value = {
-                            show: true,
-                            type: 'post_market',
-                            title: '📈 盤後行情已就緒 (14:45)',
-                            message: '今日收盤價與 6 大青紅燈指標已更新，請點擊同步！',
-                            slot: '1445'
-                        };
-                        return;
-                    }
-                }
+            // 定義三大開市日排程時段區間 (分)
+            // 1. 盤後收盤場次: 14:40 之後 (14:40 ~ 16:30)
+            // 2. 三大法人場次: 16:30 之後 (16:30 ~ 21:10)
+            // 3. 全量資券場次: 21:10 之後 (21:10 ~ 23:59)
+            let targetSlot = null;
+            if (totalMinutes >= (21 * 60 + 10)) {
+                targetSlot = {
+                    key: '2110',
+                    type: 'full_chip',
+                    title: '📊 資券籌碼已清洗就緒 (21:10)',
+                    message: '全量融資融券與全市場清洗審計完畢，請點擊同步！'
+                };
+            } else if (totalMinutes >= (16 * 60 + 30)) {
+                targetSlot = {
+                    key: '1630',
+                    type: 'chip_market',
+                    title: '🏢 法人籌碼已清洗就緒 (16:30)',
+                    message: '外資、投信與自營商進出動向已就緒，請點擊同步！'
+                };
+            } else if (totalMinutes >= (14 * 60 + 40)) {
+                targetSlot = {
+                    key: '1440',
+                    type: 'post_market',
+                    title: '📈 盤後行情已清洗就緒 (14:40)',
+                    message: '今日收盤價與 6 大青紅燈指標已更新，請點擊同步！'
+                };
             }
 
-            // 2. 法人籌碼就緒場次提醒：16:35 ~ 17:30 (995分 ~ 1050分)
-            if (totalMinutes >= 995 && totalMinutes < 1050) {
-                if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_1635_${todayDateStr}`);
-                    if (!alreadyNotified) {
-                        activeSyncNotice.value = {
-                            show: true,
-                            type: 'chip_market',
-                            title: '🏢 法人籌碼已就緒 (16:35)',
-                            message: '外資、投信與自營商進出動向已就緒，請點擊同步！',
-                            slot: '1635'
-                        };
-                        return;
-                    }
-                }
+            if (!targetSlot) {
+                // 未到開市日排程時段 (如盤中或上午)，不顯示提醒
+                if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
+                return;
             }
 
-            // 3. 資券籌碼就緒場次提醒：20:35 ~ 21:30 (1235分 ~ 1290分)
-            if (totalMinutes >= 1235 && totalMinutes < 1290) {
-                if (calendarMarketStatus.value.isNeedsSync) {
-                    const alreadyNotified = localStorage.getItem(`sentinel_notified_2035_${todayDateStr}`);
-                    if (!alreadyNotified) {
-                        activeSyncNotice.value = {
-                            show: true,
-                            type: 'full_chip',
-                            title: '📊 資券籌碼已就緒 (20:35)',
-                            message: '全量融資融券與全市場清洗審計完畢，請點擊同步！',
-                            slot: '2035'
-                        };
-                        return;
-                    }
-                }
+            // 檢查該時段是否已在今日主動通知或手動關閉過
+            const alreadyNotified = localStorage.getItem(`sentinel_notified_${targetSlot.key}_${todayDateStr}`);
+            if (alreadyNotified) {
+                if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
+                return;
             }
 
-            // 非提醒時段或已無待同步需求時自動隱藏
-            if (activeSyncNotice.value.show && !calendarMarketStatus.value.isNeedsSync) {
-                activeSyncNotice.value.show = false;
+            // 🌟 核心關鍵：三大時段統一先探測刷新 GitHub 大腦狀態 (market_health.json)
+            // 確保定時排程已執行完畢發布 (READY) 且確有新快照才提示！
+            try {
+                const healthData = await fetchBrainHealthStatusPure(true);
+                if (!healthData) return;
+
+                // 1. 大腦狀態必須為 READY
+                if (healthData.status !== 'READY') return;
+
+                // 2. 審計目標日必須為今日開市日
+                const brainTargetDate = String(healthData.target_date || '').replace(/\D/g, '');
+                if (brainTargetDate && brainTargetDate !== todayDateStr) {
+                    // 大腦日期尚未推進至今日開市日，代表今日排程尚未跑完發布，安靜等待
+                    return;
+                }
+
+                // 3. 大腦產出時間必須新於本機下載時間 (代表真的有新資料待同步)
+                const cloudTimeStr = healthData.run_time || healthData.timestamp || '';
+                const localFetchStr = localStorage.getItem('sentinel_market_fetch_time') || '';
+                const localFetchDigits = localFetchStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+                const cloudDigits = cloudTimeStr.replace(/\D/g, '').padEnd(14, '0').slice(0, 14);
+
+                if (cloudDigits && localFetchDigits && cloudDigits <= localFetchDigits) {
+                    // 本機已經在該大腦產出後同步過了，絕不彈出重複提示！
+                    if (activeSyncNotice.value.show) activeSyncNotice.value.show = false;
+                    return;
+                }
+
+                // 4. 三重檢驗皆 100% 通過：大腦已真實發布新資料，彈出提示橫條！
+                activeSyncNotice.value = {
+                    show: true,
+                    type: targetSlot.type,
+                    title: targetSlot.title,
+                    message: targetSlot.message,
+                    slot: targetSlot.key
+                };
+            } catch (e) {
+                console.warn("探測大腦排程就緒提醒異常:", e);
             }
         };
 
@@ -10471,6 +10496,7 @@ createApp({
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
                     fetchBrainHealthStatusPure(true);
+                    checkScheduledSyncReminders();
                 }
             });
 
