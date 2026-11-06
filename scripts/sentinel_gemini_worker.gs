@@ -3,8 +3,8 @@
  * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報實體清單循環推導機
  * (Transactional Manifest Loop Worker for Google Apps Script)
  * ═══════════════════════════════════════════════════════════════════════════
- * 📌 對應版本：v2.20261105.12
- * 🕒 更新日期：2026-11-05
+ * 📌 對應版本：v2.20261106.01
+ * 🕒 更新日期：2026-11-06
  * 🎯 架構特色：股票代號 + 證券商 (code + broker) 多帳戶獨立策略體系 & 3 檔平行併發
  * ═══════════════════════════════════════════════════════════════════════════
  * 
@@ -61,12 +61,23 @@ function doGet(e) {
     if (e && e.parameter && e.parameter.action === "resume_manifest") {
       logToDrive("⚡ [doGet] 收到斷點續跑請求，準備讀取現存未執行清單...");
       const manifest = readManifestFromCloudDrive();
-      if (manifest && manifest.stocks && manifest.stocks.some(s => s.status === "pending")) {
-        const apiKey = (e.parameter.apiKey || manifest.apiKey || "").trim();
-        const model = (e.parameter.model || manifest.model || "gemini-3.8-flash").trim();
-        if (apiKey) {
-          processManifestLoop(apiKey, model, manifest);
-          return createJsonResponse({ ok: true, message: "未執行清單已接續啟動推導" }, 200);
+      if (manifest && manifest.stocks) {
+        // 🌟 收到外部新的觸發：將 pending 以及未達重試上限的 failed 股票重置為 pending 接續重跑！
+        const retryableStocks = manifest.stocks.filter(s => s.status === "pending" || (s.status === "failed" && (!s.retryCount || s.retryCount < MAX_RETRY_COUNT)));
+        if (retryableStocks.length > 0) {
+          retryableStocks.forEach(s => {
+            if (s.status === "failed") {
+              s.status = "pending";
+              s.error = null;
+            }
+          });
+          saveManifestToCloudDrive(manifest);
+          const apiKey = (e.parameter.apiKey || manifest.apiKey || "").trim();
+          const model = (e.parameter.model || manifest.model || "gemini-3.8-flash").trim();
+          if (apiKey) {
+            processManifestLoop(apiKey, model, manifest);
+            return createJsonResponse({ ok: true, message: "未執行/失敗重試清單已接續啟動推導 (" + retryableStocks.length + " 檔)" }, 200);
+          }
         }
       }
       return createJsonResponse({ ok: false, message: "無待推導之未執行股票清單" }, 200);
@@ -402,6 +413,16 @@ function processManifestLoop(apiKey, model, initialManifest) {
             const generatedText = data.candidates[0].content.parts[0].text;
             const parsed = parseStrategyContent(generatedText, stock.code);
 
+            // 🛡️ 戰報完整性嚴格審核：不完整的戰報絕對不存 JSON，並註記失敗等待新觸發！
+            const validation = isStrategyReportComplete(parsed, generatedText);
+            if (!validation.ok) {
+              stock.status = "failed";
+              stock.error = "戰報內容不完整: " + validation.reason;
+              stock.retryCount = (stock.retryCount || 0) + 1;
+              logToDrive("⚠️ [" + stock.code + " " + stock.name + "] 戰報不完整 (" + validation.reason + ")，放棄存檔並註記 failed，等待下次觸發");
+              continue;
+            }
+
             const stockBroker = stock.broker || "關注";
             const stockUid = stock.uid || (stock.code + "_" + stockBroker);
 
@@ -431,7 +452,7 @@ function processManifestLoop(apiKey, model, initialManifest) {
             stock.doneTime = stockTimeStr;
             stock.error = null;
             anySuccessInBatch = true;
-            logToDrive("✅ [" + stock.code + " " + stock.name + "] 戰報推導成功！(時間戳: " + stockTimeStr + ")");
+            logToDrive("✅ [" + stock.code + " " + stock.name + "] 戰報推導完整成功！(時間戳: " + stockTimeStr + ")");
           } else {
             stock.status = "failed";
             stock.error = "Gemini 回傳結構無有效文本";
@@ -700,6 +721,65 @@ function callGeminiApi(apiKey, model, systemPrompt, userContent) {
 /**
  * 解析戰報文本 (100% 對齊戰情室「匯入戰報」與「單檔生成」之標準規格)
  */
+/**
+ * 🛡️ 審核戰報內容是否完整有效 (防止 Gemini 偶發輸出腰斬、內文截斷或點位為 0~0 的殘篇廢稿存檔)
+ */
+function isStrategyReportComplete(parsed, rawText) {
+  if (!rawText || typeof rawText !== "string") {
+    return { ok: false, reason: "戰報原始文本為空" };
+  }
+  const cleanRaw = rawText.trim();
+
+  // 1. 字數長度檢驗：完整的格式 A 戰報至少應具備 400 字以上 (正常為 1200~2500 字)
+  if (cleanRaw.length < 400) {
+    return { ok: false, reason: "內文長度嚴重不足 (僅 " + cleanRaw.length + " 字，疑中途腰斬截斷)" };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, reason: "解析結構無效" };
+  }
+
+  // 2. 核心戰情總結檢驗
+  if (!parsed.summary || typeof parsed.summary !== "string" || parsed.summary.trim().length < 8) {
+    return { ok: false, reason: "缺少核心戰情總結" };
+  }
+  if (parsed.summary.includes("【審計】") && parsed.summary.length < 25) {
+    return { ok: false, reason: "戰情總結被審計字元截斷" };
+  }
+
+  // 3. 關鍵戰術點位檢驗 (徹底防堵 0~0 或點位缺失)
+  const bLow = Number(parsed.buyLow);
+  const bHigh = Number(parsed.buyHigh);
+  const tLow = Number(parsed.targetLow);
+  const tHigh = Number(parsed.targetHigh);
+
+  if (isNaN(bLow) || bLow <= 0) {
+    return { ok: false, reason: "缺少有效的佈局區間下限點位" };
+  }
+  if (isNaN(bHigh) || bHigh <= 0) {
+    return { ok: false, reason: "缺少有效的佈局區間上限點位" };
+  }
+  if (bHigh < bLow) {
+    return { ok: false, reason: "佈局區間上限小於下限 (" + bHigh + " < " + bLow + ")" };
+  }
+
+  // 目標調節點位：至少須有一項有效且大於 0
+  const hasTarget = (!isNaN(tLow) && tLow > 0) || (!isNaN(tHigh) && tHigh > 0);
+  if (!hasTarget) {
+    return { ok: false, reason: "缺少有效的目標調節點位" };
+  }
+
+  // 4. 結構性結束標記或核心段落確認
+  const hasReportEnd = cleanRaw.includes("[REPORT_END]") || cleanRaw.includes("REPORT_END");
+  const hasPointsSection = cleanRaw.includes("佈局區間") || cleanRaw.includes("目標調節");
+
+  if (!hasReportEnd && !hasPointsSection) {
+    return { ok: false, reason: "缺少結構化結束標記 [REPORT_END] 或點位專用區塊" };
+  }
+
+  return { ok: true, reason: "戰報結構完整" };
+}
+
 function parseStrategyContent(rawText, fallbackCode) {
   if (!rawText || typeof rawText !== "string") {
     return {
