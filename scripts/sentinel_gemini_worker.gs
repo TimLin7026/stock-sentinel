@@ -3,7 +3,7 @@
  * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報實體清單循環推導機
  * (Transactional Manifest Loop Worker for Google Apps Script)
  * ═══════════════════════════════════════════════════════════════════════════
- * 📌 對應版本：v2.20261106.01
+ * 📌 對應版本：v2.20261106.02
  * 🕒 更新日期：2026-11-06
  * 🎯 架構特色：股票代號 + 證券商 (code + broker) 多帳戶獨立策略體系 & 3 檔平行併發
  * ═══════════════════════════════════════════════════════════════════════════
@@ -722,7 +722,8 @@ function callGeminiApi(apiKey, model, systemPrompt, userContent) {
  * 解析戰報文本 (100% 對齊戰情室「匯入戰報」與「單檔生成」之標準規格)
  */
 /**
- * 🛡️ 審核戰報內容是否完整有效 (防止 Gemini 偶發輸出腰斬、內文截斷或點位為 0~0 的殘篇廢稿存檔)
+ * 🛡️ 審核戰報內容之【系統解析專用區塊】格式是否完整
+ * 必須完整包含 [REPORT_START] 與 [REPORT_END] 邊界，且 7 大欄位全數具備 (防腰斬截斷)
  */
 function isStrategyReportComplete(parsed, rawText) {
   if (!rawText || typeof rawText !== "string") {
@@ -730,54 +731,78 @@ function isStrategyReportComplete(parsed, rawText) {
   }
   const cleanRaw = rawText.trim();
 
-  // 1. 字數長度檢驗：完整的格式 A 戰報至少應具備 400 字以上 (正常為 1200~2500 字)
-  if (cleanRaw.length < 400) {
-    return { ok: false, reason: "內文長度嚴重不足 (僅 " + cleanRaw.length + " 字，疑中途腰斬截斷)" };
+  // 1. 檢驗專用區塊邊界標記：必須同時具備 [REPORT_START] 與 [REPORT_END]
+  const hasStart = cleanRaw.includes("[REPORT_START]") || cleanRaw.includes("REPORT_START");
+  const hasEnd = cleanRaw.includes("[REPORT_END]") || cleanRaw.includes("REPORT_END");
+
+  if (!hasStart || !hasEnd) {
+    const miss = [];
+    if (!hasStart) miss.push("[REPORT_START]");
+    if (!hasEnd) miss.push("[REPORT_END]");
+    return { ok: false, reason: "缺少系統解析專用區塊邊界標記: " + miss.join(", ") };
+  }
+
+  // 確保 [REPORT_START] 在 [REPORT_END] 之前
+  const startIdx = cleanRaw.indexOf("REPORT_START");
+  const endIdx = cleanRaw.indexOf("REPORT_END");
+  if (startIdx >= endIdx) {
+    return { ok: false, reason: "解析專用區塊標記順序異常 (REPORT_START 位於 REPORT_END 之後)" };
   }
 
   if (!parsed || typeof parsed !== "object") {
-    return { ok: false, reason: "解析結構無效" };
+    return { ok: false, reason: "解析結構物件無效" };
   }
 
-  // 2. 核心戰情總結檢驗
-  if (!parsed.summary || typeof parsed.summary !== "string" || parsed.summary.trim().length < 8) {
-    return { ok: false, reason: "缺少核心戰情總結" };
-  }
-  if (parsed.summary.includes("【審計】") && parsed.summary.length < 25) {
-    return { ok: false, reason: "戰情總結被審計字元截斷" };
+  // 2. 檢驗 7 大關鍵欄位是否全數成功匹配且具備有效格式
+  const missingFields = [];
+
+  // (1) 代碼
+  if (!parsed.code || String(parsed.code).trim().length === 0) {
+    missingFields.push("代碼");
   }
 
-  // 3. 關鍵戰術點位檢驗 (徹底防堵 0~0 或點位缺失)
+  // (2) 戰情總結 (長度需 >= 5 字)
+  if (!parsed.summary || String(parsed.summary).trim().length < 5) {
+    missingFields.push("戰情總結");
+  }
+
+  // (3) 佈局區間下限 (必須為有效數字且 >= 0，支援極端行情觀望填 0)
+  if (parsed.buyLow === null || parsed.buyLow === undefined || isNaN(Number(parsed.buyLow)) || Number(parsed.buyLow) < 0) {
+    missingFields.push("佈局區間下限");
+  }
+
+  // (4) 佈局區間上限 (必須為有效數字且 >= 0，支援極端行情觀望填 0)
+  if (parsed.buyHigh === null || parsed.buyHigh === undefined || isNaN(Number(parsed.buyHigh)) || Number(parsed.buyHigh) < 0) {
+    missingFields.push("佈局區間上限");
+  }
+
+  // (5) 防守停損點 (必須為有效數字且 >= 0，支援 ETF 填 0)
+  if (parsed.defense === null || parsed.defense === undefined || isNaN(Number(parsed.defense)) || Number(parsed.defense) < 0) {
+    missingFields.push("防守停損點");
+  }
+
+  // (6) 目標調節下限 (必須為有效數字且 >= 0)
+  if (parsed.targetLow === null || parsed.targetLow === undefined || isNaN(Number(parsed.targetLow)) || Number(parsed.targetLow) < 0) {
+    missingFields.push("目標調節下限");
+  }
+
+  // (7) 目標調節上限 (必須為有效數字且 >= 0)
+  if (parsed.targetHigh === null || parsed.targetHigh === undefined || isNaN(Number(parsed.targetHigh)) || Number(parsed.targetHigh) < 0) {
+    missingFields.push("目標調節上限");
+  }
+
+  if (missingFields.length > 0) {
+    return { ok: false, reason: "解析專用區塊缺失必要欄位: " + missingFields.join(", ") };
+  }
+
+  // (8) 數值邏輯校驗：上限不可小於下限 (若兩者皆為 0 代表觀望，0 >= 0 合法通過)
   const bLow = Number(parsed.buyLow);
   const bHigh = Number(parsed.buyHigh);
-  const tLow = Number(parsed.targetLow);
-  const tHigh = Number(parsed.targetHigh);
-
-  if (isNaN(bLow) || bLow <= 0) {
-    return { ok: false, reason: "缺少有效的佈局區間下限點位" };
-  }
-  if (isNaN(bHigh) || bHigh <= 0) {
-    return { ok: false, reason: "缺少有效的佈局區間上限點位" };
-  }
   if (bHigh < bLow) {
     return { ok: false, reason: "佈局區間上限小於下限 (" + bHigh + " < " + bLow + ")" };
   }
 
-  // 目標調節點位：至少須有一項有效且大於 0
-  const hasTarget = (!isNaN(tLow) && tLow > 0) || (!isNaN(tHigh) && tHigh > 0);
-  if (!hasTarget) {
-    return { ok: false, reason: "缺少有效的目標調節點位" };
-  }
-
-  // 4. 結構性結束標記或核心段落確認
-  const hasReportEnd = cleanRaw.includes("[REPORT_END]") || cleanRaw.includes("REPORT_END");
-  const hasPointsSection = cleanRaw.includes("佈局區間") || cleanRaw.includes("目標調節");
-
-  if (!hasReportEnd && !hasPointsSection) {
-    return { ok: false, reason: "缺少結構化結束標記 [REPORT_END] 或點位專用區塊" };
-  }
-
-  return { ok: true, reason: "戰報結構完整" };
+  return { ok: true, reason: "系統解析專用區塊格式完整無缺" };
 }
 
 function parseStrategyContent(rawText, fallbackCode) {
