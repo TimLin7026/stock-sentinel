@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-11-09 14:48:14",
+  "run_time": "2026-11-09 16:28:37",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261109] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,8 +15,7 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2376,
-      "elapsed": 0.0,
+      "count": 2250,
       "status": "OK"
     },
     "margin": {
@@ -26,7 +25,7 @@
     },
     "indicators": {
       "count": 2386,
-      "elapsed": 93.25,
+      "elapsed": 93.75,
       "status": "OK"
     }
   },
@@ -132,92 +131,92 @@
     "zero_chip_count": 20,
     "zero_chip_samples": [
       {
-        "code": "00400A",
-        "name": "主動國泰動能高息"
+        "code": "00625K",
+        "name": "富邦上証+R"
       },
       {
-        "code": "00401A",
-        "name": "主動摩根台灣鑫收"
+        "code": "00636K",
+        "name": "國泰中國A50+U"
       },
       {
-        "code": "00402A",
-        "name": "主動安聯美國科技"
+        "code": "00643K",
+        "name": "群益深証中小+R"
       },
       {
-        "code": "00403A",
-        "name": "主動統一升級50"
+        "code": "00657K",
+        "name": "國泰日經225+U"
       },
       {
-        "code": "00404A",
-        "name": "主動聯博動能50"
+        "code": "00668K",
+        "name": "國泰美國道瓊+U"
       },
       {
-        "code": "00405A",
-        "name": "主動富邦台灣龍耀"
+        "code": "00687C",
+        "name": "國泰20年美債+櫃U"
       },
       {
-        "code": "00406A",
-        "name": "主動中信台灣收益"
+        "code": "00689R",
+        "name": "國泰20年美債反1"
       },
       {
-        "code": "00407A",
-        "name": "主動凱基台灣"
+        "code": "00707R",
+        "name": "期元大S&P日圓反1"
       },
       {
-        "code": "00408A",
-        "name": "主動第一金優股息"
+        "code": "00758B",
+        "name": "復華能源債"
       },
       {
-        "code": "00409A",
-        "name": "主動復華全球50"
+        "code": "00771",
+        "name": "元大US高息特別股"
       },
       {
-        "code": "00410A",
-        "name": "主動永豐科技趨勢"
+        "code": "00834B",
+        "name": "第一金金融債10+"
       },
       {
-        "code": "00411A",
-        "name": "主動統一前沿科技"
+        "code": "00841B",
+        "name": "凱基AAA-AA公司債"
       },
       {
-        "code": "00412A",
-        "name": "主動安聯亞半導體"
+        "code": "00848B",
+        "name": "中信新興亞洲債"
       },
       {
-        "code": "00415A",
-        "name": "主動群益核心50"
+        "code": "00860B",
+        "name": "群益1-5Y投資級債"
       },
       {
-        "code": "00416A",
-        "name": "主動台新臺灣中小"
+        "code": "00870B",
+        "name": "元大15年EM主權債"
       },
       {
-        "code": "0050",
-        "name": "元大台灣50"
+        "code": "00986B",
+        "name": "FT金融債10+"
       },
       {
-        "code": "0051",
-        "name": "元大中型100"
+        "code": "1101B",
+        "name": "台泥乙特"
       },
       {
-        "code": "0052",
-        "name": "富邦科技"
+        "code": "1213",
+        "name": "大飲"
       },
       {
-        "code": "0053",
-        "name": "元大科技市值"
+        "code": "1268",
+        "name": "漢來美食"
       },
       {
-        "code": "0055",
-        "name": "元大MSCI金融"
+        "code": "1312A",
+        "name": "國喬特"
       }
     ]
   },
   "target_date": "20261109",
-  "total_elapsed": 124.3,
-  "snapshot_size_kb": 495.6,
-  "next_scheduled_run": "2026/11/09 (週一) 16:30",
-  "next_scheduled_iso": "2026-11-09T16:30:00",
+  "total_elapsed": 124.71,
+  "snapshot_size_kb": 522.2,
+  "next_scheduled_run": "2026/11/09 (週一) 21:10",
+  "next_scheduled_iso": "2026-11-09T21:10:00",
   "schedule_times": [
     "14:40",
     "16:30",
