@@ -451,7 +451,7 @@
                 <!-- 雙核心直達卡片 -->
                 <div class="grid grid-cols-1 gap-3.5">
                     <!-- 卡片 1: 台股大盤情勢 ＆ AI 總評 -->
-                    <a href="https://signova.tw/market#section-ai-review" target="_blank" 
+                    <a href="https://signova.tw/market" target="_blank" 
                        class="group block p-4 rounded-2xl border transition-all duration-200 hover:shadow-lg active:scale-[0.99] relative overflow-hidden"
                        :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border-indigo-900/40 hover:border-indigo-500/60' : 'bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 border-indigo-200 hover:border-indigo-400 shadow-sm'">
                         <div class="flex items-start justify-between">
@@ -925,14 +925,15 @@
                                     </button>
 
                                     <!-- 股票代號與名稱 -->
-                                    <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm tracking-wide font-mono">{{ stock.code }}</span>
-                                    <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm">{{ stock.name }}</span>
-                                    <!-- 📅 除權息提醒徽章 (若該股在近期除息名單中) -->
+                                    <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm tracking-wide font-mono shrink-0">{{ stock.code }}</span>
+                                    <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm whitespace-nowrap shrink-0">{{ stock.name }}</span>
+                                    <!-- 📅 除權息提醒徽章 (手機端純 Emoji，sm: 以上完整文字) -->
                                     <span v-if="getExDividendsBadge(stock.code)" 
                                           :title="getExDividendsBadge(stock.code).tooltip"
-                                          class="text-[10px] px-1.5 py-0.2 rounded-full font-bold border flex items-center space-x-1 shrink-0 bg-amber-500/15 text-amber-500 border-amber-500/30">
-                                        <span>📅</span>
-                                        <span>{{ getExDividendsBadge(stock.code).badgeText }}</span>
+                                          class="text-[10px] px-1.5 py-0.5 rounded-full font-bold border flex items-center shrink-0 bg-amber-500/15 text-amber-500 border-amber-500/30 cursor-pointer active:scale-95 transition"
+                                          @click.stop="showToast(getExDividendsBadge(stock.code).tooltip, 4000)">
+                                        <span class="text-[11px] leading-none">📅</span>
+                                        <span class="hidden sm:inline ml-1 font-semibold">{{ getExDividendsBadge(stock.code).badgeText }}</span>
                                     </span>
                                 </div>
 
@@ -3511,6 +3512,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.03"></script>
+    <script src="app.js?v=2.20261110.04"></script>
 </body>
 </html>
