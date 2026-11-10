@@ -935,7 +935,7 @@
                                           class="text-[10px] px-1.5 py-0.5 rounded-full font-bold border flex items-center shrink-0 bg-amber-500/15 text-amber-500 border-amber-500/30 cursor-pointer active:scale-95 transition"
                                           @click.stop="showToast(getExDividendsBadge(stock.code).tooltip, 4000)">
                                         <span class="text-[11px] leading-none">📅</span>
-                                        <span class="hidden sm:inline ml-1 font-semibold">{{ getExDividendsBadge(stock.code).badgeText }}</span>
+                                        <span :class="appLayout === 'wide' ? 'hidden xl:inline' : 'hidden sm:inline'" class="ml-1 font-semibold">{{ getExDividendsBadge(stock.code).badgeText }}</span>
                                     </span>
                                 </div>
 
@@ -3545,6 +3545,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.08"></script>
+    <script src="app.js?v=2.20261110.09"></script>
 </body>
 </html>
