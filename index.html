@@ -1565,6 +1565,24 @@
                                     <span class="text-sky-300 font-medium">{{ nextCrawlTimeInfo.label }} <span v-if="nextCrawlTimeInfo.countdown" class="text-slate-400 text-[10px]">({{ nextCrawlTimeInfo.countdown }})</span></span>
                                 </div>
                             </div>
+
+                            <!-- 🤖 自動偵測雲端並對齊開關切換器 -->
+                            <div class="mt-3 pt-3 border-t flex items-center justify-between" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-100'">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-sm">🤖</span>
+                                    <div>
+                                        <div class="text-xs font-bold" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-700'">自動偵測雲端並對齊</div>
+                                        <div class="text-[10px] text-slate-400">雲端資料庫更新時自動鏡像合流並跳出通知</div>
+                                    </div>
+                                </div>
+                                <button @click="toggleAutoCloudSync" 
+                                        :class="autoCloudSyncEnabled ? 'bg-emerald-600' : (theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300')" 
+                                        class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                                        :title="autoCloudSyncEnabled ? '點擊關閉自動同步 (轉為純手動同步)' : '點擊開啟自動同步'">
+                                    <span :class="autoCloudSyncEnabled ? 'translate-x-4' : 'translate-x-0'" 
+                                          class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3527,6 +3545,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.07"></script>
+    <script src="app.js?v=2.20261110.08"></script>
 </body>
 </html>

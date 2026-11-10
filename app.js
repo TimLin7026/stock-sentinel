@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.07');
+        const appVersion = ref('v2.20261110.08');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -166,20 +166,28 @@ createApp({
         // ─── 導航與分頁狀態 ───
         const defaultStartTab = ref(localStorage.getItem('sentinel_default_tab') || 'dashboard');
         const currentTab = ref(['macro', 'dashboard', 'stocks'].includes(defaultStartTab.value) ? defaultStartTab.value : 'dashboard');
+        const autoCloudSyncEnabled = ref(localStorage.getItem('sentinel_auto_cloud_sync') !== 'false');
+        const toggleAutoCloudSync = () => {
+            autoCloudSyncEnabled.value = !autoCloudSyncEnabled.value;
+            localStorage.setItem('sentinel_auto_cloud_sync', String(autoCloudSyncEnabled.value));
+            showToast(autoCloudSyncEnabled.value ? '已開啟【自動偵測雲端並對齊】' : '已關閉【自動偵測雲端並對齊】(切換為純手動同步)', 3000);
+        };
+
         const setDefaultStartTab = async (tab) => {
             if (!['macro', 'dashboard', 'stocks'].includes(tab)) return;
             defaultStartTab.value = tab;
+            const nowTs = Date.now();
             localStorage.setItem('sentinel_default_tab', tab);
+            localStorage.setItem('sentinel_default_tab_time', String(nowTs));
 
-            // 🌟 跨端雲端同步：寫入 SQLite 資料庫 user_preferences 表
+            // 🌟 跨端雲端同步：正統寫入 SQLite db_meta
             if (dbInstance) {
                 try {
-                    dbInstance.run("CREATE TABLE IF NOT EXISTS user_preferences (pref_key TEXT PRIMARY KEY, pref_value TEXT)");
-                    dbInstance.run("INSERT OR REPLACE INTO user_preferences (pref_key, pref_value) VALUES ('default_tab', ?)", [tab]);
+                    writeDefaultStartTabToDbPure(dbInstance, tab, nowTs);
                     await saveDbToIndexedDb();
                     hasUnsyncedChanges.value = true;
                 } catch (ePref) {
-                    console.warn("寫入首頁偏好至 SQLite 失敗:", ePref);
+                    console.warn("寫入首頁偏好至 db_meta 失敗:", ePref);
                 }
             }
 
@@ -607,6 +615,31 @@ createApp({
                 return `https://script.google.com/macros/s/${match[1]}/exec`;
             }
             return str;
+        };
+
+        // ─── 🏠 預設起始首頁隨 SQLite db_meta 雙向雲端同步輔助模組 ───
+        const readDefaultStartTabFromDbPure = (db) => {
+            if (!db) return '';
+            try {
+                const res = db.exec("SELECT value FROM db_meta WHERE key = 'default_start_tab'");
+                if (res.length > 0 && res[0].values && res[0].values[0]) {
+                    const val = String(res[0].values[0][0] || '').trim();
+                    if (['macro', 'dashboard', 'stocks'].includes(val)) return val;
+                }
+            } catch (e) {}
+            return '';
+        };
+
+        const writeDefaultStartTabToDbPure = (db, tab, timestamp = null) => {
+            if (!db || !['macro', 'dashboard', 'stocks'].includes(tab)) return;
+            try {
+                const tStr = timestamp ? String(timestamp) : String(Date.now());
+                db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('default_start_tab', ?)", [tab]);
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('default_start_tab_time', ?)", [tStr]);
+            } catch (e) {
+                console.warn("寫入首頁設定至 db_meta 警告:", e);
+            }
         };
 
         // ─── 💎 Gemini 設定隨 SQLite db_meta 雙向雲端同步輔助模組 ───
@@ -4253,21 +4286,14 @@ createApp({
                     console.warn("載入資料庫時讀取 Gemini 設定警告:", eGem);
                 }
 
-                // 偏好設定：讀取 user_preferences (預設起始首頁等，實現跨端雲端鏡像同步)
+                // 🏠 從 SQLite db_meta 讀取預設起始首頁 (實現跨端雲端鏡像同步)
                 try {
-                    dbInstance.run("CREATE TABLE IF NOT EXISTS user_preferences (pref_key TEXT PRIMARY KEY, pref_value TEXT)");
-                    const prefRes = dbInstance.exec("SELECT pref_key, pref_value FROM user_preferences");
-                    if (prefRes.length > 0 && prefRes[0].values) {
-                        prefRes[0].values.forEach(r => {
-                            const k = String(r[0] || '').trim();
-                            const v = String(r[1] || '').trim();
-                            if (k === 'default_tab' && ['macro', 'dashboard', 'stocks'].includes(v)) {
-                                defaultStartTab.value = v;
-                                localStorage.setItem('sentinel_default_tab', v);
-                            }
-                        });
+                    const dbTab = readDefaultStartTabFromDbPure(dbInstance);
+                    if (dbTab && ['macro', 'dashboard', 'stocks'].includes(dbTab)) {
+                        defaultStartTab.value = dbTab;
+                        localStorage.setItem('sentinel_default_tab', dbTab);
                     }
-                } catch (ePref) {}
+                } catch (eTab) {}
 
                 // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
                 try {
@@ -10060,6 +10086,9 @@ createApp({
         // ─── 🤖 智慧偵測雲端新版本並防呆自動同步 ───
         let lastAutoSyncAttemptTs = 0;
         const checkAndTriggerAutoSync = (reason = '雲端狀態更新') => {
+            // 0. 使用者開關防呆：若已手動關閉【自動偵測雲端並對齊】，完全不自動觸發
+            if (!autoCloudSyncEnabled.value) return;
+
             // 1. 基礎環境安全防呆：未解鎖、未登入 Google、未取得 Token、或當前已在同步中則不觸發
             if (!isAppUnlocked.value) return;
             if (!googleUser.value.isLoggedIn || !googleAccessToken.value) return;
@@ -10364,6 +10393,51 @@ createApp({
                     }
                 } catch (eGemSync) {
                     console.warn("雙向合流 Gemini 設定警告:", eGemSync);
+                }
+
+                // 0.3 合流預設起始首頁 (db_meta.default_start_tab - 跨設備雙向對齊，時間最新優先)
+                try {
+                    const lTab = readDefaultStartTabFromDbPure(dbInstance);
+                    const cTab = readDefaultStartTabFromDbPure(cloudDb);
+                    const lsTab = localStorage.getItem('sentinel_default_tab') || '';
+
+                    let lTime = 0, cTime = 0;
+                    try {
+                        const lRes = dbInstance.exec("SELECT value FROM db_meta WHERE key = 'default_start_tab_time'");
+                        if (lRes.length > 0) lTime = Number(lRes[0].values[0][0]) || 0;
+                    } catch (e) {}
+                    try {
+                        const cRes = cloudDb.exec("SELECT value FROM db_meta WHERE key = 'default_start_tab_time'");
+                        if (cRes.length > 0) cTime = Number(cRes[0].values[0][0]) || 0;
+                    } catch (e) {}
+                    const lsTime = Number(localStorage.getItem('sentinel_default_tab_time') || 0);
+
+                    let finalTab = 'dashboard';
+                    let finalTime = Math.max(lTime, cTime, lsTime, Date.now());
+
+                    if (cTime > lTime && cTab) {
+                        finalTab = cTab;
+                        finalTime = cTime;
+                    } else if (lTab) {
+                        finalTab = lTab;
+                        finalTime = lTime || finalTime;
+                    } else if (cTab) {
+                        finalTab = cTab;
+                        finalTime = cTime;
+                    } else if (lsTab && ['macro', 'dashboard', 'stocks'].includes(lsTab)) {
+                        finalTab = lsTab;
+                        finalTime = lsTime || finalTime;
+                    }
+
+                    if (finalTab) {
+                        defaultStartTab.value = finalTab;
+                        localStorage.setItem('sentinel_default_tab', finalTab);
+                        localStorage.setItem('sentinel_default_tab_time', String(finalTime));
+                        writeDefaultStartTabToDbPure(cloudDb, finalTab, finalTime);
+                        writeDefaultStartTabToDbPure(dbInstance, finalTab, finalTime);
+                    }
+                } catch (eTab) {
+                    console.warn("合流預設首頁設定例外:", eTab);
                 }
 
                 // 合流墓碑至 cloudDb (保留 stock_created_at)
@@ -10873,11 +10947,11 @@ createApp({
                 const uncompletedNote = uncompletedCodes.length > 0 
                     ? `\n\n⚡【防呆自動勾選】\n上次派工尚有 ${uncompletedCodes.length} 檔未完成 (${uncompletedCodes.join(', ')})，系統已為您自動打勾，可直接再次派工！` 
                     : '';
-                if (isManual) {
-                    alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
-                } else {
-                    showToast(`☁️ 雲端帳本已鏡像對齊 (${localDbStats.value.tradeLogCount} 筆交易 / ${localDbStats.value.myStockCount} 檔自選)`, 3000);
-                }
+                const syncTitle = isManual 
+                    ? '🤝【全量鏡像同步成功】' 
+                    : '🔔【雲端自動對齊完成通知】\n(偵測到雲端資料庫版本更新，已為您自動完成最新鏡像合流)';
+
+                alert(`${syncTitle}\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
@@ -11121,6 +11195,8 @@ createApp({
             currentTab,
             defaultStartTab,
             setDefaultStartTab,
+            autoCloudSyncEnabled,
+            toggleAutoCloudSync,
             cloudSettingsTab,
             changeCloudSettingsTab,
             stockSubTab,
