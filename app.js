@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.02');
+        const appVersion = ref('v2.20261110.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -260,6 +260,8 @@ createApp({
             if (!code || !exDividendsMap.value) return null;
             const item = exDividendsMap.value[String(code).trim()];
             if (!item) return null;
+            // 🎯 配合 Gem 戰報收斂至「過去 10 天內剛除息 ～ 未來 14 天內即將除息」
+            if (typeof item.daysLeft === 'number' && (item.daysLeft < -10 || item.daysLeft > 14)) return null;
 
             const typeStr = item.exType && item.exType.includes('權') && item.exType.includes('息') ? '除權息' 
                           : (item.exType && item.exType.includes('權') ? '除權' : '除息');
@@ -5010,9 +5012,14 @@ createApp({
                 baseList = baseList.filter(s => !s.isReportFresh);
             }
 
-            // 📅 快速篩選近期除息個股
+            // 📅 快速篩選近期除息個股 (過去 10 天 ～ 未來 14 天)
             if (onlyExDividends.value) {
-                baseList = baseList.filter(s => !!exDividendsMap.value[String(s.code).trim()]);
+                baseList = baseList.filter(s => {
+                    const item = exDividendsMap.value[String(s.code).trim()];
+                    if (!item) return false;
+                    if (typeof item.daysLeft === 'number' && (item.daysLeft < -10 || item.daysLeft > 14)) return false;
+                    return true;
+                });
             }
 
             // 搜尋過濾
@@ -9500,7 +9507,7 @@ createApp({
                 ];
                 if (rsi_line) lines.push(rsi_line);
                 const exDiv = exDividendsMap.value && (exDividendsMap.value[sc] || exDividendsMap.value[stock.code]);
-                if (exDiv) {
+                if (exDiv && (typeof exDiv.daysLeft !== 'number' || (exDiv.daysLeft >= -10 && exDiv.daysLeft <= 14))) {
                     let daysDesc = '';
                     if (exDiv.daysLeft === 0) daysDesc = '今日除權息';
                     else if (exDiv.daysLeft > 0) daysDesc = `距除權息倒數 ${exDiv.daysLeft} 天`;

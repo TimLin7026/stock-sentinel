@@ -124,8 +124,10 @@ def fetch_data():
                     "cashDividend": cash_div,
                     "dividendYield": div_yield_str
                 }
-                items.append(item)
-                seen_codes.add(code)
+                # 🎯 配合 Gem 戰報收斂至「過去 10 天內剛除息 ～ 未來 14 天內即將除息」
+                if -10 <= days_left <= 14:
+                    items.append(item)
+                    seen_codes.add(code)
         print(f"[OK] TWSE fetched: {len(items)} items")
     except Exception as e:
         print(f"[WARN] TWSE fetch failed: {e}")
@@ -173,7 +175,9 @@ def fetch_data():
                         "cashDividend": cash_div,
                         "dividendYield": div_yield_str
                     }
-                    items.append(item)
+                    # 🎯 配合 Gem 戰報收斂至「過去 10 天內剛除息 ～ 未來 14 天內即將除息」
+                    if -10 <= days_left <= 14:
+                        items.append(item)
         print(f"[OK] TPEX fetched, total: {len(items)} items")
     except Exception as e:
         print(f"[WARN] TPEX fetch failed: {e}")
