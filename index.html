@@ -997,6 +997,15 @@
                                         <span class="mr-1.5 shrink-0">📖</span><span class="truncate">短評 ({{ stock.reportDate || '最新' }})</span>
                                     </div>
                                     <div class="flex items-center space-x-1 shrink-0">
+                                        <!-- 0. 🧭 Signova 個股深度分析直達按鈕 (純圖示，新分頁開啟) -->
+                                        <a :href="'https://signova.tw/stock?id=' + stock.code" 
+                                           target="_blank" 
+                                           @click.stop
+                                           :class="theme === 'dark' ? 'bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border-indigo-800/60' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'" 
+                                           class="w-6 h-6 rounded-md font-bold border transition flex items-center justify-center shadow-sm active:scale-95 shrink-0" 
+                                           :title="'開啟 Signova【' + stock.code + ' ' + (stock.name || '') + '】AI 深度情勢與籌碼情報 (新分頁)'">
+                                            <i class="fa-solid fa-compass text-[11px]"></i>
+                                        </a>
                                         <!-- 1. 📄 查看最新戰報完整內容按鈕 (純圖示) -->
                                         <button @click.stop="openFullReportModal(stock)" 
                                                 :class="theme === 'dark' ? 'bg-sky-950/80 hover:bg-sky-900 text-sky-300 border-sky-900/50' : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'" 
@@ -3518,6 +3527,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.05"></script>
+    <script src="app.js?v=2.20261110.06"></script>
 </body>
 </html>
