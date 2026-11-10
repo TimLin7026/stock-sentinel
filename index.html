@@ -680,7 +680,14 @@
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
                         <input v-model="stockSearchQuery" type="text" placeholder="搜尋代號或名稱 (例: 2542 或 興富發)..." 
                                 :class="theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'"
-                                class="w-full border rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-sky-500">
+                                class="w-full border rounded-xl pl-8 pr-8 py-1.5 text-xs focus:outline-none focus:border-sky-500">
+                        <button v-if="stockSearchQuery" 
+                                @click="stockSearchQuery = ''" 
+                                type="button"
+                                class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200 transition"
+                                title="清除搜尋內容">
+                            <i class="fa-solid fa-circle-xmark text-xs"></i>
+                        </button>
                     </div>
                     <!-- ⚠️ 快速篩選戰報過期/待更新按鈕 -->
                     <button @click="onlyExpiredReports = !onlyExpiredReports"
@@ -3368,6 +3375,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261106.02"></script>
+    <script src="app.js?v=2.20261110.01"></script>
 </body>
 </html>
