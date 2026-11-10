@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.06');
+        const appVersion = ref('v2.20261110.07');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -166,10 +166,23 @@ createApp({
         // ─── 導航與分頁狀態 ───
         const defaultStartTab = ref(localStorage.getItem('sentinel_default_tab') || 'dashboard');
         const currentTab = ref(['macro', 'dashboard', 'stocks'].includes(defaultStartTab.value) ? defaultStartTab.value : 'dashboard');
-        const setDefaultStartTab = (tab) => {
+        const setDefaultStartTab = async (tab) => {
             if (!['macro', 'dashboard', 'stocks'].includes(tab)) return;
             defaultStartTab.value = tab;
             localStorage.setItem('sentinel_default_tab', tab);
+
+            // 🌟 跨端雲端同步：寫入 SQLite 資料庫 user_preferences 表
+            if (dbInstance) {
+                try {
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS user_preferences (pref_key TEXT PRIMARY KEY, pref_value TEXT)");
+                    dbInstance.run("INSERT OR REPLACE INTO user_preferences (pref_key, pref_value) VALUES ('default_tab', ?)", [tab]);
+                    await saveDbToIndexedDb();
+                    hasUnsyncedChanges.value = true;
+                } catch (ePref) {
+                    console.warn("寫入首頁偏好至 SQLite 失敗:", ePref);
+                }
+            }
+
             showToast(`已將預設起始首頁設為「${tab === 'macro' ? '全域大勢' : tab === 'stocks' ? '個股戰報' : '資產總覽'}」`, 3000);
         };
         const stockSubTab = ref('holding'); // 預設現役持股區
@@ -1784,7 +1797,7 @@ createApp({
         };
 
         // 🔄 一鍵同步入口 (支援先檢查版本、全市場行情秒級同步 + 個人雲端帳本雙向同步)
-        const handleOneClickSync = async () => {
+        const handleOneClickSync = async (isManual = true) => {
             if (!isAppUnlocked.value) {
                 if (confirm("🔒 需先綁定 Google 帳號以啟用戰情室完整功能，是否立即進行 Google 授權登入？")) {
                     handleGoogleLogin();
@@ -1851,7 +1864,7 @@ createApp({
             if (googleUser.value.isLoggedIn && googleAccessToken.value) {
                 try {
                     syncStatus.value.message = '正在同步個人雲端帳本...';
-                    await executeTwoWaySync();
+                    await executeTwoWaySync(isManual);
                 } catch (err) {
                     console.error("雲端帳本同步失敗:", err);
                 }
@@ -1876,7 +1889,7 @@ createApp({
             // 同步完成 (已移除重複彈出的黑色 Toast 提示框，維持簡潔視覺體驗)
         };
 
-        const handleHeaderSyncClick = handleOneClickSync;
+        const handleHeaderSyncClick = () => handleOneClickSync(true);
 
         // ==========================================
         // 📊 全螢幕個股 6 大技術指標走勢圖模組 (100% 電腦版參數 + ECharts 觸控連動)
@@ -4239,6 +4252,22 @@ createApp({
                 } catch (eGem) {
                     console.warn("載入資料庫時讀取 Gemini 設定警告:", eGem);
                 }
+
+                // 偏好設定：讀取 user_preferences (預設起始首頁等，實現跨端雲端鏡像同步)
+                try {
+                    dbInstance.run("CREATE TABLE IF NOT EXISTS user_preferences (pref_key TEXT PRIMARY KEY, pref_value TEXT)");
+                    const prefRes = dbInstance.exec("SELECT pref_key, pref_value FROM user_preferences");
+                    if (prefRes.length > 0 && prefRes[0].values) {
+                        prefRes[0].values.forEach(r => {
+                            const k = String(r[0] || '').trim();
+                            const v = String(r[1] || '').trim();
+                            if (k === 'default_tab' && ['macro', 'dashboard', 'stocks'].includes(v)) {
+                                defaultStartTab.value = v;
+                                localStorage.setItem('sentinel_default_tab', v);
+                            }
+                        });
+                    }
+                } catch (ePref) {}
 
                 // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
                 try {
@@ -9938,7 +9967,7 @@ createApp({
         };
 
         // 查詢雲端資料庫狀態 (由 Google Drive 獲取最新 metadata 與 stats)
-        const fetchCloudDbStats = async () => {
+        const fetchCloudDbStats = async (triggerAutoSync = true) => {
             const token = googleAccessToken.value || localStorage.getItem('sentinel_gdrive_token');
             if (!token) return;
             if (!googleAccessToken.value) googleAccessToken.value = token;
@@ -10022,7 +10051,9 @@ createApp({
             } finally {
                 isFetchingCloudStats.value = false;
                 checkUnsyncedStatus();
-                checkAndTriggerAutoSync('雲端狀態查詢完成');
+                if (triggerAutoSync) {
+                    checkAndTriggerAutoSync('雲端狀態查詢完成');
+                }
             }
         };
 
@@ -10074,17 +10105,19 @@ createApp({
                     isCloudNewer = true;
                 }
             } else {
-                // 初次具備雲端檔案但尚未有本機同步時間戳紀錄
-                isCloudNewer = true;
+                // 初次具備雲端檔案但尚未有本機同步時間戳紀錄：以當前時間戳對齊，不觸發自動同步
+                if (cloudRawMtime) localStorage.setItem('sentinel_last_synced_cloud_raw_mtime', cloudRawMtime);
+                if (cloudMtimeStr) localStorage.setItem('sentinel_last_synced_cloud_mtime', cloudMtimeStr);
+                isCloudNewer = false;
             }
 
             if (isCloudNewer) {
                 lastAutoSyncAttemptTs = now;
                 console.log(`🚀 [智慧自動同步] 偵測到雲端資料庫有新版本 (${cloudMtimeStr} > ${lastSyncedCloudMtime || '初次'}), 原因: ${reason}`);
-                showToast(`☁️ 偵測到雲端資料庫有新版本，啟動防呆自動同步...`, 3000);
+                showToast(`☁️ 偵測到雲端資料庫有新版本，正在為您背景自動對齊...`, 3000);
                 setTimeout(() => {
                     if (!syncStatus.value.loading) {
-                        handleOneClickSync();
+                        handleOneClickSync(false);
                     }
                 }, 800);
             } else {
@@ -10176,7 +10209,7 @@ createApp({
         };
 
         // 🤝 1. 核心升級：全量二進位資料庫鏡像同步引擎 (以雲端完整 DB 為基底，全量保留現價、指標、字典與特別關注)
-        const executeTwoWaySync = async () => {
+        const executeTwoWaySync = async (isManual = true) => {
             if (!googleAccessToken.value) {
                 handleGoogleLogin();
                 return;
@@ -10246,7 +10279,11 @@ createApp({
                     const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
                     const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
 
-                    alert(`✅ 雲端資料庫已成功鏡像同步至手機！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
+                    if (isManual) {
+                        alert(`✅ 雲端資料庫已成功鏡像同步至手機！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}`);
+                    } else {
+                        showToast(`☁️ 雲端帳本已鏡像對齊至本機 (${localDbStats.value.tradeLogCount} 筆交易)`, 3000);
+                    }
                     return;
                 }
 
@@ -10803,9 +10840,9 @@ createApp({
                 await uploadBufferToGoogleDrive(finalBuf);
 
                 updateLocalDbStats();
-                await fetchCloudDbStats();
-
+                await fetchCloudDbStats(false);
                 markAsSynced();
+                lastAutoSyncAttemptTs = Date.now();
 
                 // 🎯 核心防呆：自動比對上次送出名單，若有未完成股票自動勾選！
                 let uncompletedCodes = [];
@@ -10836,7 +10873,11 @@ createApp({
                 const uncompletedNote = uncompletedCodes.length > 0 
                     ? `\n\n⚡【防呆自動勾選】\n上次派工尚有 ${uncompletedCodes.length} 檔未完成 (${uncompletedCodes.join(', ')})，系統已為您自動打勾，可直接再次派工！` 
                     : '';
-                alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
+                if (isManual) {
+                    alert(`🤝 全量鏡像同步成功！\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
+                } else {
+                    showToast(`☁️ 雲端帳本已鏡像對齊 (${localDbStats.value.tradeLogCount} 筆交易 / ${localDbStats.value.myStockCount} 檔自選)`, 3000);
+                }
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
