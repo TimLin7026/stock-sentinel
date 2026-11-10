@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.04');
+        const appVersion = ref('v2.20261110.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -224,6 +224,8 @@ createApp({
         const onlyExDividends = ref(false); // 快速篩選近期除權息個股
         const exDividendsList = ref([]); // 除權息公告清單
         const exDividendsMap = ref({}); // 以股票代碼為 key 的除權息快速映射表
+        const exDividendsUpdatedAt = ref(localStorage.getItem('sentinel_ex_div_updated') || '');
+        const exDividendsCount = ref(Number(localStorage.getItem('sentinel_ex_div_count') || 0));
 
         const fetchExDividendsData = async () => {
             try {
@@ -245,6 +247,14 @@ createApp({
 
                 if (exData && Array.isArray(exData.items)) {
                     exDividendsList.value = exData.items;
+                    if (exData.updatedAt) {
+                        exDividendsUpdatedAt.value = exData.updatedAt;
+                        localStorage.setItem('sentinel_ex_div_updated', exData.updatedAt);
+                    }
+                    if (typeof exData.count === 'number') {
+                        exDividendsCount.value = exData.count;
+                        localStorage.setItem('sentinel_ex_div_count', String(exData.count));
+                    }
                     const map = {};
                     exData.items.forEach(item => {
                         if (item.code) map[String(item.code).trim()] = item;
@@ -11085,6 +11095,8 @@ createApp({
             exDividendsList,
             exDividendsMap,
             getExDividendsBadge,
+            exDividendsUpdatedAt,
+            exDividendsCount,
             selectedBrokerFilter,
             availableBrokers,
             activeBrokers,
