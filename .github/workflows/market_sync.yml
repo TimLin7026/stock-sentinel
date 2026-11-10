@@ -39,12 +39,13 @@ jobs:
       - name: 🚀 執行雲端行情大腦與指標審計
         run: |
           python scripts/market_worker.py --target-date="${{ github.event.inputs.target_date }}" --scan-days="${{ github.event.inputs.scan_days }}"
+          python scripts/fetch_ex_dividends.py
 
       - name: 💾 自動提交並防撞推播至 GitHub
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add market_snapshot.json.gz market_history_60d.json.gz market_health.json scripts/market_history.db
+          git add market_snapshot.json.gz market_history_60d.json.gz market_health.json scripts/market_history.db market_ex_dividends.json
           if git diff --staged --quiet; then
             echo "☕ 行情快照無變更，無需提交。"
             exit 0

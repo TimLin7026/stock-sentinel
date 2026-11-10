@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.01');
+        const appVersion = ref('v2.20261110.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -164,7 +164,14 @@ createApp({
         };
 
         // ─── 導航與分頁狀態 ───
-        const currentTab = ref('dashboard'); // 預設登入後顯示資產總覽
+        const defaultStartTab = ref(localStorage.getItem('sentinel_default_tab') || 'dashboard');
+        const currentTab = ref(['macro', 'dashboard', 'stocks'].includes(defaultStartTab.value) ? defaultStartTab.value : 'dashboard');
+        const setDefaultStartTab = (tab) => {
+            if (!['macro', 'dashboard', 'stocks'].includes(tab)) return;
+            defaultStartTab.value = tab;
+            localStorage.setItem('sentinel_default_tab', tab);
+            showToast(`已將預設起始首頁設為「${tab === 'macro' ? '全域大勢' : tab === 'stocks' ? '個股戰報' : '資產總覽'}」`, 3000);
+        };
         const stockSubTab = ref('holding'); // 預設現役持股區
                 // 🌟 特別關注複合篩選器 (支援買賣方向 + 指標特徵多維複選)
         const starredFilters = reactive({
@@ -214,6 +221,75 @@ createApp({
         };
         const stockSearchQuery = ref('');
         const onlyExpiredReports = ref(false); // 快速篩選戰報過期/待更新個股
+        const onlyExDividends = ref(false); // 快速篩選近期除權息個股
+        const exDividendsList = ref([]); // 除權息公告清單
+        const exDividendsMap = ref({}); // 以股票代碼為 key 的除權息快速映射表
+
+        const fetchExDividendsData = async () => {
+            try {
+                let exData = null;
+                try {
+                    const res = await fetch(`./market_ex_dividends.json?_t=${Date.now()}`, { cache: 'no-store' });
+                    if (res.ok) exData = await res.json();
+                } catch (e) {
+                    console.warn('本機 market_ex_dividends.json 讀取失敗，嘗試備用路徑...', e);
+                }
+
+                if (!exData) {
+                    try {
+                        const rawUrl = `https://raw.githubusercontent.com/TimLin7026/stock-sentinel/main/market_ex_dividends.json?_t=${Date.now()}`;
+                        const res = await fetch(rawUrl, { cache: 'no-store' });
+                        if (res.ok) exData = await res.json();
+                    } catch (e) {}
+                }
+
+                if (exData && Array.isArray(exData.items)) {
+                    exDividendsList.value = exData.items;
+                    const map = {};
+                    exData.items.forEach(item => {
+                        if (item.code) map[String(item.code).trim()] = item;
+                    });
+                    exDividendsMap.value = map;
+                }
+            } catch (err) {
+                console.error('載入市場除權息清單失敗:', err);
+            }
+        };
+
+        const getExDividendsBadge = (code) => {
+            if (!code || !exDividendsMap.value) return null;
+            const item = exDividendsMap.value[String(code).trim()];
+            if (!item) return null;
+
+            const typeStr = item.exType && item.exType.includes('權') && item.exType.includes('息') ? '除權息' 
+                          : (item.exType && item.exType.includes('權') ? '除權' : '除息');
+
+            let shortDate = item.exDate;
+            if (item.exDate && item.exDate.includes('-')) {
+                const parts = item.exDate.split('-');
+                if (parts.length === 3) shortDate = `${parts[1]}/${parts[2]}`;
+            }
+
+            let valStr = '';
+            if (item.cashDividend && Number(item.cashDividend) > 0) {
+                valStr = `$${Number(item.cashDividend).toFixed(2).replace(/\.?0+$/, '')}`;
+            }
+            const yieldStr = item.dividendYield ? ` (${item.dividendYield})` : '';
+
+            let daysText = '';
+            if (item.daysLeft === 0) daysText = '今日';
+            else if (item.daysLeft > 0) daysText = `${item.daysLeft}天後`;
+            else daysText = `${Math.abs(item.daysLeft)}天前`;
+
+            const badgeText = `${shortDate} ${typeStr}${valStr ? ' ' + valStr : ''}${yieldStr}`;
+            const tooltip = `【${item.name || code} ${typeStr}提醒】\n除權息基準日：${item.exDate} (${daysText})\n每股配息：${valStr || '無或除權'}\n殖利率參考：${item.dividendYield || '暫無'}`;
+
+            return {
+                badgeText,
+                tooltip,
+                item
+            };
+        };
         const expandedStockUids = ref(new Set()); // 展開卡片集合 (以 code_broker 為唯一 UID)
 
         // ─── 雲端設定：三大主題分頁狀態 (方案 A: 雲端同步 / AI 智能戰報 / 系統與維護) ───
@@ -4934,6 +5010,11 @@ createApp({
                 baseList = baseList.filter(s => !s.isReportFresh);
             }
 
+            // 📅 快速篩選近期除息個股
+            if (onlyExDividends.value) {
+                baseList = baseList.filter(s => !!exDividendsMap.value[String(s.code).trim()]);
+            }
+
             // 搜尋過濾
             if (stockSearchQuery.value.trim()) {
                 const q = stockSearchQuery.value.trim().toLowerCase();
@@ -7130,7 +7211,7 @@ createApp({
         };
 
         // 💎 財經富貴 Gem 系統提示詞 (精純格式A：八大章節地毯式診斷與專用解析區塊，零網路依賴 100% 內嵌)
-        const INLINED_GEMINI_PROMPT_FORMAT_A = "# 財經富貴 Gem 系統提示詞 (System Prompt)\n\n### 角色\n你是一位深耕台股市場、精通技術圖表與數據時間軸軌跡分析的資深策略分析師「財經富貴 v20261104」。你擅長結合「司令 15 戰法」與「飆股 9 步」進行盤勢定錨，並具備國際總體經濟、地緣政治、產業鏈供需與個股最新時事新聞的深度敏銳度。你的核心靈魂是「左右側複合型混血戰術」（Hybrid Trading Strategy）：以基本面高殖利率與穩定配息為長線「左側防護衣」，並以籌碼面主力動向與技術面「右側交易訊號」為波段發動槍，引導小資資金在穩賺股利的同時，精準狙擊 5% 至 10% 以上的波段價差機會。\n\n### 戰術分類 (三大類股)\n每檔個股必須明確歸類為以下三類之一，並嚴格遵循對應戰術：\n1. **A類：波段成長/動能飆股**：強勢多頭型態、營運高度成長。以「右側交易」為主（順勢追價或拉回量縮守均線加碼）。\n2. **B類：高殖利率/波段價值循環股**：具備穩健配息能力、股價處於合理或低估評價區。以「左右側複合混血戰術」為主（左側極限冰點分批低吸防禦，右側帶量突破翻紅順勢加碼）。\n3. **C類：市值型/高股息 ETF**：大盤指數型或高股息 ETF。以「純左側複利配置」為主（熱力燈號綠燈愈多、定期定額或零股分批買愈多，息收再投入滾動複利）。\n\n---\n\n### 輸出架構與格式規範 (Format A)\n※ 排版硬性規則：第一章與第二章所有要點之「標題與中括號導引」後，必須強制斷行（換行），具體分析內文一律從下一行開始書寫，嚴禁緊連在同一行！\n\n【審計】當前訊息輸入個股數量：1 ➔ 鎖定格式A\n【分析】[股票代號] [股票名稱] (類別：[A類/B類/C類])\n\n一、 【產業脈動與國際/時事新聞深度洞察】\n- 🌐 **國際總經與地緣政治局勢**：[分析國際總經情勢、美中科技角力、外資匯率與全球同業動態對本股之實質衝擊與機遇]\n  (請於此換行，從下一行展開深入分析)\n- 🏭 **上下游供應鏈與產業護城河**：[深入剖析所屬產業次族群、上下游關鍵供應鏈、特殊利基技術護城河與客戶黏著度]\n  (請於此換行，從下一行展開深入分析)\n- 📰 **個股最新動態與法說營運展望**：[結合近期法說會指引、營收月增/年增動態、產能稼動率、擴產進度與現金殖利率長線防禦力]\n  (請於此換行，從下一行展開深入分析)\n\n二、 【視覺診斷、多空指標與熱力燈號決策】\n- 📉 **技術型態與量價結構**：[短中長期均線排列架構、布林通道帶口擴張/收斂與位置、成交量連續性與量價配合型態]\n  (請於此換行，從下一行展開深入分析)\n- 🚨 **熱力青紅燈逐項審計 (1-6 燈)**：\n  - ① MTM金（極速衝力）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ② OSC縮（快速動能）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ③ K趨（快速敏銳）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ④ DIF趨（中速趨勢）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ⑤ KD金（中速波段）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ⑥ MACD金（慢速）：[數值判讀] ➔ 🔴紅 / 🟢綠\n- ⚠️ **籌碼與技術交叉診斷**：[外資/投信/自營商三代法人動向、融資融券浮額增減、籌碼吸籌比多空判讀]\n- 📊 **RSI12 雙向輔助動態預警**：[三級極限冰點 (<=25) / 極熱過熱 (>=75) / 買賣點與背離警示]\n- 🚥 **熱力燈號決策指令**：[明確給予當前燈號決策方針，如「純左側複利佈局」、「左右側複合低吸」或「右側發動加碼」]\n\n三、 【五維綜合評估與主力策略導引】\n| 維度 | 星等 (1-5★) | 核心依據與說明 |\n| :--- | :--- | :--- |\n| **技術面 (TA)** | [★數] | [均線、布林通道、型態與熱力燈號結構核心依據] |\n| **籌碼面 (SA)** | [★數] | [法人進出、融資浮額與籌碼吸籌比集中度] |\n| **價值面 (FA)** | [★數] | [本益比、營收成長力與產業龍頭護城河] |\n| **消息面 (IA)** | [★數] | [法說指引、時事新聞與國際總經風向] |\n| **配息防禦面 (DA)** | [★數] | [歷年配息穩定度與實質現金殖利率下檔防護] |\n\n🎯 **主力多空動向與意圖深度解析**：\n[結合五維數據、籌碼集中度與時事消息，精闢拆解主力資金意圖（如放量洗盤甩轎、壓單吃貨築底、誘空軋空或高檔換手出貨），並指引後續多空防守關鍵]\n\n四、 【實戰操作戰術：空手佈局與持股應變】\n🗺️ **全波段關鍵點位地圖**：\n- **左側低吸防禦區**：`[區間下限] ~ [區間上限]` 元 ([對應之布林下軌、支撐或整數關卡說明])\n- **右側轉強確認點**：`[突破價格]` 元 ([帶量站穩均線或燈號翻紅之關鍵轉折點])\n- **反彈波段調節目標**：\n  - 第一目標（短壓/均線）：`[價格]` 元\n  - 第二目標（波段滿足/頸線）：`[價格]` 元\n- **極限風控停損點**：`[風控價格]` 元 ([有效跌破時之停損/避險價，C類ETF填無須停損])\n\n- 🎯 **空手者佈局策略**：\n  [針對左側價值型買盤與右側順勢型買盤，給予具體的進場條件、分批資金配比與掛單紀律]\n- 🛡️ **已持股者應變策略**：\n  [針對高檔套牢部位、獲利波段調節及中長線存股領息部位，給予明確的解套換股、分批停利或加碼攤平準則]\n\n五、 【盤中實戰快速檢核對照表】\n| 盤中情境觸發條件 | 判讀意義 | 建議即時決策行動 |\n| :--- | :--- | :--- |\n| **[情境一：開盤跌破支撐且量縮]** | [意義說明] | [具體行動] |\n| **[情境二：盤中放量拉抬站上關鍵價]** | [意義說明] | [具體行動] |\n| **[情境三：反彈觸及壓力遇上影線]** | [意義說明] | [具體行動] |\n| **[情境四：跌破極限風控點]** | [意義說明] | [具體行動] |\n\n六、 【風險預警與合規聲明】\n- ⚠️ **核心風險**：[列出1-2項最具殺傷力之總經、地緣政治、匯率或產業供需風險]\n- ⚖️ **免責聲明**：本戰報為客觀數據分析與演算法模型推導，不構成任何投資買賣建議，投資人應獨立判斷並自負盈虧。\n\n七、 【鈔能戰情室系統解析專用區塊】\n[REPORT_START]\n代碼: [股號數字]\n戰情總結: [針對當前走勢原因、明確目標與操作建議進行40字內總結。嚴禁出現「殖利率防禦」與「5%-10%波段空間」等重複套話]\n佈局區間下限: [數字]\n佈局區間上限: [數字]\n防守停損點: [數字，C類ETF填 0]\n目標調節下限: [數字，佈局上限 +5%]\n目標調節上限: [數字，佈局上限 +10%]\n[REPORT_END]\n\n---";
+        const INLINED_GEMINI_PROMPT_FORMAT_A = "# 財經富貴 Gem 系統提示詞 (System Prompt)\n\n### 角色\n你是一位深耕台股市場、精通技術圖表與數據時間軸軌跡分析的資深策略分析師「財經富貴 v20261104」。你擅長結合「司令 15 戰法」與「飆股 9 步」進行盤勢定錨，並具備國際總體經濟、地緣政治、產業鏈供需與個股最新時事新聞的深度敏銳度。你的核心靈魂是「左右側複合型混血戰術」（Hybrid Trading Strategy）：以基本面高殖利率與穩定配息為長線「左側防護衣」，並以籌碼面主力動向與技術面「右側交易訊號」為波段發動槍，引導小資資金在穩賺股利的同時，精準狙擊 5% 至 10% 以上的波段價差機會。\n\n### 戰術分類 (三大類股)\n每檔個股必須明確歸類為以下三類之一，並嚴格遵循對應戰術：\n1. **A類：波段成長/動能飆股**：強勢多頭型態、營運高度成長。以「右側交易」為主（順勢追價或拉回量縮守均線加碼）。\n2. **B類：高殖利率/波段價值循環股**：具備穩健配息能力、股價處於合理或低估評價區。以「左右側複合混血戰術」為主（左側極限冰點分批低吸防禦，右側帶量突破翻紅順勢加碼）。\n3. **C類：市值型/高股息 ETF**：大盤指數型或高股息 ETF。以「純左側複利配置」為主（熱力燈號綠燈愈多、定期定額或零股分批買愈多，息收再投入滾動複利）。\n\n---\n\n### 輸出架構與格式規範 (Format A)\n※ 排版硬性規則：第一章與第二章所有要點之「標題與中括號導引」後，必須強制斷行（換行），具體分析內文一律從下一行開始書寫，嚴禁緊連在同一行！\n\n【審計】當前訊息輸入個股數量：1 ➔ 鎖定格式A\n【分析】[股票代號] [股票名稱] (類別：[A類/B類/C類])\n\n一、 【產業脈動與國際/時事新聞深度洞察】\n- 🌐 **國際總經與地緣政治局勢**：[分析國際總經情勢、美中科技角力、外資匯率與全球同業動態對本股之實質衝擊與機遇]\n  (請於此換行，從下一行展開深入分析)\n- 🏭 **上下游供應鏈與產業護城河**：[深入剖析所屬產業次族群、上下游關鍵供應鏈、特殊利基技術護城河與客戶黏著度]\n  (請於此換行，從下一行展開深入分析)\n- 📰 **個股最新動態與法說營運展望**：[結合近期法說會指引、營收月增/年增動態、產能稼動率、擴產進度與現金殖利率長線防禦力]\n  (請於此換行，從下一行展開深入分析)\n\n二、 【視覺診斷、多空指標與熱力燈號決策】\n- 📉 **技術型態與量價結構**：[短中長期均線排列架構、布林通道帶口擴張/收斂與位置、成交量連續性與量價配合型態]\n  (請於此換行，從下一行展開深入分析)\n- 🚨 **熱力青紅燈逐項審計 (1-6 燈)**：\n  - ① MTM金（極速衝力）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ② OSC縮（快速動能）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ③ K趨（快速敏銳）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ④ DIF趨（中速趨勢）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ⑤ KD金（中速波段）：[數值判讀] ➔ 🔴紅 / 🟢綠\n  - ⑥ MACD金（慢速）：[數值判讀] ➔ 🔴紅 / 🟢綠\n- ⚠️ **籌碼與技術交叉診斷**：[外資/投信/自營商三代法人動向、融資融券浮額增減、籌碼吸籌比多空判讀]\n- 📊 **RSI12 雙向輔助動態預警**：[三級極限冰點 (<=25) / 極熱過熱 (>=75) / 買賣點與背離警示]\n- 🚥 **熱力燈號決策指令**：[明確給予當前燈號決策方針，如「純左側複利佈局」、「左右側複合低吸」或「右側發動加碼」]\n\n三、 【五維綜合評估與主力策略導引】\n| 維度 | 星等 (1-5★) | 核心依據與說明 |\n| :--- | :--- | :--- |\n| **技術面 (TA)** | [★數] | [均線、布林通道、型態與熱力燈號結構核心依據] |\n| **籌碼面 (SA)** | [★數] | [法人進出、融資浮額與籌碼吸籌比集中度] |\n| **價值面 (FA)** | [★數] | [本益比、營收成長力與產業龍頭護城河] |\n| **消息面 (IA)** | [★數] | [法說指引、時事新聞與國際總經風向] |\n| **配息防禦面 (DA)** | [★數] | [歷年配息穩定度與實質現金殖利率下檔防護] |\n\n🎯 **主力多空動向與意圖深度解析**：\n[結合五維數據、籌碼集中度與時事消息，精闢拆解主力資金意圖（如放量洗盤甩轎、壓單吃貨築底、誘空軋空或高檔換手出貨），並指引後續多空防守關鍵]\n\n四、 【實戰操作戰術：空手佈局與持股應變】\n🗺️ **全波段關鍵點位地圖**：\n- **左側低吸防禦區**：`[區間下限] ~ [區間上限]` 元 ([對應之布林下軌、支撐或整數關卡說明])\n- **右側轉強確認點**：`[突破價格]` 元 ([帶量站穩均線或燈號翻紅之關鍵轉折點])\n- **反彈波段調節目標**：\n  - 第一目標（短壓/均線）：`[價格]` 元\n  - 第二目標（波段滿足/頸線）：`[價格]` 元\n- **極限風控停損點**：`[風控價格]` 元 ([有效跌破時之停損/避險價，C類ETF填無須停損])\n\n- 🎯 **空手者佈局策略**：\n  [針對左側價值型買盤與右側順勢型買盤，給予具體的進場條件、分批資金配比與掛單紀律]\n- 📅 **除權息前/後關鍵戰略預判**：\n  [若該股處於近期除權息日程，深入研判：除權前（棄息避稅賣壓 vs. 搶息買盤、融券最後回補軋空期之多空轉折）；除權後（填權息動能速度、貼息風險防禦、除權跳空缺口支撐性，防恐慌性殺跌策略）]\n- 🛡️ **已持股者應變策略**：\n  [針對高檔套牢部位、獲利波段調節及中長線存股領息部位，給予明確的解套換股、分批停利或加碼攤平準則]\n\n五、 【盤中實戰快速檢核對照表】\n| 盤中情境觸發條件 | 判讀意義 | 建議即時決策行動 |\n| :--- | :--- | :--- |\n| **[情境一：開盤跌破支撐且量縮]** | [意義說明] | [具體行動] |\n| **[情境二：盤中放量拉抬站上關鍵價]** | [意義說明] | [具體行動] |\n| **[情境三：反彈觸及壓力遇上影線]** | [意義說明] | [具體行動] |\n| **[情境四：跌破極限風控點]** | [意義說明] | [具體行動] |\n\n六、 【風險預警與合規聲明】\n- ⚠️ **核心風險**：[列出1-2項最具殺傷力之總經、地緣政治、匯率或產業供需風險]\n- ⚖️ **免責聲明**：本戰報為客觀數據分析與演算法模型推導，不構成任何投資買賣建議，投資人應獨立判斷並自負盈虧。\n\n七、 【鈔能戰情室系統解析專用區塊】\n[REPORT_START]\n代碼: [股號數字]\n戰情總結: [針對當前走勢原因、明確目標與操作建議進行40字內總結。嚴禁出現「殖利率防禦」與「5%-10%波段空間」等重複套話]\n佈局區間下限: [數字]\n佈局區間上限: [數字]\n防守停損點: [數字，C類ETF填 0]\n目標調節下限: [數字，佈局上限 +5%]\n目標調節上限: [數字，佈局上限 +10%]\n[REPORT_END]\n\n---";
 
         const fetchGeminiPrompt = async () => {
             return INLINED_GEMINI_PROMPT_FORMAT_A;
@@ -9418,6 +9499,17 @@ createApp({
                     `- ${clv_emoji} 資金動能：動能係數 ${clv_sign_latest}${clv_rounded_latest.toFixed(2)} (${clv_comment})`
                 ];
                 if (rsi_line) lines.push(rsi_line);
+                const exDiv = exDividendsMap.value && (exDividendsMap.value[sc] || exDividendsMap.value[stock.code]);
+                if (exDiv) {
+                    let daysDesc = '';
+                    if (exDiv.daysLeft === 0) daysDesc = '今日除權息';
+                    else if (exDiv.daysLeft > 0) daysDesc = `距除權息倒數 ${exDiv.daysLeft} 天`;
+                    else daysDesc = `已除權息 ${Math.abs(exDiv.daysLeft)} 天`;
+
+                    const divCash = exDiv.cashDividend && Number(exDiv.cashDividend) > 0 ? `$${Number(exDiv.cashDividend).toFixed(2).replace(/\.?0+$/, '')}` : '無或配股';
+                    const yStr = exDiv.dividendYield ? ` (殖利率 ${exDiv.dividendYield})` : '';
+                    lines.push(`- 📅 除權息即時動態：${exDiv.exDate} ${exDiv.exType || '除息'} 每股派發 ${divCash}${yStr}，${daysDesc}`);
+                }
                 lines.push("─────────────────────────────────────────────\n");
                 return lines.join('\n');
             }
@@ -10909,6 +11001,9 @@ createApp({
                 }
             }
 
+            // 啟動市場除權息清單載入
+            fetchExDividendsData();
+
             // 啟動 Google 智慧心跳監控與背景自動檢測
             initGoogleHeartbeat();
             await checkGoogleTokenFreshness();
@@ -10966,6 +11061,8 @@ createApp({
             landscapeChartLayoutMode,
             toggleChartLayoutMode,
             currentTab,
+            defaultStartTab,
+            setDefaultStartTab,
             cloudSettingsTab,
             changeCloudSettingsTab,
             stockSubTab,
@@ -10977,6 +11074,10 @@ createApp({
             hasActiveIndicatorFilters,
             stockSearchQuery,
             onlyExpiredReports,
+            onlyExDividends,
+            exDividendsList,
+            exDividendsMap,
+            getExDividendsBadge,
             selectedBrokerFilter,
             availableBrokers,
             activeBrokers,

@@ -427,6 +427,91 @@
             <!-- ========================================== -->
             <!-- 1️⃣ 📊 模組一：資產總覽 -->
             <!-- ========================================== -->
+            <!-- 0️⃣ 🧭 模組零：全域大勢 (操盤導航站) -->
+            <!-- ========================================== -->
+            <section v-if="isAppUnlocked && currentTab === 'macro'" class="space-y-4">
+                <!-- 標題引言 -->
+                <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" 
+                     class="p-4 rounded-2xl border space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xl">🧭</span>
+                            <h2 class="text-base font-extrabold" :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-800'">全域大勢與市場風向</h2>
+                        </div>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border"
+                              :class="theme === 'dark' ? 'bg-sky-950/40 text-sky-400 border-sky-800' : 'bg-sky-50 text-sky-600 border-sky-200'">
+                            即時操盤導航
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        選股看個股，操作看大勢 ｜ 掌握國際總經、大盤 AI 深度總評與即時新聞脈動。
+                    </p>
+                </div>
+
+                <!-- 雙核心直達卡片 -->
+                <div class="grid grid-cols-1 gap-3.5">
+                    <!-- 卡片 1: 台股大盤情勢 ＆ AI 總評 -->
+                    <a href="https://signova.tw/market#section-ai-review" target="_blank" 
+                       class="group block p-4 rounded-2xl border transition-all duration-200 hover:shadow-lg active:scale-[0.99] relative overflow-hidden"
+                       :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border-indigo-900/40 hover:border-indigo-500/60' : 'bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 border-indigo-200 hover:border-indigo-400 shadow-sm'">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-sky-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-compass text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-bold flex items-center space-x-1.5" :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-800'">
+                                        <span>台股大盤情勢 ＆ AI 總評</span>
+                                        <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-slate-400 group-hover:text-indigo-400 transition-colors"></i>
+                                    </h3>
+                                    <p class="text-[11px] text-indigo-500 dark:text-indigo-400 font-medium mt-0.5">
+                                        Signova 智匯全域・每日大盤 AI 觀點
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3 pt-3 border-t text-xs leading-relaxed" :class="theme === 'dark' ? 'border-slate-800 text-slate-300' : 'border-slate-100 text-slate-600'">
+                            直達大盤 AI 深度總評、加權指數盤中/收盤走勢、三大法人期現貨買賣超、融資融券籌碼變動與權值貢獻排行。
+                        </div>
+                        <div class="mt-3 flex items-center space-x-2 text-[10px]">
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">AI 深度總評</span>
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">法人買賣超</span>
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">資券變化</span>
+                        </div>
+                    </a>
+
+                    <!-- 卡片 2: 即時財經新聞快訊 -->
+                    <a href="https://signova.tw/news" target="_blank" 
+                       class="group block p-4 rounded-2xl border transition-all duration-200 hover:shadow-lg active:scale-[0.99] relative overflow-hidden"
+                       :class="theme === 'dark' ? 'bg-gradient-to-br from-slate-900 via-amber-950/30 to-slate-900 border-amber-900/40 hover:border-amber-500/60' : 'bg-gradient-to-br from-white via-amber-50/30 to-orange-50/40 border-amber-200 hover:border-amber-400 shadow-sm'">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-md shadow-amber-500/20 group-hover:scale-110 transition-transform">
+                                    <i class="fa-solid fa-newspaper text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-bold flex items-center space-x-1.5" :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-800'">
+                                        <span>即時財經新聞快訊</span>
+                                        <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-slate-400 group-hover:text-amber-400 transition-colors"></i>
+                                    </h3>
+                                    <p class="text-[11px] text-amber-500 dark:text-amber-400 font-medium mt-0.5">
+                                        第一手台股重磅頭條與熱點快訊
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3 pt-3 border-t text-xs leading-relaxed" :class="theme === 'dark' ? 'border-slate-800 text-slate-300' : 'border-slate-100 text-slate-600'">
+                            24小時不間斷匯流國內外財經重大事件、主流產業題材動向、熱點概念股時事與總經國際脈動。
+                        </div>
+                        <div class="mt-3 flex items-center space-x-2 text-[10px]">
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">財經頭條</span>
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">產業動態</span>
+                            <span class="px-2 py-0.5 rounded-md border" :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-600'">國際連線</span>
+                        </div>
+                    </a>
+                </div>
+            </section>
+
             <!-- 1️⃣ 📊 模組一：資產總覽 (5大核心KPI + 甜甜圈持股分布 + 歷史對沖結算總表) -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'dashboard'" class="space-y-3.5">
@@ -793,8 +878,17 @@
                             <span>RSI12持續</span>
                         </button>
 
+                        <!-- 📅 近期除息 -->
+                        <button @click="onlyExDividends = !onlyExDividends" 
+                                :class="onlyExDividends ? 'bg-amber-600 text-white font-bold shadow shadow-amber-600/30 ring-1 ring-amber-400' : (theme === 'dark' ? 'text-slate-400 hover:text-amber-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-amber-600 border-slate-200 bg-slate-50')"
+                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0"
+                                :title="onlyExDividends ? '已開啟近期除息篩選 (點擊查看全部)' : '快速篩選近期即將除權息或剛除權息個股'">
+                            <span class="text-[10px]">📅</span>
+                            <span>近期除息</span>
+                        </button>
+
                         <!-- 若有啟用任何指標過濾，顯示一鍵清除指標小按鈕 -->
-                        <button v-if="hasActiveIndicatorFilters" @click="starredFilters.oscChange = false; starredFilters.rsiChange = false; starredFilters.rsiKeep = false;" 
+                        <button v-if="hasActiveIndicatorFilters || onlyExDividends" @click="starredFilters.oscChange = false; starredFilters.rsiChange = false; starredFilters.rsiKeep = false; onlyExDividends = false;" 
                                 :class="theme === 'dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'"
                                 class="ml-auto text-[10px] px-1.5 py-0.5 rounded transition whitespace-nowrap shrink-0" title="清除所有指標篩選">
                             <i class="fa-solid fa-xmark mr-0.5"></i>清除指標
@@ -833,6 +927,13 @@
                                     <!-- 股票代號與名稱 -->
                                     <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm tracking-wide font-mono">{{ stock.code }}</span>
                                     <span :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'" class="font-bold text-sm">{{ stock.name }}</span>
+                                    <!-- 📅 除權息提醒徽章 (若該股在近期除息名單中) -->
+                                    <span v-if="getExDividendsBadge(stock.code)" 
+                                          :title="getExDividendsBadge(stock.code).tooltip"
+                                          class="text-[10px] px-1.5 py-0.2 rounded-full font-bold border flex items-center space-x-1 shrink-0 bg-amber-500/15 text-amber-500 border-amber-500/30">
+                                        <span>📅</span>
+                                        <span>{{ getExDividendsBadge(stock.code).badgeText }}</span>
+                                    </span>
                                 </div>
 
                                 <!-- 證券商標籤 (對齊地端樣式) 與 📈 走勢指標圖 (純圖示) -->
@@ -1568,9 +1669,40 @@
                 <!-- 🛠️ 【Tab 3: 系統與維護】 -->
                 <div v-show="cloudSettingsTab === 'maint'" class="space-y-3.5">
                     <div :class="appLayout === 'wide' ? 'grid grid-cols-2 gap-3.5 items-start' : 'space-y-3.5'">
-                        <!-- 第一欄：多帳號沙盒 (第 1 順位置頂) + 市場曆法維護 (第 2 順位) -->
+                        <!-- 第一欄：預設首頁 (第 1 順位) + 多帳號沙盒 (第 2 順位) + 市場曆法維護 -->
                         <div class="space-y-3.5">
-                            <!-- 👥 Google 多帳號沙盒與解除連結卡片 (第 1 順位) -->
+                            <!-- 🏠 個人偏好：預設起始首頁卡片 (置頂) -->
+                            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
+                                <h3 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs font-bold flex items-center justify-between">
+                                    <span class="flex items-center"><i class="fa-solid fa-house text-sky-400 mr-2"></i>預設起始首頁</span>
+                                    <span class="text-[10px] text-slate-500">啟動時開箱展示</span>
+                                </h3>
+                                <p class="text-[11px] text-slate-400 leading-relaxed">
+                                    設定每次開啟台股戰情室時，第一時間展示的主畫面分頁：
+                                </p>
+                                <div class="grid grid-cols-3 gap-2 pt-1 text-xs font-medium">
+                                    <button @click="setDefaultStartTab('macro')" type="button"
+                                            :class="defaultStartTab === 'macro' ? 'bg-sky-600 text-white font-bold border-sky-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100')"
+                                            class="py-2 px-1 rounded-xl border flex flex-col items-center space-y-1 transition active:scale-95">
+                                        <i class="fa-solid fa-compass text-sm"></i>
+                                        <span class="text-[11px]">全域大勢</span>
+                                    </button>
+                                    <button @click="setDefaultStartTab('dashboard')" type="button"
+                                            :class="defaultStartTab === 'dashboard' ? 'bg-sky-600 text-white font-bold border-sky-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100')"
+                                            class="py-2 px-1 rounded-xl border flex flex-col items-center space-y-1 transition active:scale-95">
+                                        <i class="fa-solid fa-chart-pie text-sm"></i>
+                                        <span class="text-[11px]">資產總覽</span>
+                                    </button>
+                                    <button @click="setDefaultStartTab('stocks')" type="button"
+                                            :class="defaultStartTab === 'stocks' ? 'bg-sky-600 text-white font-bold border-sky-500 shadow-sm' : (theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100')"
+                                            class="py-2 px-1 rounded-xl border flex flex-col items-center space-y-1 transition active:scale-95">
+                                        <i class="fa-solid fa-shield-halved text-sm"></i>
+                                        <span class="text-[11px]">個股戰報</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 👥 Google 多帳號沙盒與解除連結卡片 (第 2 順位) -->
                             <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" class="border rounded-2xl p-4 space-y-3">
                                 <h3 :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'" class="text-xs font-bold flex items-center justify-between">
                                     <span class="flex items-center"><i class="fa-solid fa-users-viewfinder text-sky-400 mr-2"></i>多帳號沙盒管理</span>
@@ -3336,6 +3468,10 @@
                  appLayout === 'mobile' ? 'max-w-md w-full max-w-full' : 'max-w-5xl w-full max-w-full'
              ]" 
              class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-full backdrop-blur-md border-t flex justify-around py-2.5 z-40 transition-all duration-300">
+            <button @click="currentTab = 'macro'" :class="currentTab === 'macro' ? 'text-sky-500 font-bold' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')" class="flex flex-col items-center text-[10px] space-y-1">
+                <i class="fa-solid fa-compass text-base"></i>
+                <span>全域大勢</span>
+            </button>
             <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'text-sky-500 font-bold' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-500')" class="flex flex-col items-center text-[10px] space-y-1">
                 <i class="fa-solid fa-chart-pie text-base"></i>
                 <span>資產總覽</span>
@@ -3375,6 +3511,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.01"></script>
+    <script src="app.js?v=2.20261110.02"></script>
 </body>
 </html>
