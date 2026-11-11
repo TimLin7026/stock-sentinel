@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261111.02');
+        const appVersion = ref('v2.20261111.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6429,6 +6429,25 @@ createApp({
             });
         };
 
+        // ─── 判定專題戰報時效性 (以雲端大腦產出時間為分界：>= 大腦產出時間為新鮮 ✅，否則為過期 ⚠️) ───
+        const isTopicReportFresh = (topicKey) => {
+            const tk = topicKey || macroSubTab.value || 'global';
+            const rep = topicReports.value[tk];
+            if (!rep || !rep.content) return false;
+            const rawTime = rep.time || '';
+            return computeReportFreshness(rawTime, true);
+        };
+
+        // ─── 格式化專題戰報顯示日期時間 (標準 YYYY/MM/DD HH:mm，對齊個股短評規格) ───
+        const formatTopicReportDisplayDate = (rawTime) => {
+            if (!rawTime || typeof rawTime !== 'string') return '';
+            const digits = rawTime.replace(/\D/g, '');
+            if (digits.length >= 12) {
+                return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6, 8)} ${digits.slice(8, 10)}:${digits.slice(10, 12)}`;
+            }
+            return rawTime.split(' ')[0] || rawTime;
+        };
+
         // ─── 🌐 全域專題戰報專屬 Markdown 轉 HTML 渲染 (安全過濾角括號與防吞噬) ───
         const formatTopicReportHtml = (rawText) => {
             if (!rawText || typeof rawText !== 'string') return '';
@@ -11569,6 +11588,8 @@ createApp({
             isGeneratingTopic,
             triggerGenerateTopic,
             formatTopicReportHtml,
+            isTopicReportFresh,
+            formatTopicReportDisplayDate,
             targetTopicKey,
             showTopicReportModal,
             selectedTopicModel,

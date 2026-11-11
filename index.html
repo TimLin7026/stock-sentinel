@@ -430,27 +430,11 @@
             <!-- 0️⃣ 🧭 模組零：全域大勢 (操盤導航站) -->
             <!-- ========================================== -->
             <section v-if="isAppUnlocked && currentTab === 'macro'" class="space-y-4">
-                <!-- 標題引言 -->
-                <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" 
-                     class="p-4 rounded-2xl border space-y-1.5">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-xl">🧭</span>
-                            <h2 class="text-base font-extrabold" :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-800'">全域大勢與市場風向</h2>
-                        </div>
-                        <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold border"
-                              :class="theme === 'dark' ? 'bg-sky-950/40 text-sky-400 border-sky-800' : 'bg-sky-50 text-sky-600 border-sky-200'">
-                            即時操盤導航
-                        </span>
-                    </div>
-                    <p class="text-xs text-slate-400 leading-relaxed">
-                        選股看個股，操作看大勢 ｜ 掌握國際總經、大盤 AI 深度總評與即時新聞脈動。
-                    </p>
-                </div>
 
-                <!-- 頂部 5 大水平滑動專題導航列 -->
+
+                <!-- 頂部 5 大專題導航列 (支援自動換行 flex-wrap，手機端 100% 完整不截斷) -->
                 <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" 
-                     class="flex items-center space-x-1.5 p-1 rounded-2xl border overflow-x-auto no-scrollbar text-xs font-semibold">
+                     class="flex flex-wrap items-center gap-1.5 p-1.5 rounded-2xl border text-xs font-semibold">
                     <button @click="setMacroSubTab('global')"
                             :class="macroSubTab === 'global' ? (theme === 'dark' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-600 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
                             class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
@@ -488,11 +472,13 @@
                     <!-- 操作工具列 (RWD 防擠壓自適應) -->
                     <div class="flex items-center justify-between gap-1.5 p-2.5 rounded-2xl border text-xs"
                          :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'">
-                        <!-- 左側：更新時間 (手機拉窄時自動精簡) -->
-                        <div class="flex items-center space-x-1 min-w-0 text-[11px]" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'">
-                            <span class="text-xs">📅</span>
-                            <span class="hidden sm:inline">更新時間：</span>
-                            <span class="font-mono font-medium truncate">{{ formatTopicTime(topicReports[macroSubTab]?.time) || '尚未生成' }}</span>
+                        <!-- 左側：戰報時間與大腦時效狀態 (100% 對齊個股短評規格：[✅/⚠️] 📅 戰報 (YYYY/MM/DD HH:mm)) -->
+                        <div class="flex items-center text-xs space-x-1 min-w-0 font-medium" :class="theme === 'dark' ? 'text-slate-300' : 'text-slate-700'">
+                            <span class="shrink-0 select-none">{{ isTopicReportFresh(macroSubTab) ? '✅' : '⚠️' }}</span>
+                            <span class="shrink-0">📅</span>
+                            <span class="font-mono truncate">
+                                {{ topicReports[macroSubTab]?.content ? `戰報 (${formatTopicReportDisplayDate(topicReports[macroSubTab]?.time)})` : '尚未生成' }}
+                            </span>
                         </div>
 
                         <!-- 右側：[💎 生成戰報]/[🔄 更新戰報] (對齊個股 Gem 漸層按鈕) ＋ [📋 複製] -->
@@ -3734,6 +3720,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261111.02"></script>
+    <script src="app.js?v=2.20261111.03"></script>
 </body>
 </html>
