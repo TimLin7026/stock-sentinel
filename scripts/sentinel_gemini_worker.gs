@@ -926,7 +926,7 @@ const TOPIC_CONFIGS = {
 function handleTopicReportRequest(params) {
   try {
     const topicKey = (params.topic || "global").toLowerCase();
-    const config = TOPIC_CONFIGS[topicKey] || TOPIC_CONFIGS.global;
+    const fallbackConfig = TOPIC_CONFIGS[topicKey] || TOPIC_CONFIGS.global;
     const apiKey = (params.apiKey || "").trim();
     const model = (params.model || "gemini-2.5-flash").trim();
 
@@ -934,26 +934,32 @@ function handleTopicReportRequest(params) {
       return { ok: false, error: "未提供有效的 Gemini API Key" };
     }
 
-    // 1. 即時檢索 Google News RSS
-    logToDrive("🔍 正在檢索「" + config.name + "」最新新聞...");
-    const newsContext = fetchLatestTopicNews(config.query, config.name);
+    // 🌟 核心革新：優先使用前端動態傳入的最新 systemPrompt、query 與專題名稱！
+    // 從此一般使用者完全無需重新部署 GAS，前端 GitHub Pages 更新即全網熱更新！
+    const systemPrompt = (params.systemPrompt || fallbackConfig.systemPrompt || "").trim();
+    const query = (params.query || fallbackConfig.query || "").trim();
+    const topicName = (params.name || fallbackConfig.name || "專題戰報").trim();
+
+    // 1. 即時檢索 Google News RSS (使用動態 query)
+    logToDrive("🔍 正在檢索「" + topicName + "」最新新聞 (query: " + query.substring(0, 40) + "...)...");
+    const newsContext = fetchLatestTopicNews(query, topicName);
 
     // 2. 組裝使用者提問 Context
     const nowTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
     const userPrompt = "【當前檢索時間】" + nowTimeStr + "\n" +
-      "【專題領域】" + config.name + "\n\n" +
+      "【專題領域】" + topicName + "\n\n" +
       "【最新即時熱點新聞參考】\n" + newsContext + "\n\n" +
-      "請根據上述最新事實與你的專業智庫，嚴格依照三大區塊輸出最新繁體中文深度戰報：";
+      "請根據上述最新事實與你的專業智庫，嚴格依據系統規範格式輸出最新繁體中文深度戰報：";
 
     // 3. 呼叫 Gemini REST API
-    logToDrive("🤖 正在呼叫 Gemini (" + model + ") 生成專題戰報...");
+    logToDrive("🤖 正在呼叫 Gemini (" + model + ") 生成專題戰報 (Prompt 來自前端動態注入)...");
     const cleanModel = encodeURIComponent(model);
     const cleanKey = encodeURIComponent(apiKey);
     const url = "https://generativelanguage.googleapis.com/v1beta/models/" + cleanModel + ":generateContent?key=" + cleanKey;
 
     const payload = {
       systemInstruction: {
-        parts: [{ text: config.systemPrompt }]
+        parts: [{ text: systemPrompt }]
       },
       contents: [
         {
@@ -991,18 +997,37 @@ function handleTopicReportRequest(params) {
 
     const data = JSON.parse(resText);
     const candidate = data.candidates && data.candidates[0];
-    const generatedText = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] ? candidate.content.parts[0].text : "";
 
-    if (!generatedText) {
-      return { ok: false, error: "Gemini 回傳內容為空" };
+    // 🌟 多 Parts 完整拼接 ＆ 思維鏈智能過濾 (徹底根除長文本截斷)
+    const parts = candidate && candidate.content && candidate.content.parts;
+    let generatedText = "";
+    if (Array.isArray(parts)) {
+      generatedText = parts
+        .filter(p => !p.thought && typeof p.text === "string")
+        .map(p => p.text)
+        .join("");
+      if (!generatedText) {
+        generatedText = parts.map(p => p.text || "").join("");
+      }
     }
 
-    logToDrive("🎉「" + config.name + "」專題戰報生成成功 (" + generatedText.length + " 字)！");
+    // 🛡️ 字數低標防呆驗收 (< 200 字視為異常截斷，拒絕偽裝成成功)
+    if (!generatedText || generatedText.trim().length < 200) {
+      const reason = (candidate && candidate.finishReason) || "UNKNOWN";
+      logToDrive("⚠️ Gemini 生成內容不完整 (" + (generatedText ? generatedText.length : 0) + " 字, finishReason: " + reason + ")");
+      return { 
+        ok: false, 
+        error: "模型生成內容不完整 (僅 " + (generatedText ? generatedText.length : 0) + " 字, finishReason: " + reason + ")",
+        raw: generatedText 
+      };
+    }
+
+    logToDrive("🎉「" + topicName + "」專題戰報生成成功 (" + generatedText.length + " 字)");
 
     return {
       ok: true,
       topic: topicKey,
-      topicName: config.name,
+      topicName: topicName,
       time: nowTimeStr,
       content: generatedText
     };
