@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261111.01');
+        const appVersion = ref('v2.20261111.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -6429,6 +6429,30 @@ createApp({
             });
         };
 
+        // ─── 🌐 全域專題戰報專屬 Markdown 轉 HTML 渲染 (安全過濾角括號與防吞噬) ───
+        const formatTopicReportHtml = (rawText) => {
+            if (!rawText || typeof rawText !== 'string') return '';
+            let text = rawText.trim();
+            if (!text) return '';
+
+            // 安全轉義：防止非 HTML 的角括號（如 <20000 點> 或未閉合之 <）被瀏覽器當成標籤吞噬
+            text = text.replace(/<(?!\/?(?:p|div|span|strong|em|ul|ol|li|h[1-6]|br|hr|table|tr|th|td|tbody|thead)\b)([^>]*>)?/gi, (match) => {
+                return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            });
+
+            // 自動排版優化：若清單項目之 [指引說明] 後方緊連分析內文，自動斷行至下一行展開
+            text = text.replace(/([:：]\s*\[[^\]\r\n]+\])\s*([^\r\n]+)/g, '$1\n  $2');
+
+            if (window.marked && typeof window.marked.parse === 'function') {
+                try {
+                    return window.marked.parse(text, { breaks: true, gfm: true });
+                } catch (e) {
+                    console.warn("marked.parse 解析異常，降級使用 formatReportHtml:", e);
+                }
+            }
+            return formatReportHtml(text);
+        };
+
         // ─── 戰報全文 Markdown 轉 HTML 結構化與重點高亮渲染 ───
         const formatReportHtml = (rawText) => {
             if (!rawText || typeof rawText !== 'string') return '';
@@ -7115,6 +7139,64 @@ createApp({
             { id: 'gemini-3.8-flash', name: '3.8 Flash', desc: '每日 20 次 · 深度精讀', limit: 20, tag: '' }
         ];
 
+        // ─── 🌐 專題戰報自選模型狀態 (3 選 1：3.5-Lite / 3.6 / 3.8) ───
+        const targetTopicKey = ref('global');
+        const showTopicReportModal = ref(false);
+        const selectedTopicModel = ref('gemini-3.5-flash-lite');
+
+        // 開啟專題戰報模型選擇彈窗
+        const openTopicReportPicker = (topicKey) => {
+            const tk = topicKey || macroSubTab.value || 'global';
+            if (isGeneratingTopic(tk)) return;
+
+            let key = (geminiApiKey.value || '').trim();
+            if (!key) key = localStorage.getItem('sentinel_gemini_api_key') || '';
+            if (!key) {
+                const cfg = MACRO_TOPIC_CONFIGS[tk] || MACRO_TOPIC_CONFIGS.global;
+                const inputKey = prompt(`💎 歡迎使用「${cfg.name}」AI 智能戰報！\n\n您尚未設定 Google Gemini API Key。\n請在此貼上您的個人 API Key (支援免費版)：\n(金鑰僅儲存於您本地手機/瀏覽器中)`);
+                if (inputKey && inputKey.trim()) {
+                    key = inputKey.trim();
+                    geminiApiKey.value = key;
+                    localStorage.setItem('sentinel_gemini_api_key', key);
+                    if (dbInstance) {
+                        try {
+                            writeGeminiSettingsToDbPure(dbInstance, key, getActiveGeminiModel());
+                            saveDbToIndexedDb();
+                            hasUnsyncedChanges.value = true;
+                        } catch (eDb) {}
+                    }
+                } else {
+                    return;
+                }
+            }
+
+            targetTopicKey.value = tk;
+            const saved = localStorage.getItem('sentinel_last_topic_model');
+            if (saved && CORE_3_MODELS.some(m => m.id === saved) && !isGeminiModelExceeded(saved)) {
+                selectedTopicModel.value = saved;
+            } else {
+                if (!isGeminiModelExceeded('gemini-3.5-flash-lite')) {
+                    selectedTopicModel.value = 'gemini-3.5-flash-lite';
+                } else if (!isGeminiModelExceeded('gemini-3.6-flash')) {
+                    selectedTopicModel.value = 'gemini-3.6-flash';
+                } else {
+                    selectedTopicModel.value = 'gemini-3.8-flash';
+                }
+            }
+            showTopicReportModal.value = true;
+        };
+
+        // 確認並啟動專題戰報生成
+        const confirmGenerateTopicReport = () => {
+            const tk = targetTopicKey.value || 'global';
+            const modelToUse = selectedTopicModel.value || 'gemini-3.5-flash-lite';
+            try {
+                localStorage.setItem('sentinel_last_topic_model', modelToUse);
+            } catch (e) {}
+            showTopicReportModal.value = false;
+            triggerGenerateTopic(tk, modelToUse);
+        };
+
         // 單檔彈窗 3 選 1 動態選項 (響應式包含即時配額，100% 對齊後台)
         const singleReportOptions = computed(() => {
             const _v = geminiUsageVersion.value;
@@ -7387,27 +7469,27 @@ createApp({
             return INLINED_GEMINI_PROMPT_FORMAT_A;
         };
 
-        // ─── 專題戰報 Prompt 模板 ───
+        // ─── 專題戰報 Prompt 模板 (注入四大嚴格禁令：杜絕思考草稿外溢、禁用角括號、三大區塊必須 100% 寫完) ───
         const INLINED_TOPIC_PROMPTS = {
             global: {
                 name: "全球宏觀與美股科技巨頭",
-                systemPrompt: `# 角色與任務\n你是一位精通全球宏觀經濟與美股台股連動的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜總經的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的全球大勢戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據新聞大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前全球股匯與美股對台股的實質影響]\n\n### 🌍 三件你必須知道的全球大事（人話翻譯）\n1. **美股與 Fed 風向** ➔ [人話翻譯：聯準會降息態度是急是緩？美股科技巨頭走勢對台股電子權值股是推力還是壓力？]\n2. **匯率與外資錢袋子** ➔ [人話翻譯：美元與台幣近期走勢，外資資金是在匯入買超還是匯出防禦？]\n3. **國際焦點與大宗物資** ➔ [人話翻譯：國際原油、通膨或重大地緣動態，是否造成成本隱憂？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在該「抱緊主流」、「拉回分批撿」、還是「趁高落袋為安」？給出具體 2~3 點選股原則與避開高估值追高風險的忠告。]`
+                systemPrompt: `# 角色與任務\n你是一位精通全球宏觀經濟與美股台股連動的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜總經的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的全球大勢戰報。\n\n【硬性輸出格式規範與四大嚴格禁令】\n1. 必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字。\n2. 嚴禁輸出任何思考草稿、排版規劃或字數統計（例如 Section 2: ~420 chars 等），直接從第一大標題開始輸出！\n3. 嚴禁使用「<」或「>」等角括號符號（請改用一般全形括號（）或「」以免網頁 HTML 標籤解析錯誤導致內容被吞噬）！\n4. 三大區塊與三大大事要點（1、2、3）必須 100% 全部寫完，嚴禁中途截斷！\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據新聞大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前全球股匯與美股對台股的實質影響]\n\n### 🌍 三件你必須知道的全球大事（人話翻譯）\n1. **美股與 Fed 風向** ➔ [人話翻譯：聯準會降息態度是急是緩？美股科技巨頭走勢對台股電子權值股是推力還是壓力？]\n2. **匯率與外資錢袋子** ➔ [人話翻譯：美元與台幣近期走勢，外資資金是在匯入買超還是匯出防禦？]\n3. **國際焦點與大宗物資** ➔ [人話翻譯：國際原油、通膨或重大地緣動態，是否造成成本隱憂？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在該「抱緊主流」、「拉回分批撿」、還是「趁高落袋為安」？給出具體 2~3 點選股原則與避開高估值追高風險的忠告。]`
             },
             tw: {
                 name: "台股政經與國安法人攻防",
-                systemPrompt: `# 角色與任務\n你是一位精通台灣政府財經政策與主力籌碼攻防的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜籌碼的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的台股政策與籌碼戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **政策籌碼狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據政策與法人籌碼大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前政府政策護盤意願與主力籌碼動向]\n\n### 🏛️ 三件你必須知道的台股大事（人話翻譯）\n1. **政府政策與護盤態度** ➔ [人話翻譯：近期重大財經政策、國安基金或公股行庫動態，台股下檔支撐鐵板在哪裡？]\n2. **外資期現貨對沖真相** ➔ [人話翻譯：外資近期的買賣超與期貨淨空單，到底是在真倒貨還是假避險？]\n3. **散戶融資與內資攻防** ➔ [人話翻譯：散戶融資浮額清洗程度、投信內資大單支撐力道如何？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在有政策保護傘的族群有哪些？哪些是純炒作題材別碰？給出具體 2~3 點守穩均線與分批佈局策略。]`
+                systemPrompt: `# 角色與任務\n你是一位精通台灣政府財經政策與主力籌碼攻防的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜籌碼的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的台股政策與籌碼戰報。\n\n【硬性輸出格式規範與四大嚴格禁令】\n1. 必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字。\n2. 嚴禁輸出任何思考草稿、排版規劃或字數統計（例如 Section 2: ~420 chars 等），直接從第一大標題開始輸出！\n3. 嚴禁使用「<」或「>」等角括號符號（請改用一般全形括號（）或「」以免網頁 HTML 標籤解析錯誤導致內容被吞噬）！\n4. 三大區塊與三大大事要點（1、2、3）必須 100% 全部寫完，嚴禁中途截斷！\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **政策籌碼狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據政策與法人籌碼大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前政府政策護盤意願與主力籌碼動向]\n\n### 🏛️ 三件你必須知道的台股大事（人話翻譯）\n1. **政府政策與護盤態度** ➔ [人話翻譯：近期重大財經政策、國安基金或公股行庫動態，台股下檔支撐鐵板在哪裡？]\n2. **外資期現貨對沖真相** ➔ [人話翻譯：外資近期的買賣超與期貨淨空單，到底是在真倒貨還是假避險？]\n3. **散戶融資與內資攻防** ➔ [人話翻譯：散戶融資浮額清洗程度、投信內資大單支撐力道如何？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在有政策保護傘的族群有哪些？哪些是純炒作題材別碰？給出具體 2~3 點守穩均線與分批佈局策略。]`
             },
             industry: {
                 name: "熱門產業鏈與題材輪動",
-                systemPrompt: `# 角色與任務\n你是一位精通台股熱門電子與傳產族群輪動的首席產業分析師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀產業報告的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的熱門產業輪動戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **族群輪動狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據盤面資金輪動熱度三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前主流領漲族群與資金真實去向]\n\n### ⚡ 三件你必須知道的產業大事（人話翻譯）\n1. **今日主流領跑族群** ➔ [人話翻譯：最吸金的族群（如AI伺服器/先進封裝/散熱等），是真有營收訂單拉貨，還是純消息炒作？]\n2. **產業鏈上下游傳導** ➔ [人話翻譯：這個產業鏈上誰吃肉（高毛利關鍵零組件）、誰喝湯、誰面臨預算排擠？]\n3. **主流強勢股 vs 掩護撤退股** ➔ [人話翻譯：如何分辨哪些是剛起跑第一棒，哪些是高檔放量主力掩護撤退？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：面對當前熱門族群，拉回時該鎖定哪些技術指標（如守住MA10/布林中軌）再切入？哪類狂飆追高的股票千萬別碰？]`
+                systemPrompt: `# 角色與任務\n你是一位精通台股熱門電子與傳產族群輪動的首席產業分析師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀產業報告的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的熱門產業輪動戰報。\n\n【硬性輸出格式規範與四大嚴格禁令】\n1. 必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字。\n2. 嚴禁輸出任何思考草稿、排版規劃或字數統計（例如 Section 2: ~420 chars 等），直接從第一大標題開始輸出！\n3. 嚴禁使用「<」或「>」等角括號符號（請改用一般全形括號（）或「」以免網頁 HTML 標籤解析錯誤導致內容被吞噬）！\n4. 三大區塊與三大大事要點（1、2、3）必須 100% 全部寫完，嚴禁中途截斷！\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **族群輪動狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據盤面資金輪動熱度三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前主流領漲族群與資金真實去向]\n\n### ⚡ 三件你必須知道的產業大事（人話翻譯）\n1. **今日主流領跑族群** ➔ [人話翻譯：最吸金的族群（如AI伺服器/先進封裝/散熱等），是真有營收訂單拉貨，還是純消息炒作？]\n2. **產業鏈上下游傳導** ➔ [人話翻譯：這個產業鏈上誰吃肉（高毛利關鍵零組件）、誰喝湯、誰面臨預算排擠？]\n3. **主流強勢股 vs 掩護撤退股** ➔ [人話翻譯：如何分辨哪些是剛起跑第一棒，哪些是高檔放量主力掩護撤退？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：面對當前熱門族群，拉回時該鎖定哪些技術指標（如守住MA10/布林中軌）再切入？哪類狂飆追高的股票千萬別碰？]`
             },
             etf: {
                 name: "ETF 資金浪潮與除權息",
-                systemPrompt: `# 角色與任務\n你是一位精通台灣 ETF 投資與資產配置的首席策略顧問。\n你的任務是根據提供的最新即時新聞與事實，為持有 ETF 或定期定額的台灣小資族，撰寫一份「白話 3 分鐘看懂」的 ETF 重點戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **ETF 市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據高股息與市值型市場大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前 ETF 配息與換股資金潮對投資人的影響]\n\n### 📈 三件你必須知道的 ETF 大事（人話翻譯）\n1. **高股息配息與填息體檢** ➔ [人話翻譯：00878/00919/0056 等高股息未來配息水準與填息能力如何？有沒有貼息風險？]\n2. **成分股換股潮資金大風吹** ➔ [人話翻譯：投信數百億被動買盤準備抬轎誰、無情剔除誰？對相關個股的衝擊？]\n3. **折溢價與避坑提醒** ➔ [人話翻譯：近期哪些熱門 ETF 出現大幅溢價（買貴被割韭菜）風險？]\n\n### 🧭 上班族/小資無腦存股攻略\n- [白話直接告訴讀者：定期定額需要調整嗎？想要單筆逢低加碼，應該看大盤或綠燈哪個時機點進場？如何做到真正的息收複利再投入？]`
+                systemPrompt: `# 角色與任務\n你是一位精通台灣 ETF 投資與資產配置的首席策略顧問。\n你的任務是根據提供的最新即時新聞與事實，為持有 ETF 或定期定額的台灣小資族，撰寫一份「白話 3 分鐘看懂」的 ETF 重點戰報。\n\n【硬性輸出格式規範與四大嚴格禁令】\n1. 必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字。\n2. 嚴禁輸出任何思考草稿、排版規劃或字數統計（例如 Section 2: ~420 chars 等），直接從第一大標題開始輸出！\n3. 嚴禁使用「<」或「>」等角括號符號（請改用一般全形括號（）或「」以免網頁 HTML 標籤解析錯誤導致內容被吞噬）！\n4. 三大區塊與三大大事要點（1、2、3）必須 100% 全部寫完，嚴禁中途截斷！\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **ETF 市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據高股息與市值型市場大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前 ETF 配息與換股資金潮對投資人的影響]\n\n### 📈 三件你必須知道的 ETF 大事（人話翻譯）\n1. **高股息配息與填息體檢** ➔ [人話翻譯：00878/00919/0056 等高股息未來配息水準與填息能力如何？有沒有貼息風險？]\n2. **成分股換股潮資金大風吹** ➔ [人話翻譯：投信數百億被動買盤準備抬轎誰、無情剔除誰？對相關個股的衝擊？]\n3. **折溢價與避坑提醒** ➔ [人話翻譯：近期哪些熱門 ETF 出現大幅溢價（買貴被割韭菜）風險？]\n\n### 🧭 上班族/小資無腦存股攻略\n- [白話直接告訴讀者：定期定額需要調整嗎？想要單筆逢低加碼，應該看大盤或綠燈哪個時機點進場？如何做到真正的息收複利再投入？]`
             }
         };
 
-        const triggerGenerateTopic = async (topicKey) => {
+        const triggerGenerateTopic = async (topicKey, customModel = null) => {
             if (isGeneratingTopic(topicKey)) return;
             const cfg = MACRO_TOPIC_CONFIGS[topicKey] || MACRO_TOPIC_CONFIGS.global;
 
@@ -7434,11 +7516,12 @@ createApp({
             let gas = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
 
             generatingTopics.value[topicKey] = true;
-            showToast(`🤖 正在搜尋「${cfg.name}」即時新聞並推導分析中，約需 10~15 秒...`, 8000);
+            // 🎯 模型優先級：自選指定 customModel ➔ 上次偏好 ➔ 極速主力 gemini-3.5-flash-lite
+            const activeModel = customModel || localStorage.getItem('sentinel_last_topic_model') || getActiveGeminiModel() || 'gemini-3.5-flash-lite';
+            showToast(`🤖 正以【${activeModel}】檢索「${cfg.name}」即時新聞並推導分析中，約需 10~15 秒...`, 8000);
 
             try {
                 let result = null;
-                const activeModel = getActiveGeminiModel() || 'gemini-2.5-flash';
 
                 // 優先嘗試使用使用者的 GAS Web App (具備 Google News RSS 檢索器)
                 if (gas && gas.startsWith('https://script.google.com/macros/s/')) {
@@ -7468,7 +7551,16 @@ createApp({
                     const payload = {
                         systemInstruction: { parts: [{ text: promptConfig.systemPrompt }] },
                         contents: [{ role: "user", parts: [{ text: `【當前檢索時間】${nowTimeStr}\n【專題領域】${cfg.name}\n請根據當前最新市場動態、全球股市/台股最新行情與重大新聞事實，嚴格輸出三大區塊繁體中文戰報：` }] }],
-                        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
+                        generationConfig: { 
+                            temperature: 0.2, 
+                            maxOutputTokens: 4096 
+                        },
+                        safetySettings: [
+                            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                        ]
                     };
 
                     const controller = new AbortController();
@@ -7498,6 +7590,9 @@ createApp({
                         content: genText
                     };
                 }
+
+                // 🎯 成功生成後，精準計入已使用模型次數
+                recordGeminiUsage(activeModel, 1);
 
                 // 存檔與狀態更新
                 const curTs = Date.now();
@@ -11473,6 +11568,12 @@ createApp({
             topicReports,
             isGeneratingTopic,
             triggerGenerateTopic,
+            formatTopicReportHtml,
+            targetTopicKey,
+            showTopicReportModal,
+            selectedTopicModel,
+            openTopicReportPicker,
+            confirmGenerateTopicReport,
             formatTopicTime,
             copyTopicContent,
             autoCloudSyncEnabled,
