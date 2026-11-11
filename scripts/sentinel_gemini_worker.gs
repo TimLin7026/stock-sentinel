@@ -3,7 +3,7 @@
  * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報實體清單循環推導機
  * (Transactional Manifest Loop Worker for Google Apps Script)
  * ═══════════════════════════════════════════════════════════════════════════
- * 📌 對應版本：v2.20261110.10
+ * 📌 對應版本：v2.20261110.11
  * 🕒 更新日期：2026-11-11
  * 🎯 架構特色：股票代號 + 證券商 (code + broker) 多帳戶獨立策略體系 & 3 檔平行併發
  * ═══════════════════════════════════════════════════════════════════════════
@@ -57,6 +57,13 @@ function logToDrive(msg, isOverwrite) {
  */
 function doGet(e) {
   try {
+    // 支援全域大勢專題戰報 (全球美股 / 台股籌碼 / 產業輪動 / ETF焦點)
+    if (e && e.parameter && e.parameter.action === "generate_topic_report") {
+      logToDrive("🌐 [doGet] 收到專題戰報生成請求: " + (e.parameter.topic || "global"));
+      const topicResult = handleTopicReportRequest(e.parameter);
+      return createJsonResponse(topicResult, topicResult.ok ? 200 : 500);
+    }
+
     // 支援斷點續跑未完成的清單股票
     if (e && e.parameter && e.parameter.action === "resume_manifest") {
       logToDrive("⚡ [doGet] 收到斷點續跑請求，準備讀取現存未執行清單...");
@@ -106,6 +113,14 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
+    
+    // 支援全域大勢專題戰報 (POST 模式)
+    if (payload.action === "generate_topic_report") {
+      logToDrive("🌐 [doPost] 收到專題戰報生成請求: " + (payload.topic || "global"));
+      const topicResult = handleTopicReportRequest(payload);
+      return createJsonResponse(topicResult, topicResult.ok ? 200 : 500);
+    }
+
     const apiKey = (payload.apiKey || "").trim();
     const model = (payload.model || "gemini-3.8-flash").trim();
     const stocks = payload.stocks || [];
@@ -875,4 +890,156 @@ function testDrivePermission() {
   Logger.log("🎉【Google Drive 授權成功！】專案已具備雲端硬碟讀寫權限。");
   Logger.log("👉 請接續點擊右上角【部署】➔【新增部署作業】完成網頁應用程式發布！");
   Logger.log("═══════════════════════════════════════════════════════════════════════");
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🌐 全域大勢四大專題戰報引擎 (全球美股 / 台股籌碼 / 產業輪動 / ETF焦點)
+// ═══════════════════════════════════════════════════════════════════════
+
+const TOPIC_CONFIGS = {
+  global: {
+    name: "全球宏觀與美股科技巨頭",
+    query: "全球股市 OR 美股 OR Fed OR 降息 OR 美元指數 OR 台積電ADR when:1d",
+    systemPrompt: "# 角色與任務\n你是一位精通全球宏觀經濟與美股台股連動的首席策略師。\n你的任務是根據提供的最新即時新聞，為沒時間細讀、不懂複雜總經的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的全球大勢戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據新聞大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前全球股匯與美股對台股的實質影響]\n\n### 🌍 三件你必須知道的全球大事（人話翻譯）\n1. **美股與 Fed 風向** ➔ [人話翻譯：聯準會降息態度是急是緩？美股科技巨頭走勢對台股電子權值股是推力還是壓力？]\n2. **匯率與外資錢袋子** ➔ [人話翻譯：美元與台幣近期走勢，外資資金是在匯入買超還是匯出防禦？]\n3. **國際焦點與大宗物資** ➔ [人話翻譯：國際原油、通膨或重大地緣動態，是否造成成本隱憂？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在該「抱緊主流」、「拉回分批撿」、還是「趁高落袋為安」？給出具體 2~3 點選股原則與避開高估值追高風險的忠告。]"
+  },
+  tw: {
+    name: "台股政經與國安法人攻防",
+    query: "台股 OR 國安基金 OR 金管會 OR 外資買賣超 OR 融資券 OR 台指期 when:1d",
+    systemPrompt: "# 角色與任務\n你是一位精通台灣政府財經政策與主力籌碼攻防的首席策略師。\n你的任務是根據提供的最新即時新聞，為沒時間細讀、不懂複雜籌碼的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的台股政策與籌碼戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **政策籌碼狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據政策與法人籌碼大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前政府政策護盤意願與主力籌碼動向]\n\n### 🏛️ 三件你必須知道的台股大事（人話翻譯）\n1. **政府政策與護盤態度** ➔ [人話翻譯：近期重大財經政策、國安基金或公股行庫動態，台股下檔支撐鐵板在哪裡？]\n2. **外資期現貨對沖真相** ➔ [人話翻譯：外資近期的買賣超與期貨淨空單，到底是在真倒貨還是假避險？]\n3. **散戶融資與內資攻防** ➔ [人話翻譯：散戶融資浮額清洗程度、投信內資大單支撐力道如何？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在有政策保護傘的族群有哪些？哪些是純炒作題材別碰？給出具體 2~3 點守穩均線與分批佈局策略。]"
+  },
+  industry: {
+    name: "熱門產業鏈與題材輪動",
+    query: "AI伺服器 OR 散熱 OR 先進封裝 OR 矽光子 OR 機器人 OR 半導體設備 when:1d",
+    systemPrompt: "# 角色與任務\n你是一位精通台股熱門電子與傳產族群輪動的首席產業分析師。\n你的任務是根據提供的最新即時新聞，為沒時間細讀產業報告的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的熱門產業輪動戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **族群輪動狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據盤面資金輪動熱度三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前主流領漲族群與資金真實去向]\n\n### ⚡ 三件你必須知道的產業大事（人話翻譯）\n1. **今日主流領跑族群** ➔ [人話翻譯：最吸金的族群（如AI伺服器/先進封裝/散熱等），是真有營收訂單拉貨，還是純消息炒作？]\n2. **產業鏈上下游傳導** ➔ [人話翻譯：這個產業鏈上誰吃肉（高毛利關鍵零組件）、誰喝湯、誰面臨預算排擠？]\n3. **主流強勢股 vs 掩護撤退股** ➔ [人話翻譯：如何分辨哪些是剛起跑第一棒，哪些是高檔放量主力掩護撤退？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：面對當前熱門族群，拉回時該鎖定哪些技術指標（如守住MA10/布林中軌）再切入？哪類狂飆追高的股票千萬別碰？]"
+  },
+  etf: {
+    name: "ETF 資金浪潮與除權息",
+    query: "高股息 ETF OR 00878 OR 00919 OR 0056 OR 0050 OR ETF換股 OR ETF除息 when:2d",
+    systemPrompt: "# 角色與任務\n你是一位精通台灣 ETF 投資與資產配置的首席策略顧問。\n你的任務是根據提供的最新即時新聞，為持有 ETF 或定期定額的台灣小資族，撰寫一份「白話 3 分鐘看懂」的 ETF 重點戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **ETF 市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據高股息與市值型市場大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前 ETF 配息與換股資金潮對投資人的影響]\n\n### 📈 三件你必須知道的 ETF 大事（人話翻譯）\n1. **高股息配息與填息體檢** ➔ [人話翻譯：00878/00919/0056 等高股息未來配息水準與填息能力如何？有沒有貼息風險？]\n2. **成分股換股潮資金大風吹** ➔ [人話翻譯：投信數百億被動買盤準備抬轎誰、無情剔除誰？對相關個股的衝擊？]\n3. **折溢價與避坑提醒** ➔ [人話翻譯：近期哪些熱門 ETF 出現大幅溢價（買貴被割韭菜）風險？]\n\n### 🧭 上班族/小資無腦存股攻略\n- [白話直接告訴讀者：定期定額需要調整嗎？想要單筆逢低加碼，應該看大盤或綠燈哪個時機點進場？如何做到真正的息收複利再投入？]"
+  }
+};
+
+/**
+ * 處理專題戰報生成請求
+ */
+function handleTopicReportRequest(params) {
+  try {
+    const topicKey = (params.topic || "global").toLowerCase();
+    const config = TOPIC_CONFIGS[topicKey] || TOPIC_CONFIGS.global;
+    const apiKey = (params.apiKey || "").trim();
+    const model = (params.model || "gemini-2.5-flash").trim();
+
+    if (!apiKey) {
+      return { ok: false, error: "未提供有效的 Gemini API Key" };
+    }
+
+    // 1. 即時檢索 Google News RSS
+    logToDrive("🔍 正在檢索「" + config.name + "」最新新聞...");
+    const newsContext = fetchLatestTopicNews(config.query, config.name);
+
+    // 2. 組裝使用者提問 Context
+    const nowTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+    const userPrompt = "【當前檢索時間】" + nowTimeStr + "\n" +
+      "【專題領域】" + config.name + "\n\n" +
+      "【最新即時熱點新聞參考】\n" + newsContext + "\n\n" +
+      "請根據上述最新事實與你的專業智庫，嚴格依照三大區塊輸出最新繁體中文深度戰報：";
+
+    // 3. 呼叫 Gemini REST API
+    logToDrive("🤖 正在呼叫 Gemini (" + model + ") 生成專題戰報...");
+    const cleanModel = encodeURIComponent(model);
+    const cleanKey = encodeURIComponent(apiKey);
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + cleanModel + ":generateContent?key=" + cleanKey;
+
+    const payload = {
+      systemInstruction: {
+        parts: [{ text: config.systemPrompt }]
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: userPrompt }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2048
+      }
+    };
+
+    const options = {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const code = response.getResponseCode();
+    const resText = response.getContentText();
+
+    if (code !== 200) {
+      logToDrive("❌ Gemini API 呼叫失敗 (" + code + "): " + resText.substring(0, 200));
+      return { ok: false, error: "Gemini 呼叫失敗 (" + code + ")" };
+    }
+
+    const data = JSON.parse(resText);
+    const candidate = data.candidates && data.candidates[0];
+    const generatedText = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] ? candidate.content.parts[0].text : "";
+
+    if (!generatedText) {
+      return { ok: false, error: "Gemini 回傳內容為空" };
+    }
+
+    logToDrive("🎉「" + config.name + "」專題戰報生成成功 (" + generatedText.length + " 字)！");
+
+    return {
+      ok: true,
+      topic: topicKey,
+      topicName: config.name,
+      time: nowTimeStr,
+      content: generatedText
+    };
+
+  } catch (err) {
+    logToDrive("💥 handleTopicReportRequest 異常: " + err.toString());
+    return { ok: false, error: err.toString() };
+  }
+}
+
+/**
+ * 抓取 Google News RSS 即時新聞並摘錄
+ */
+function fetchLatestTopicNews(query, topicName) {
+  try {
+    const rssUrl = "https://news.google.com/rss/search?q=" + encodeURIComponent(query) + "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant";
+    const res = UrlFetchApp.fetch(rssUrl, { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) {
+      return "(新聞暫時無法取得，請依據你最新知識庫進行客觀專業推導)";
+    }
+
+    const xml = res.getContentText();
+    const doc = XmlService.parse(xml);
+    const root = doc.getRootElement();
+    const channel = root.getChild("channel");
+    if (!channel) return "(無最新新聞項目)";
+
+    const items = channel.getChildren("item");
+    const newsList = [];
+    const maxItems = Math.min(items.length, 7);
+
+    for (let i = 0; i < maxItems; i++) {
+      const item = items[i];
+      const title = item.getChildText("title") || "";
+      const pubDate = item.getChildText("pubDate") || "";
+      const source = item.getChildText("source") || "";
+      if (title) {
+        newsList.push((i + 1) + ". " + title.replace(/<[^>]+>/g, "").trim() + (source ? " (" + source + ")" : ""));
+      }
+    }
+
+    return newsList.length > 0 ? newsList.join("\n") : "(無即時新聞)";
+  } catch (eRss) {
+    return "【即時熱點】" + topicName + " 最新市場動態與資金輪動聚焦。";
+  }
 }

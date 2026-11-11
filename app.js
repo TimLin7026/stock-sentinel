@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261110.10');
+        const appVersion = ref('v2.20261110.11');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -166,6 +166,57 @@ createApp({
         // ─── 導航與分頁狀態 ───
         const defaultStartTab = ref(localStorage.getItem('sentinel_default_tab') || 'dashboard');
         const currentTab = ref(['macro', 'dashboard', 'stocks'].includes(defaultStartTab.value) ? defaultStartTab.value : 'dashboard');
+
+        // 🧭 全域大勢五大專題分頁 (全球美股 / 台股籌碼 / 產業輪動 / ETF焦點 / Signova網站)
+        const MACRO_TOPIC_CONFIGS = {
+            global: { key: 'global', name: '全球美股', icon: '🌐', color: 'indigo' },
+            tw: { key: 'tw', name: '台股籌碼', icon: '🇹🇼', color: 'emerald' },
+            industry: { key: 'industry', name: '產業輪動', icon: '⚡', color: 'amber' },
+            etf: { key: 'etf', name: 'ETF焦點', icon: '📈', color: 'sky' }
+        };
+        const macroSubTab = ref(localStorage.getItem('sentinel_macro_sub_tab') || 'global');
+        const setMacroSubTab = (tab) => {
+            macroSubTab.value = tab;
+            localStorage.setItem('sentinel_macro_sub_tab', tab);
+        };
+        const generatingTopics = ref({ global: false, tw: false, industry: false, etf: false });
+        const isGeneratingTopic = (key) => !!generatingTopics.value[key];
+
+        const topicReports = ref({
+            global: { content: localStorage.getItem('sentinel_topic_global_content') || '', time: localStorage.getItem('sentinel_topic_global_time') || '', ts: localStorage.getItem('sentinel_topic_global_ts') || '' },
+            tw: { content: localStorage.getItem('sentinel_topic_tw_content') || '', time: localStorage.getItem('sentinel_topic_tw_time') || '', ts: localStorage.getItem('sentinel_topic_tw_ts') || '' },
+            industry: { content: localStorage.getItem('sentinel_topic_industry_content') || '', time: localStorage.getItem('sentinel_topic_industry_time') || '', ts: localStorage.getItem('sentinel_topic_industry_ts') || '' },
+            etf: { content: localStorage.getItem('sentinel_topic_etf_content') || '', time: localStorage.getItem('sentinel_topic_etf_time') || '', ts: localStorage.getItem('sentinel_topic_etf_ts') || '' }
+        });
+
+        const formatTopicTime = (timeStr) => {
+            if (!timeStr) return '';
+            const m = String(timeStr).match(/(\d{2,4})[\/\-](\d{1,2})[\/\-](\d{1,2})\s+(\d{1,2}:\d{2})/);
+            if (m) {
+                return `${m[2]}/${m[3]} ${m[4]}`;
+            }
+            return String(timeStr).slice(-8);
+        };
+
+        const copyTopicContent = (content) => {
+            if (!content) return;
+            const doFallback = (text) => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast("📋 專題戰報全文已複製至剪貼簿！", 2500);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(content).then(() => {
+                    showToast("📋 專題戰報全文已複製至剪貼簿！", 2500);
+                }).catch(() => doFallback(content));
+            } else {
+                doFallback(content);
+            }
+        };
         const autoCloudSyncEnabled = ref(localStorage.getItem('sentinel_auto_cloud_sync') !== 'false');
         const toggleAutoCloudSync = () => {
             autoCloudSyncEnabled.value = !autoCloudSyncEnabled.value;
@@ -639,6 +690,40 @@ createApp({
                 db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('default_start_tab_time', ?)", [tStr]);
             } catch (e) {
                 console.warn("寫入首頁設定至 db_meta 警告:", e);
+            }
+        };
+
+        // ─── 專題戰報 db_meta 純讀寫函式 ───
+        const readTopicReportsFromDbPure = (db) => {
+            const res = { global: { content: '', time: '', ts: '' }, tw: { content: '', time: '', ts: '' }, industry: { content: '', time: '', ts: '' }, etf: { content: '', time: '', ts: '' } };
+            if (!db) return res;
+            try {
+                const stmt = db.exec("SELECT key, value FROM db_meta WHERE key LIKE 'topic_report_%'");
+                if (stmt.length > 0 && stmt[0].values) {
+                    stmt[0].values.forEach(([k, v]) => {
+                        ['global', 'tw', 'industry', 'etf'].forEach(t => {
+                            if (k === `topic_report_${t}_content`) res[t].content = v || '';
+                            if (k === `topic_report_${t}_time`) res[t].time = v || '';
+                            if (k === `topic_report_${t}_ts`) res[t].ts = v || '';
+                        });
+                    });
+                }
+            } catch (e) {
+                console.warn("讀取專題戰報 db_meta 警告:", e);
+            }
+            return res;
+        };
+
+        const writeTopicReportToDbPure = (db, topicKey, reportContent, timeStr, ts = null) => {
+            if (!db || !['global', 'tw', 'industry', 'etf'].includes(topicKey)) return;
+            try {
+                const tStr = ts ? String(ts) : String(Date.now());
+                db.run("CREATE TABLE IF NOT EXISTS db_meta (key TEXT PRIMARY KEY, value TEXT)");
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)", [`topic_report_${topicKey}_content`, reportContent || '']);
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)", [`topic_report_${topicKey}_time`, timeStr || '']);
+                db.run("INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)", [`topic_report_${topicKey}_ts`, tStr]);
+            } catch (e) {
+                console.warn("寫入專題戰報至 db_meta 警告:", e);
             }
         };
 
@@ -4295,6 +4380,19 @@ createApp({
                     }
                 } catch (eTab) {}
 
+                // 0.0 從 SQLite db_meta 讀取專題戰報 (跨設備漫遊)
+                try {
+                    const dbTopics = readTopicReportsFromDbPure(dbInstance);
+                    ['global', 'tw', 'industry', 'etf'].forEach(t => {
+                        if (dbTopics[t] && dbTopics[t].content) {
+                            topicReports.value[t] = { ...dbTopics[t] };
+                            localStorage.setItem(`sentinel_topic_${t}_content`, dbTopics[t].content);
+                            localStorage.setItem(`sentinel_topic_${t}_time`, dbTopics[t].time || '');
+                            localStorage.setItem(`sentinel_topic_${t}_ts`, dbTopics[t].ts || '');
+                        }
+                    });
+                } catch (eTopicDb) {}
+
                 // 0. 讀取 stock_dict (全台股代碼與名稱字典，2,400+ 檔)
                 try {
                     const dictRes = dbInstance.exec("SELECT stock_code, stock_name FROM stock_dict");
@@ -7287,6 +7385,150 @@ createApp({
 
         const fetchGeminiPrompt = async () => {
             return INLINED_GEMINI_PROMPT_FORMAT_A;
+        };
+
+        // ─── 專題戰報 Prompt 模板 ───
+        const INLINED_TOPIC_PROMPTS = {
+            global: {
+                name: "全球宏觀與美股科技巨頭",
+                systemPrompt: `# 角色與任務\n你是一位精通全球宏觀經濟與美股台股連動的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜總經的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的全球大勢戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據新聞大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前全球股匯與美股對台股的實質影響]\n\n### 🌍 三件你必須知道的全球大事（人話翻譯）\n1. **美股與 Fed 風向** ➔ [人話翻譯：聯準會降息態度是急是緩？美股科技巨頭走勢對台股電子權值股是推力還是壓力？]\n2. **匯率與外資錢袋子** ➔ [人話翻譯：美元與台幣近期走勢，外資資金是在匯入買超還是匯出防禦？]\n3. **國際焦點與大宗物資** ➔ [人話翻譯：國際原油、通膨或重大地緣動態，是否造成成本隱憂？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在該「抱緊主流」、「拉回分批撿」、還是「趁高落袋為安」？給出具體 2~3 點選股原則與避開高估值追高風險的忠告。]`
+            },
+            tw: {
+                name: "台股政經與國安法人攻防",
+                systemPrompt: `# 角色與任務\n你是一位精通台灣政府財經政策與主力籌碼攻防的首席策略師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀、不懂複雜籌碼的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的台股政策與籌碼戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **政策籌碼狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據政策與法人籌碼大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前政府政策護盤意願與主力籌碼動向]\n\n### 🏛️ 三件你必須知道的台股大事（人話翻譯）\n1. **政府政策與護盤態度** ➔ [人話翻譯：近期重大財經政策、國安基金或公股行庫動態，台股下檔支撐鐵板在哪裡？]\n2. **外資期現貨對沖真相** ➔ [人話翻譯：外資近期的買賣超與期貨淨空單，到底是在真倒貨還是假避險？]\n3. **散戶融資與內資攻防** ➔ [人話翻譯：散戶融資浮額清洗程度、投信內資大單支撐力道如何？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：現在有政策保護傘的族群有哪些？哪些是純炒作題材別碰？給出具體 2~3 點守穩均線與分批佈局策略。]`
+            },
+            industry: {
+                name: "熱門產業鏈與題材輪動",
+                systemPrompt: `# 角色與任務\n你是一位精通台股熱門電子與傳產族群輪動的首席產業分析師。\n你的任務是根據提供的最新即時新聞與事實，為沒時間細讀產業報告的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的熱門產業輪動戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **族群輪動狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據盤面資金輪動熱度三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前主流領漲族群與資金真實去向]\n\n### ⚡ 三件你必須知道的產業大事（人話翻譯）\n1. **今日主流領跑族群** ➔ [人話翻譯：最吸金的族群（如AI伺服器/先進封裝/散熱等），是真有營收訂單拉貨，還是純消息炒作？]\n2. **產業鏈上下游傳導** ➔ [人話翻譯：這個產業鏈上誰吃肉（高毛利關鍵零組件）、誰喝湯、誰面臨預算排擠？]\n3. **主流強勢股 vs 掩護撤退股** ➔ [人話翻譯：如何分辨哪些是剛起跑第一棒，哪些是高檔放量主力掩護撤退？]\n\n### 🧭 上班族/小資防坑指南\n- [白話直接告訴讀者：面對當前熱門族群，拉回時該鎖定哪些技術指標（如守住MA10/布林中軌）再切入？哪類狂飆追高的股票千萬別碰？]`
+            },
+            etf: {
+                name: "ETF 資金浪潮與除權息",
+                systemPrompt: `# 角色與任務\n你是一位精通台灣 ETF 投資與資產配置的首席策略顧問。\n你的任務是根據提供的最新即時新聞與事實，為持有 ETF 或定期定額的台灣小資族，撰寫一份「白話 3 分鐘看懂」的 ETF 重點戰報。\n\n【硬性輸出格式規範】\n必須且僅能輸出以下三大區塊，語氣專業白話、直切核心，嚴禁冗長贅詞，總字數嚴格控制在 600～850 繁體中文字：\n\n### 🌡️ 市場溫度計 ＆ 一句話大局\n- **ETF 市場狀態**：[🟢 綠燈謹慎 / 🟡 黃燈震盪 / 🔴 紅燈偏多]（請根據高股息與市值型市場大勢三選一）\n- **一句話定錨**：[用一句 35 字以內的極度白話，精準總結當前 ETF 配息與換股資金潮對投資人的影響]\n\n### 📈 三件你必須知道的 ETF 大事（人話翻譯）\n1. **高股息配息與填息體檢** ➔ [人話翻譯：00878/00919/0056 等高股息未來配息水準與填息能力如何？有沒有貼息風險？]\n2. **成分股換股潮資金大風吹** ➔ [人話翻譯：投信數百億被動買盤準備抬轎誰、無情剔除誰？對相關個股的衝擊？]\n3. **折溢價與避坑提醒** ➔ [人話翻譯：近期哪些熱門 ETF 出現大幅溢價（買貴被割韭菜）風險？]\n\n### 🧭 上班族/小資無腦存股攻略\n- [白話直接告訴讀者：定期定額需要調整嗎？想要單筆逢低加碼，應該看大盤或綠燈哪個時機點進場？如何做到真正的息收複利再投入？]`
+            }
+        };
+
+        const triggerGenerateTopic = async (topicKey) => {
+            if (isGeneratingTopic(topicKey)) return;
+            const cfg = MACRO_TOPIC_CONFIGS[topicKey] || MACRO_TOPIC_CONFIGS.global;
+
+            let key = (geminiApiKey.value || '').trim();
+            if (!key) key = localStorage.getItem('sentinel_gemini_api_key') || '';
+            if (!key) {
+                const inputKey = prompt(`💎 歡迎使用「${cfg.name}」AI 智能戰報！\n\n您尚未設定 Google Gemini API Key。\n請在此貼上您的個人 API Key (支援免費版)：\n(金鑰僅儲存於您本地手機/瀏覽器中)`);
+                if (inputKey && inputKey.trim()) {
+                    key = inputKey.trim();
+                    geminiApiKey.value = key;
+                    localStorage.setItem('sentinel_gemini_api_key', key);
+                    if (dbInstance) {
+                        try {
+                            writeGeminiSettingsToDbPure(dbInstance, key, getActiveGeminiModel());
+                            await saveDbToIndexedDb();
+                            hasUnsyncedChanges.value = true;
+                        } catch (eDb) {}
+                    }
+                } else {
+                    return;
+                }
+            }
+
+            let gas = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+
+            generatingTopics.value[topicKey] = true;
+            showToast(`🤖 正在搜尋「${cfg.name}」即時新聞並推導分析中，約需 10~15 秒...`, 8000);
+
+            try {
+                let result = null;
+                const activeModel = getActiveGeminiModel() || 'gemini-2.5-flash';
+
+                // 優先嘗試使用使用者的 GAS Web App (具備 Google News RSS 檢索器)
+                if (gas && gas.startsWith('https://script.google.com/macros/s/')) {
+                    try {
+                        const targetUrl = `${gas}?action=generate_topic_report&topic=${topicKey}&apiKey=${encodeURIComponent(key)}&model=${encodeURIComponent(activeModel)}`;
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 45000);
+                        const res = await fetch(targetUrl, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && data.ok && data.content) {
+                                result = data;
+                            }
+                        }
+                    } catch (eGas) {
+                        console.warn("GAS 專題戰報呼叫未成功，自動啟用前端備援:", eGas);
+                    }
+                }
+
+                // 若無 GAS 或 GAS 回傳異常，前端直連 Gemini API 雙軌備援
+                if (!result) {
+                    const nowTimeStr = new Date().toLocaleString('zh-TW', { hour12: false });
+                    const promptConfig = INLINED_TOPIC_PROMPTS[topicKey] || INLINED_TOPIC_PROMPTS.global;
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(activeModel)}:generateContent?key=${encodeURIComponent(key)}`;
+                    
+                    const payload = {
+                        systemInstruction: { parts: [{ text: promptConfig.systemPrompt }] },
+                        contents: [{ role: "user", parts: [{ text: `【當前檢索時間】${nowTimeStr}\n【專題領域】${cfg.name}\n請根據當前最新市場動態、全球股市/台股最新行情與重大新聞事實，嚴格輸出三大區塊繁體中文戰報：` }] }],
+                        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
+                    };
+
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 60000);
+                    const res = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (!res.ok) {
+                        const errBody = await res.json().catch(() => ({}));
+                        const msg = errBody?.error?.message || `HTTP ${res.status}`;
+                        throw new Error(msg);
+                    }
+
+                    const data = await res.json();
+                    const genText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!genText) throw new Error("Gemini 回傳內容為空");
+
+                    result = {
+                        ok: true,
+                        topic: topicKey,
+                        time: nowTimeStr,
+                        content: genText
+                    };
+                }
+
+                // 存檔與狀態更新
+                const curTs = Date.now();
+                topicReports.value[topicKey] = {
+                    content: result.content,
+                    time: result.time,
+                    ts: String(curTs)
+                };
+
+                localStorage.setItem(`sentinel_topic_${topicKey}_content`, result.content);
+                localStorage.setItem(`sentinel_topic_${topicKey}_time`, result.time);
+                localStorage.setItem(`sentinel_topic_${topicKey}_ts`, String(curTs));
+
+                if (dbInstance) {
+                    try {
+                        writeTopicReportToDbPure(dbInstance, topicKey, result.content, result.time, curTs);
+                        await saveDbToIndexedDb();
+                        hasUnsyncedChanges.value = true;
+                    } catch (eSave) {
+                        console.warn("專題戰報入庫 SQLite 異常:", eSave);
+                    }
+                }
+
+                showToast(`🎉「${cfg.name}」專題戰報已更新完成！`, 4000);
+
+            } catch (err) {
+                console.error("生成專題戰報失敗:", err);
+                alert(`❌ 生成「${cfg.name}」專題戰報失敗：\n${err.message || err}`);
+            } finally {
+                generatingTopics.value[topicKey] = false;
+            }
         };
 
         const generateGeminiReportForStock = async (stock, customModel = null) => {
@@ -10395,6 +10637,36 @@ createApp({
                     console.warn("雙向合流 Gemini 設定警告:", eGemSync);
                 }
 
+                // 0.25 合流全域大勢四大專題戰報 (db_meta.topic_report_* - 雙向比對時間戳最新者勝出)
+                try {
+                    const lTopics = readTopicReportsFromDbPure(dbInstance);
+                    const cTopics = readTopicReportsFromDbPure(cloudDb);
+                    ['global', 'tw', 'industry', 'etf'].forEach(t => {
+                        const lTs = Number(lTopics[t]?.ts || 0);
+                        const cTs = Number(cTopics[t]?.ts || 0);
+                        let winTopic = null;
+                        if (lTs > cTs && lTopics[t]?.content) {
+                            winTopic = lTopics[t];
+                        } else if (cTs > lTs && cTopics[t]?.content) {
+                            winTopic = cTopics[t];
+                        } else if (lTopics[t]?.content) {
+                            winTopic = lTopics[t];
+                        } else if (cTopics[t]?.content) {
+                            winTopic = cTopics[t];
+                        }
+                        if (winTopic && winTopic.content) {
+                            topicReports.value[t] = { ...winTopic };
+                            localStorage.setItem(`sentinel_topic_${t}_content`, winTopic.content);
+                            localStorage.setItem(`sentinel_topic_${t}_time`, winTopic.time || '');
+                            localStorage.setItem(`sentinel_topic_${t}_ts`, winTopic.ts || '');
+                            writeTopicReportToDbPure(cloudDb, t, winTopic.content, winTopic.time, winTopic.ts);
+                            writeTopicReportToDbPure(dbInstance, t, winTopic.content, winTopic.time, winTopic.ts);
+                        }
+                    });
+                } catch (eSyncTopics) {
+                    console.warn("合流專題戰報異常:", eSyncTopics);
+                }
+
                 // 0.3 合流預設起始首頁 (db_meta.default_start_tab - 跨設備雙向對齊，時間最新優先)
                 try {
                     const lTab = readDefaultStartTabFromDbPure(dbInstance);
@@ -11195,6 +11467,14 @@ createApp({
             currentTab,
             defaultStartTab,
             setDefaultStartTab,
+            MACRO_TOPIC_CONFIGS,
+            macroSubTab,
+            setMacroSubTab,
+            topicReports,
+            isGeneratingTopic,
+            triggerGenerateTopic,
+            formatTopicTime,
+            copyTopicContent,
             autoCloudSyncEnabled,
             toggleAutoCloudSync,
             cloudSettingsTab,

@@ -448,8 +448,127 @@
                     </p>
                 </div>
 
-                <!-- 雙核心直達卡片 -->
-                <div class="grid grid-cols-1 gap-3.5">
+                <!-- 頂部 5 大水平滑動專題導航列 -->
+                <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'" 
+                     class="flex items-center space-x-1.5 p-1 rounded-2xl border overflow-x-auto no-scrollbar text-xs font-semibold">
+                    <button @click="setMacroSubTab('global')"
+                            :class="macroSubTab === 'global' ? (theme === 'dark' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-600 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
+                        <span>🌐</span>
+                        <span>全球美股</span>
+                    </button>
+                    <button @click="setMacroSubTab('tw')"
+                            :class="macroSubTab === 'tw' ? (theme === 'dark' ? 'bg-emerald-600 text-white shadow' : 'bg-emerald-600 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
+                        <span>🇹🇼</span>
+                        <span>台股籌碼</span>
+                    </button>
+                    <button @click="setMacroSubTab('industry')"
+                            :class="macroSubTab === 'industry' ? (theme === 'dark' ? 'bg-amber-600 text-white shadow' : 'bg-amber-600 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
+                        <span>⚡</span>
+                        <span>產業輪動</span>
+                    </button>
+                    <button @click="setMacroSubTab('etf')"
+                            :class="macroSubTab === 'etf' ? (theme === 'dark' ? 'bg-sky-600 text-white shadow' : 'bg-sky-600 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
+                        <span>📈</span>
+                        <span>ETF焦點</span>
+                    </button>
+                    <button @click="setMacroSubTab('signova')"
+                            :class="macroSubTab === 'signova' ? (theme === 'dark' ? 'bg-slate-700 text-white shadow' : 'bg-slate-800 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="px-2.5 py-1.5 rounded-xl whitespace-nowrap transition active:scale-95 shrink-0 flex items-center space-x-1">
+                        <span>🧭</span>
+                        <span>Signova網站</span>
+                    </button>
+                </div>
+
+                <!-- 專題戰報展示區 (當 macroSubTab !== 'signova') -->
+                <div v-if="macroSubTab !== 'signova'" class="space-y-3.5">
+                    <!-- 操作工具列 (RWD 防擠壓自適應) -->
+                    <div class="flex items-center justify-between gap-1.5 p-2.5 rounded-2xl border text-xs"
+                         :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-sm'">
+                        <!-- 左側：更新時間 (手機拉窄時自動精簡) -->
+                        <div class="flex items-center space-x-1 min-w-0 text-[11px]" :class="theme === 'dark' ? 'text-slate-400' : 'text-slate-500'">
+                            <span class="text-xs">📅</span>
+                            <span class="hidden sm:inline">更新時間：</span>
+                            <span class="font-mono font-medium truncate">{{ formatTopicTime(topicReports[macroSubTab]?.time) || '尚未生成' }}</span>
+                        </div>
+
+                        <!-- 右側：[💎 生成戰報]/[🔄 更新戰報] (對齊個股 Gem 漸層按鈕) ＋ [📋 複製] -->
+                        <div class="flex items-center space-x-1.5 shrink-0">
+                            <!-- Gem 按鈕 (靜態 [💎 生成戰報] / 呼叫中旋轉 [🔄 更新戰報]，窄螢幕只顯示純圖示 [💎]/[🔄]) -->
+                            <button @click="triggerGenerateTopic(macroSubTab)" 
+                                    :disabled="isGeneratingTopic(macroSubTab)"
+                                    class="px-2.5 py-1 rounded-lg text-xs font-bold border border-indigo-400/30 transition flex items-center justify-center shadow-sm active:scale-95 shrink-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white"
+                                    :title="isGeneratingTopic(macroSubTab) ? '正在搜尋最新即時新聞並推導戰報中...' : '點擊調用個人 Gem 產生/更新此專題戰報'">
+                                <i v-if="isGeneratingTopic(macroSubTab)" class="fa-solid fa-arrows-rotate fa-spin text-[11px]"></i>
+                                <span v-else class="text-xs leading-none">💎</span>
+                                <span class="hidden sm:inline ml-1 font-semibold">{{ isGeneratingTopic(macroSubTab) ? '更新戰報' : '生成戰報' }}</span>
+                            </button>
+
+                            <!-- 複製全文按鈕 (有內容才顯示，窄螢幕只顯示純圖示 [📋]) -->
+                            <button v-if="topicReports[macroSubTab]?.content"
+                                    @click="copyTopicContent(topicReports[macroSubTab]?.content)"
+                                    class="px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center justify-center active:scale-95 shrink-0"
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'"
+                                    title="一鍵複製此專題戰報全文">
+                                <i class="fa-regular fa-copy text-[11px]"></i>
+                                <span class="hidden sm:inline ml-1 font-semibold">複製</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 戰報生成中狀態 (Loading 動態) -->
+                    <div v-if="isGeneratingTopic(macroSubTab)" 
+                         :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700 shadow-sm'"
+                         class="p-8 rounded-2xl border text-center space-y-3 animate-pulse">
+                        <div class="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-indigo-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                            <i class="fa-solid fa-arrows-rotate fa-spin text-xl"></i>
+                        </div>
+                        <h4 class="font-bold text-sm" :class="theme === 'dark' ? 'text-slate-100' : 'text-slate-900'">
+                            正在為您檢索「{{ MACRO_TOPIC_CONFIGS[macroSubTab]?.name }}」即時新聞...
+                        </h4>
+                        <p class="text-xs text-slate-400 max-w-sm mx-auto">
+                            Google Apps Script 與 Gemini 正透過 Google News 即時抓取最新焦點並深度推導中，約需 10~15 秒，請稍候！
+                        </p>
+                    </div>
+
+                    <!-- 戰報內容區域 (有內容時渲染 Markdown) -->
+                    <div v-else-if="topicReports[macroSubTab]?.content" 
+                         :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800 shadow-sm'"
+                         class="p-4 sm:p-5 rounded-2xl border leading-relaxed text-xs sm:text-sm space-y-2">
+                        <div class="prose max-w-none report-markdown-body" 
+                             :class="theme === 'dark' ? 'dark-report' : 'light-report'"
+                             v-html="formatReportHtml(topicReports[macroSubTab]?.content)"></div>
+                    </div>
+
+                    <!-- 尚未生成時的引導卡片 -->
+                    <div v-else 
+                         :class="theme === 'dark' ? 'bg-slate-900/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'"
+                         class="p-8 rounded-2xl border text-center space-y-3">
+                        <div class="w-12 h-12 mx-auto rounded-2xl border flex items-center justify-center text-2xl"
+                             :class="theme === 'dark' ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200 shadow-sm'">
+                            {{ MACRO_TOPIC_CONFIGS[macroSubTab]?.icon || '💎' }}
+                        </div>
+                        <div class="space-y-1">
+                            <h4 class="font-bold text-sm" :class="theme === 'dark' ? 'text-slate-200' : 'text-slate-800'">
+                                尚未生成「{{ MACRO_TOPIC_CONFIGS[macroSubTab]?.name }}」戰報
+                            </h4>
+                            <p class="text-xs text-slate-400 max-w-xs mx-auto">
+                                點擊右上方或下方按鈕，系統將即時檢索全網最新焦點新聞，為您推導三段式白話深度分析！
+                            </p>
+                        </div>
+                        <button @click="triggerGenerateTopic(macroSubTab)"
+                                class="px-4 py-2 rounded-xl text-xs font-bold border border-indigo-400/30 shadow-md shadow-indigo-600/20 active:scale-95 transition bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white inline-flex items-center space-x-1.5">
+                            <span>💎</span>
+                            <span>立即生成此專題戰報</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 雙核心直達卡片 (當 macroSubTab === 'signova' 時展示) -->
+                <div v-if="macroSubTab === 'signova'" class="grid grid-cols-1 gap-3.5">
                     <!-- 卡片 1: 台股大盤情勢 ＆ AI 總評 -->
                     <a href="https://signova.tw/market" target="_blank" 
                        class="group block p-4 rounded-2xl border transition-all duration-200 hover:shadow-lg active:scale-[0.99] relative overflow-hidden"
@@ -3545,6 +3664,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.10"></script>
+    <script src="app.js?v=2.20261110.11"></script>
 </body>
 </html>
