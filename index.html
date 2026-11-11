@@ -859,34 +859,34 @@
                         <!-- ⚡ OSC變 -->
                         <button @click="toggleStarredIndicator('oscChange')" 
                                 :class="starredFilters.oscChange ? 'bg-indigo-600 text-white font-bold shadow shadow-indigo-600/30 ring-1 ring-indigo-400' : (theme === 'dark' ? 'text-slate-400 hover:text-indigo-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-indigo-600 border-slate-200 bg-slate-50')"
-                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                                class="px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] sm:text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
                             <span class="text-[10px]">⚡</span>
                             <span>OSC變</span>
                         </button>
                         <!-- 📈 RSI12變 -->
                         <button @click="toggleStarredIndicator('rsiChange')" 
                                 :class="starredFilters.rsiChange ? 'bg-violet-600 text-white font-bold shadow shadow-violet-600/30 ring-1 ring-violet-400' : (theme === 'dark' ? 'text-slate-400 hover:text-violet-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-violet-600 border-slate-200 bg-slate-50')"
-                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                                class="px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] sm:text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
                             <span class="text-[10px]">📈</span>
-                            <span>RSI12變</span>
+                            <span>RSI<span class="hidden sm:inline">12</span>變</span>
                         </button>
                         <!-- 🔁 RSI12持續 -->
                         <button @click="toggleStarredIndicator('rsiKeep')" 
                                 :class="starredFilters.rsiKeep ? 'bg-amber-600 text-white font-bold shadow shadow-amber-600/30 ring-1 ring-amber-400' : (theme === 'dark' ? 'text-slate-400 hover:text-amber-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-amber-600 border-slate-200 bg-slate-50')"
-                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
+                                class="px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] sm:text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0">
                             <span class="text-[10px]">🔁</span>
-                            <span>RSI12持續</span>
+                            <span>RSI<span class="hidden sm:inline">12</span>持續</span>
                         </button>
 
                         <!-- 📅 近期除息 -->
                         <button @click="onlyExDividends = !onlyExDividends" 
                                 :class="onlyExDividends ? 'bg-amber-600 text-white font-bold shadow shadow-amber-600/30 ring-1 ring-amber-400' : (theme === 'dark' ? 'text-slate-400 hover:text-amber-300 border-slate-800 bg-slate-800/40' : 'text-slate-600 hover:text-amber-600 border-slate-200 bg-slate-50')"
-                                class="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0"
+                                class="px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] sm:text-xs transition flex items-center space-x-1 border whitespace-nowrap shrink-0"
                                 :title="onlyExDividends 
                                     ? ('已開啟近期除息篩選 (點擊查看全部，更新於: ' + (exDividendsUpdatedAt || '---') + '，共 ' + exDividendsCount + ' 檔)') 
                                     : ('快速篩選近期除息個股 (更新於: ' + (exDividendsUpdatedAt || '---') + '，共 ' + exDividendsCount + ' 檔)')">
                             <span class="text-[10px]">📅</span>
-                            <span>近期除息</span>
+                            <span class="hidden sm:inline">近期</span><span>除息</span>
                         </button>
 
                         <!-- 若有啟用任何指標過濾，顯示一鍵清除指標小按鈕 -->
@@ -3545,6 +3545,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261110.09"></script>
+    <script src="app.js?v=2.20261110.10"></script>
 </body>
 </html>
