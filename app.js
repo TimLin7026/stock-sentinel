@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261111.09');
+        const appVersion = ref('v2.20261112.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -8406,21 +8406,15 @@ createApp({
 
                 fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
+                const cleanCodes = payloadStocks.map(s => s.code);
+                const codeSummary = cleanCodes.length > 5
+                    ? `${cleanCodes.slice(0, 5).join(', ')}... 等共 ${cleanCodes.length} 檔`
+                    : cleanCodes.join(', ');
                 alert(
-                    `🎉【派工成功！已在雲端建立實體清單並開始推導】
-
-` +
-                    `• 本次派工：共 ${payloadStocks.length} 檔股票
-` +
-                    `• 推導名單：${payloadStocks.map(s => s.code).join(', ')}
-
-` +
-                    `💡 您現在可以【自由關閉網頁、鎖定螢幕或切換其他 App】！
-` +
-                    `Google 雲端會在背景持續推導，逐檔落地存檔並註記完成。
-
-` +
-                    `隨時可點擊「⚡ 批次戰報」查看即時進度與合流戰報！`
+                    `🎉【派工成功！已交由雲端背景推導】\n` +
+                    `• 派工名單：共 ${cleanCodes.length} 檔 (${codeSummary})\n` +
+                    `• 背景執行：您可安心關閉網頁或鎖屏，雲端將自動逐檔存檔。\n` +
+                    `• 進度追蹤：隨時點擊「⚡ 批次戰報」可查進度與合流戰報！`
                 );
             } catch (err) {
                 console.error("批次派工失敗:", err);
@@ -11464,15 +11458,23 @@ createApp({
                 const brainTotal = marketSyncMeta.value.totalStocks ? `${marketSyncMeta.value.totalStocks} 檔` : '---';
                 const brainGenTime = marketSyncMeta.value.cloudGeneratedAt || '---';
 
-                const batchNote = batchMergedCount > 0 ? `\n• 雲端戰報：已自動合流 ${batchMergedCount} 檔最新富貴戰報！` : '';
+                const cleanUncompleted = uncompletedCodes.map(c => String(c).split('_')[0]);
+                const uncompletedStr = cleanUncompleted.length > 5 
+                    ? `${cleanUncompleted.slice(0, 5).join(', ')}... 等共 ${cleanUncompleted.length} 檔` 
+                    : cleanUncompleted.join(', ');
                 const uncompletedNote = uncompletedCodes.length > 0 
-                    ? `\n\n⚡【防呆自動勾選】\n上次派工尚有 ${uncompletedCodes.length} 檔未完成 (${uncompletedCodes.join(', ')})，系統已為您自動打勾，可直接再次派工！` 
+                    ? `\n⚡【未完待續】上次尚餘 ${uncompletedCodes.length} 檔 (${uncompletedStr})，已自動打勾！` 
                     : '';
                 const syncTitle = isManual 
                     ? '🤝【全量鏡像同步成功】' 
-                    : '🔔【雲端自動對齊完成通知】\n(偵測到雲端資料庫版本更新，已為您自動完成最新鏡像合流)';
+                    : '🔔【雲端自動對齊完成】';
+                const batchSummary = batchMergedCount > 0 ? ` (含合流 ${batchMergedCount} 檔新戰報)` : '';
 
-                alert(`${syncTitle}\n\n👤 個人雲端帳本：\n• 交易紀錄：${localDbStats.value.tradeLogCount} 筆\n• 自選名冊：${localDbStats.value.myStockCount} 檔\n• 策略庫：${localDbStats.value.gemStrategyCount} 筆${batchNote}\n兩端資料庫已 100% 鏡像對齊。\n\n🧠 雲端行情大腦：\n• 行情日期：${brainDate} (${brainTotal})\n• 大腦產出：${brainGenTime}${uncompletedNote}`);
+                alert(
+                    `${syncTitle}\n` +
+                    `👤 帳本：交易 ${localDbStats.value.tradeLogCount} 筆 | 自選 ${localDbStats.value.myStockCount} 檔 | 策略 ${localDbStats.value.gemStrategyCount} 筆${batchSummary}\n` +
+                    `🧠 行情：${brainDate} (${brainTotal}) | 資料庫 100% 鏡像對齊${uncompletedNote}`
+                );
             } catch (err) {
                 console.error("雙向同步失敗:", err);
                 alert("❌ 雙向同步失敗：" + err.message);
