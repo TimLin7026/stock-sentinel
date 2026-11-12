@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-12 06:49:08",
-  "count": 110,
+  "updatedAt": "2026-11-12 08:30:10",
+  "count": 109,
   "items": [
     {
       "code": "00950B",
@@ -129,7 +129,7 @@
       "exDate": "2026-11-16",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.35,
       "dividendYield": ""
     },
     {
@@ -139,7 +139,7 @@
       "exDate": "2026-11-16",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.16,
       "dividendYield": ""
     },
     {
@@ -149,7 +149,7 @@
       "exDate": "2026-11-16",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 2.0,
       "dividendYield": ""
     },
     {
@@ -159,7 +159,7 @@
       "exDate": "2026-11-16",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.08,
       "dividendYield": ""
     },
     {
@@ -921,16 +921,6 @@
       "exType": "息",
       "cashDividend": 0.215313,
       "dividendYield": ""
-    },
-    {
-      "code": "6924",
-      "name": "榮惠-KY創",
-      "market": "上市",
-      "exDate": "2026-11-19",
-      "daysLeft": 7,
-      "exType": "權",
-      "cashDividend": 0.0,
-      "dividendYield": "3.39%"
     },
     {
       "code": "0051",
