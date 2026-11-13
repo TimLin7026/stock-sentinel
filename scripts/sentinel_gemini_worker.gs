@@ -3,7 +3,8 @@
  * 💎 台股戰情室 — 富貴 Gem 雲端智慧戰報實體清單循環推導機
  * (Transactional Manifest Loop Worker for Google Apps Script)
  * ═══════════════════════════════════════════════════════════════════════════
- * 📌 對應版本：v2.20261113.03
+ * 📌 對應版本：v2.20261113.04
+ * 🚀 特色：全域四大戰報（美股/台股/ETF/總經）一鍵勾選批次派工、GAS背景循序推導與Drive存檔
  * 🕒 更新日期：2026-11-13
  * 🎯 架構特色：股票代號 + 券商多帳戶獨立體系 & 專題戰報真實新聞數據論證與文末來源溯源 (含標題強制換行)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -23,6 +24,7 @@ const BATCH_FILE_NAME = "gem_strategy_batch.json";
 const STATUS_FILE_NAME = "gem_batch_status.json";
 const MANIFEST_FILE_NAME = "gem_batch_manifest.json";
 const DEBUG_LOG_FILE_NAME = "gem_batch_debug.txt";
+const TOPIC_REPORTS_FILE_NAME = "sentinel_topic_reports.json";
 
 const MAX_RETRY_COUNT = 3;             // 單檔遇忙碌最多重試 3 次
 const MAX_CONSECUTIVE_FAILURES = 3;   // 連續失敗 3 次即熔斷退出
@@ -57,6 +59,17 @@ function logToDrive(msg, isOverwrite) {
  */
 function doGet(e) {
   try {
+    // 支援讀取雲端全域專題戰報匯總 (GET 模式)
+    if (e && e.parameter && e.parameter.action === "get_topic_reports") {
+      const tFile = getValidDriveFile(TOPIC_REPORTS_FILE_NAME);
+      if (tFile) {
+        return ContentService.createTextOutput(tFile.getBlob().getDataAsString("UTF-8"))
+          .setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return createJsonResponse({ ok: false, message: "尚未生成全域戰報檔案" }, 404);
+      }
+    }
+
     // 支援全域大勢專題戰報 (全球美股 / 台股籌碼 / 產業輪動 / ETF焦點)
     if (e && e.parameter && e.parameter.action === "generate_topic_report") {
       logToDrive("🌐 [doGet] 收到專題戰報生成請求: " + (e.parameter.topic || "global"));
@@ -119,6 +132,13 @@ function doPost(e) {
       logToDrive("🌐 [doPost] 收到專題戰報生成請求: " + (payload.topic || "global"));
       const topicResult = handleTopicReportRequest(payload);
       return createJsonResponse(topicResult, topicResult.ok ? 200 : 500);
+    }
+
+    // 🌟 支援全域大勢專題戰報批次派工 (一鍵勾選背景循序推導)
+    if (payload.action === "batch_topic_reports") {
+      logToDrive("🌐 [doPost] 收到全域專題批次派工: " + (payload.topics ? payload.topics.length : 0) + " 項");
+      const batchTopicResult = handleBatchTopicReports(payload);
+      return createJsonResponse(batchTopicResult, batchTopicResult.ok ? 200 : 500);
     }
 
     const apiKey = (payload.apiKey || "").trim();
@@ -611,6 +631,123 @@ function readManifestFromCloudDrive() {
   return null;
 }
 
+/**
+ * 💾 儲存全域專題戰報至 Google Drive (sentinel_topic_reports.json)
+ */
+function saveTopicReportsToCloudDrive(topicData) {
+  const jsonStr = JSON.stringify(topicData, null, 2);
+  const file = getValidDriveFile(TOPIC_REPORTS_FILE_NAME);
+  if (file) {
+    file.setContent(jsonStr);
+  } else {
+    DriveApp.createFile(TOPIC_REPORTS_FILE_NAME, jsonStr, MimeType.PLAIN_TEXT);
+  }
+}
+
+/**
+ * 🌐 全域專題戰報批次背景循序推導引擎
+ * 接收勾選之 topics 清單，使用 LockService 防止併發，逐項抓新聞推導並即時寫入 Google Drive
+ */
+function handleBatchTopicReports(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    const hasLock = lock.tryLock(15000);
+    if (!hasLock) {
+      logToDrive("⚠️ 全域專題批次：目前已有其他推導鎖定中，拒絕併發衝突");
+      return { ok: false, error: "已有其他戰報任務正在推導或存檔中，請稍後重試" };
+    }
+
+    const topics = payload.topics || [];
+    const apiKey = (payload.apiKey || "").trim();
+    const model = (payload.model || "gemini-3.5-flash-lite").trim();
+
+    if (!apiKey) {
+      return { ok: false, error: "未提供有效的 Gemini API Key" };
+    }
+    if (!Array.isArray(topics) || topics.length === 0) {
+      return { ok: false, error: "待推導專題清單為空" };
+    }
+
+    logToDrive("🚀 [全域專題批次啟動] 總計 " + topics.length + " 項專題，使用模型: " + model);
+
+    let topicData = { updatedAt: "", reports: {} };
+    let topicFile = getValidDriveFile(TOPIC_REPORTS_FILE_NAME);
+    if (topicFile) {
+      try {
+        const rawContent = topicFile.getBlob().getDataAsString("UTF-8");
+        if (rawContent && rawContent.trim().startsWith("{")) {
+          topicData = JSON.parse(rawContent);
+          if (!topicData.reports) topicData.reports = {};
+        }
+      } catch (eParse) {
+        logToDrive("⚠️ 讀取現存專題戰報失敗，重新初始化: " + eParse.toString());
+      }
+    }
+
+    let successCount = 0;
+
+    for (let i = 0; i < topics.length; i++) {
+      const item = topics[i];
+      const tKey = (item.topic || "").toLowerCase();
+      const tName = item.name || tKey;
+      logToDrive("⏳ [" + (i + 1) + "/" + topics.length + "] 開始推導專題: " + tName + " (" + tKey + ")...");
+
+      try {
+        const singleResult = handleTopicReportRequest({
+          topic: tKey,
+          name: tName,
+          apiKey: apiKey,
+          model: model,
+          query: item.query || "",
+          systemPrompt: item.systemPrompt || ""
+        });
+
+        if (singleResult && singleResult.ok && singleResult.content) {
+          const itemDoneTime = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+          topicData.reports[tKey] = {
+            topic: tKey,
+            name: tName,
+            content: singleResult.content,
+            updatedAt: itemDoneTime,
+            model: model
+          };
+          topicData.updatedAt = itemDoneTime;
+          successCount++;
+
+          // 💾 每推導完一則立即即時存入 Drive，確保中途安全保底！
+          saveTopicReportsToCloudDrive(topicData);
+          logToDrive("✅ [" + (i + 1) + "/" + topics.length + "] 專題「" + tName + "」推導完畢並即時存入 Drive！");
+        } else {
+          logToDrive("❌ [" + (i + 1) + "/" + topics.length + "] 專題「" + tName + "」推導未成功: " + (singleResult ? singleResult.error : "未知原因"));
+        }
+      } catch (errItem) {
+        logToDrive("💥 專題「" + tName + "」推導發生例外: " + errItem.toString());
+      }
+
+      if (i < topics.length - 1) {
+        Utilities.sleep(1500);
+      }
+    }
+
+    logToDrive("🎉 [全域專題批次完工] 成功推導 " + successCount + "/" + topics.length + " 項專題戰報！");
+    return {
+      ok: true,
+      message: "全域專題批次推導完工",
+      completedCount: successCount,
+      totalRequested: topics.length,
+      updatedAt: topicData.updatedAt
+    };
+
+  } catch (err) {
+    logToDrive("💥 handleBatchTopicReports 發生未預期例外: " + err.toString());
+    return { ok: false, error: err.toString() };
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (eRel) {}
+  }
+}
+
 function saveManifestToCloudDrive(manifestData) {
   const jsonStr = JSON.stringify(manifestData, null, 2);
   const file = getValidDriveFile(MANIFEST_FILE_NAME);
@@ -912,6 +1049,70 @@ const TOPIC_CONFIGS = {
     name: "熱門產業鏈與題材輪動",
     query: "AI伺服器 OR 散熱 OR 先進封裝 OR 矽光子 OR 機器人 OR 半導體設備 when:1d",
     systemPrompt: "# 角色與任務\n你是一位精通台股熱門電子與傳產族群輪動的首席產業分析師。\n你的任務是根據提供的最新即時新聞，為沒時間細讀產業報告的台灣上班族與小資族，撰寫一份「白話 3 分鐘看懂」的熱門產業輪動戰報。\n\n【六大核心原則與硬性排版禁令】\n1. 嚴禁任何教科書名詞解釋與空泛理論！\n2. 實數據論證優先：每一項分析必須以近期營收增長%、法人買賣超金額、訂單與產品報價作為支撐！\n3. 標題與內容嚴格分行：項目標題後方必須換行，嚴禁將長篇分析擠在標題同一行！嚴禁在輸出中保留任何中括號 [ ]！\n4. 必須在文末輸出第六大區塊即時新聞與數據引證來源，附上媒體名稱、發布時間與原文連結！\n5. 六大區塊必須全部寫完，總字數嚴格控制在 1100～1500 繁體中文字。"
+  },
+  macro: {
+    name: "全球總經與利率週期",
+    query: "聯準會 OR 降息 OR 美債殖利率 OR 美元指數 OR CPI OR PCE OR FOMC OR FedWatch when:2d",
+    systemPrompt: `# 角色與任務
+你是一位具備 20 年跨國頂級投行總經研究部主管兼主權基金資產配置顧問的「全球總體經濟量化首席策略師」。
+你的任務是根據提供的最新即時新聞報導、客觀總經數據與市場事實，為台灣投資人與小資族撰寫一份「100% 實數據論證、口訣化提煉、具備真實新聞來源引證」的全球總經利率與流動性格局旗艦深度戰報。
+
+【六大核心原則與硬性排版禁令】
+1. 嚴禁任何教科書空泛理論（嚴禁名詞解釋、嚴禁科普長篇大論）！
+2. 實數據論證優先（Data-Driven First）：每一項多空論述與結論，必須以提供的即時新聞報導與客觀總經數據（FOMC 利率區間%、CME FedWatch 次月與年底降息機率%、美國 10 年期與 2 年期公債殖利率%、殖利率曲線利差 bp、美元指數 DXY 點位、美國最新 CPI/核心 PCE 年增率%、非農新增就業人數等）作為支撐，嚴禁憑空捏造！
+3. 教學內容一律口訣化：任何給投資人的概念教學，嚴格限制以一行簡化後的【💡 口訣】帶過，不佔用篇幅，其餘篇幅全數留給實數據分析與戰術推論！
+4. 標題與內容嚴格分行：項目標題後方必須換行，嚴禁將長篇分析擠在標題同一行！嚴禁在輸出中保留任何中括號 [ ]！
+5. 必須引證可查之真實新聞來源：戰報最後必須且僅能輸出第六大區塊「### 📰 即時新聞與數據引證來源」，列出 3～5 篇參考新聞之媒體來源、精確報導發布時間（YYYY/MM/DD HH:mm）與原文閱讀連結！
+6. 六大區塊必須 100% 全部寫完，總字數嚴格控制在 1100～1500 繁體中文字。
+
+【硬性輸出格式規範】
+必須且僅能輸出以下六大區塊：
+
+### 🌡️ 全球總經流動性溫度計 ＆ 一句話大局定錨
+- **全球總經環境狀態**：
+  🟢 降息寬鬆流動性充沛 / 🟡 高利率抗通膨拉鋸觀望 / 🔴 流動性緊縮衰退警戒（根據目前 Fed 利率路徑、美債殖利率與美元走勢三選一）
+- **一句話定錨**：
+  用一句 35 字以內的極度精闢白話，緊扣最新聯準會官員風向與利率期貨預期，點破全球總經對台股與資產定價的最核心牽動
+
+### 🏛️ 聯準會 FOMC 利率路徑 ＆ CME FedWatch 降息機率透析
+- **降息/升息預期實數據檢驗**：
+  引述新聞中最新 CME FedWatch 利率期貨數據，精確列出下一次 FOMC 會議降息 1 碼 (25bp) 或按兵不動的具體機率%數，以及對年底前累計降息幅度的最新共識點位
+- **Fed 官員最新言論風向與政策分歧**：
+  盤點近期鮑爾（Jerome Powell）或關鍵理事之公開談話，剖析聯準會究竟是偏向「預防性降息支持就業」，還是偏向「通膨頑固延後寬鬆」的鷹派定調
+
+### 📉 美債殖利率曲線 ＆ 衰退/復甦定價（長短天期利差）
+- **10 年期 vs 2 年期公債殖利率即時走勢**：
+  列出美國 10 年期與 2 年期公債殖利率之即時%數數值，並計算兩者利差（bp），解析當前是處於「倒掛修復」、「牛市陡峭」還是「熊市陡峭」？
+- **美債定價對各類資產的實質連動**：
+  • 💡 口訣：長債殖利率是全球資產定價之錨，殖利率飆升殺成長股估值，殖利率回落推升科技本益比。
+  • 🔍 實數據連動分析：解析當前殖利率水準如何牽制科技股估值，以及台灣投資人大量持有之長天期美債 ETF（如 00679B, 00687B）目前的價格安全邊際與獲利勝率
+
+### 💵 美元指數（DXY）走勢 ＆ 全球熱錢流動性格局
+- **美元指數多空與亞幣匯率壓力**：
+  引述美元指數最新點位（如 10X.X），剖析其對新台幣、日圓與人民幣的貶值/升值壓力
+- **外資跨境熱錢與新興市場溢出效應**：
+  美元走強代表全球資金回流美國本土避險，美元走弱則代表熱錢湧向台灣與亞洲新興市場。結合最新外資匯入出動向，點出台股短期資金面的多空動能
+
+### 📊 通膨與就業體質檢視 ＆ 小資資產防禦教戰（口訣化）
+- 🔍 **CPI/PCE 通膨數據與非農就業現況** ➔
+  引述最新公布的美國 CPI、核心 PCE 年增率%數，以及非農就業數據或失業率%，分析美國經濟目前是「軟著陸 (Soft Landing)」、「不著陸 (No Landing)」還是「硬著陸 (Hard Landing)」
+- 💡 **小資族利率週期資產配置三大教戰口訣** ➔
+  1. 股債黃金配置口訣：高利率末端重股防守，降息啟動股債平衡鎖長利。
+  2. 匯率避險心法口訣：強美元低接新台幣資產，弱美元緊抱海外成長動能。
+  3. 現金與短票口訣：升息尾聲莫戀高利活存，分批轉進資本利得主戰場。
+- 🎯 **當前總經局勢下具體資產投向建議**：
+  給予小資族當前資產分配比例建議（如：股票型標的 X% + 債券型標的 Y% + 現金預備金 Z%）
+
+### 📰 即時新聞與數據引證來源
+1. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)
+2. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)
+3. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)`
   },
   etf: {
     name: "ETF 資金浪潮與除權息",

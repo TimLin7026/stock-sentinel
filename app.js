@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261113.03');
+        const appVersion = ref('v2.20261113.04');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -171,7 +171,72 @@ createApp({
         const MACRO_TOPIC_CONFIGS = {
             global: { key: 'global', name: '美股', icon: '🌐', color: 'indigo' },
             tw: { key: 'tw', name: '台股', icon: '🇹🇼', color: 'emerald' },
-            etf: { key: 'etf', name: 'ETF', icon: '📈', color: 'sky' }
+            macro: {
+                name: "全球總經與利率週期",
+                query: "聯準會 OR 降息 OR 美債殖利率 OR 美元指數 OR CPI OR PCE OR FOMC OR FedWatch when:2d",
+                systemPrompt: `# 角色與任務
+你是一位具備 20 年跨國頂級投行總經研究部主管兼主權基金資產配置顧問的「全球總體經濟量化首席策略師」。
+你的任務是根據提供的最新即時新聞報導、客觀總經數據與市場事實，為台灣投資人與小資族撰寫一份「100% 實數據論證、口訣化提煉、具備真實新聞來源引證」的全球總經利率與流動性格局旗艦深度戰報。
+
+【六大核心原則與硬性排版禁令】
+1. 嚴禁任何教科書空泛理論（嚴禁名詞解釋、嚴禁科普長篇大論）！
+2. 實數據論證優先（Data-Driven First）：每一項多空論述與結論，必須以提供的即時新聞報導與客觀總經數據（FOMC 利率區間%、CME FedWatch 次月與年底降息機率%、美國 10 年期與 2 年期公債殖利率%、殖利率曲線利差 bp、美元指數 DXY 點位、美國最新 CPI/核心 PCE 年增率%、非農新增就業人數等）作為支撐，嚴禁憑空捏造！
+3. 教學內容一律口訣化：任何給投資人的概念教學，嚴格限制以一行簡化後的【💡 口訣】帶過，不佔用篇幅，其餘篇幅全數留給實數據分析與戰術推論！
+4. 標題與內容嚴格分行：項目標題後方必須換行，嚴禁將長篇分析擠在標題同一行！嚴禁在輸出中保留任何中括號 [ ]！
+5. 必須引證可查之真實新聞來源：戰報最後必須且僅能輸出第六大區塊「### 📰 即時新聞與數據引證來源」，列出 3～5 篇參考新聞之媒體來源、精確報導發布時間（YYYY/MM/DD HH:mm）與原文閱讀連結！
+6. 六大區塊必須 100% 全部寫完，總字數嚴格控制在 1100～1500 繁體中文字。
+
+【硬性輸出格式規範】
+必須且僅能輸出以下六大區塊：
+
+### 🌡️ 全球總經流動性溫度計 ＆ 一句話大局定錨
+- **全球總經環境狀態**：
+  🟢 降息寬鬆流動性充沛 / 🟡 高利率抗通膨拉鋸觀望 / 🔴 流動性緊縮衰退警戒（根據目前 Fed 利率路徑、美債殖利率與美元走勢三選一）
+- **一句話定錨**：
+  用一句 35 字以內的極度精闢白話，緊扣最新聯準會官員風向與利率期貨預期，點破全球總經對台股與資產定價的最核心牽動
+
+### 🏛️ 聯準會 FOMC 利率路徑 ＆ CME FedWatch 降息機率透析
+- **降息/升息預期實數據檢驗**：
+  引述新聞中最新 CME FedWatch 利率期貨數據，精確列出下一次 FOMC 會議降息 1 碼 (25bp) 或按兵不動的具體機率%數，以及對年底前累計降息幅度的最新共識點位
+- **Fed 官員最新言論風向與政策分歧**：
+  盤點近期鮑爾（Jerome Powell）或關鍵理事之公開談話，剖析聯準會究竟是偏向「預防性降息支持就業」，還是偏向「通膨頑固延後寬鬆」的鷹派定調
+
+### 📉 美債殖利率曲線 ＆ 衰退/復甦定價（長短天期利差）
+- **10 年期 vs 2 年期公債殖利率即時走勢**：
+  列出美國 10 年期與 2 年期公債殖利率之即時%數數值，並計算兩者利差（bp），解析當前是處於「倒掛修復」、「牛市陡峭」還是「熊市陡峭」？
+- **美債定價對各類資產的實質連動**：
+  • 💡 口訣：長債殖利率是全球資產定價之錨，殖利率飆升殺成長股估值，殖利率回落推升科技本益比。
+  • 🔍 實數據連動分析：解析當前殖利率水準如何牽制科技股估值，以及台灣投資人大量持有之長天期美債 ETF（如 00679B, 00687B）目前的價格安全邊際與獲利勝率
+
+### 💵 美元指數（DXY）走勢 ＆ 全球熱錢流動性格局
+- **美元指數多空與亞幣匯率壓力**：
+  引述美元指數最新點位（如 10X.X），剖析其對新台幣、日圓與人民幣的貶值/升值壓力
+- **外資跨境熱錢與新興市場溢出效應**：
+  美元走強代表全球資金回流美國本土避險，美元走弱則代表熱錢湧向台灣與亞洲新興市場。結合最新外資匯入出動向，點出台股短期資金面的多空動能
+
+### 📊 通膨與就業體質檢視 ＆ 小資資產防禦教戰（口訣化）
+- 🔍 **CPI/PCE 通膨數據與非農就業現況** ➔
+  引述最新公布的美國 CPI、核心 PCE 年增率%數，以及非農就業數據或失業率%，分析美國經濟目前是「軟著陸 (Soft Landing)」、「不著陸 (No Landing)」還是「硬著陸 (Hard Landing)」
+- 💡 **小資族利率週期資產配置三大教戰口訣** ➔
+  1. 股債黃金配置口訣：高利率末端重股防守，降息啟動股債平衡鎖長利。
+  2. 匯率避險心法口訣：強美元低接新台幣資產，弱美元緊抱海外成長動能。
+  3. 現金與短票口訣：升息尾聲莫戀高利活存，分批轉進資本利得主戰場。
+- 🎯 **當前總經局勢下具體資產投向建議**：
+  給予小資族當前資產分配比例建議（如：股票型標的 X% + 債券型標的 Y% + 現金預備金 Z%）
+
+### 📰 即時新聞與數據引證來源
+1. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)
+2. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)
+3. **[媒體名稱] 報導標題**
+   • 報導時間：YYYY/MM/DD HH:mm
+   • 原文閱讀：[點擊前往閱讀 ➔](新聞真實連結)`
+            },
+            etf: { key: 'etf', name: 'ETF', icon: '📈', color: 'sky' },
+            macro: { key: 'macro', name: '總經', icon: '🏦', color: 'amber' }
         };
         const savedMacroTab = localStorage.getItem('sentinel_macro_sub_tab');
         const initialMacroTab = (savedMacroTab && MACRO_TOPIC_CONFIGS[savedMacroTab]) ? savedMacroTab : 'global';
@@ -180,15 +245,19 @@ createApp({
             const target = (tab === 'signova' || MACRO_TOPIC_CONFIGS[tab]) ? tab : 'global';
             macroSubTab.value = target;
             localStorage.setItem('sentinel_macro_sub_tab', target);
+            if (target !== 'signova') {
+                try { fetchCloudTopicReports(true); } catch (e) {}
+            }
         };
-        const generatingTopics = ref({ global: false, tw: false, industry: false, etf: false });
+        const generatingTopics = ref({ global: false, tw: false, industry: false, etf: false, macro: false });
         const isGeneratingTopic = (key) => !!generatingTopics.value[key];
 
         const topicReports = ref({
             global: { content: localStorage.getItem('sentinel_topic_global_content') || '', time: localStorage.getItem('sentinel_topic_global_time') || '', ts: localStorage.getItem('sentinel_topic_global_ts') || '' },
             tw: { content: localStorage.getItem('sentinel_topic_tw_content') || '', time: localStorage.getItem('sentinel_topic_tw_time') || '', ts: localStorage.getItem('sentinel_topic_tw_ts') || '' },
             industry: { content: localStorage.getItem('sentinel_topic_industry_content') || '', time: localStorage.getItem('sentinel_topic_industry_time') || '', ts: localStorage.getItem('sentinel_topic_industry_ts') || '' },
-            etf: { content: localStorage.getItem('sentinel_topic_etf_content') || '', time: localStorage.getItem('sentinel_topic_etf_time') || '', ts: localStorage.getItem('sentinel_topic_etf_ts') || '' }
+            etf: { content: localStorage.getItem('sentinel_topic_etf_content') || '', time: localStorage.getItem('sentinel_topic_etf_time') || '', ts: localStorage.getItem('sentinel_topic_etf_ts') || '' },
+            macro: { content: localStorage.getItem('sentinel_topic_macro_content') || '', time: localStorage.getItem('sentinel_topic_macro_time') || '', ts: localStorage.getItem('sentinel_topic_macro_ts') || '' }
         });
 
         const formatTopicTime = (timeStr) => {
@@ -11832,6 +11901,19 @@ createApp({
             selectedTopicModel,
             openTopicReportPicker,
             confirmGenerateTopicReport,
+            showBatchTopicModal,
+            selectedBatchTopics,
+            selectedBatchTopicModel,
+            isDispatchingBatchTopics,
+            isFetchingCloudTopics,
+            cloudTopicsLastSync,
+            openBatchTopicModal,
+            toggleBatchTopic,
+            selectAllBatchTopics,
+            clearAllBatchTopics,
+            isBatchTopicSelected,
+            dispatchBatchTopicsToGas,
+            fetchCloudTopicReports,
             formatTopicTime,
             copyTopicContent,
             autoCloudSyncEnabled,

@@ -453,6 +453,12 @@
                         <span>📈</span>
                         <span>ETF</span>
                     </button>
+                    <button @click="setMacroSubTab('macro')"
+                            :class="macroSubTab === 'macro' ? 'bg-amber-600 text-white shadow' : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
+                            class="flex-1 py-1.5 px-1.5 rounded-xl whitespace-nowrap transition active:scale-95 text-center flex items-center justify-center space-x-1">
+                        <span>🏦</span>
+                        <span>總經</span>
+                    </button>
                     <button @click="setMacroSubTab('signova')"
                             :class="macroSubTab === 'signova' ? (theme === 'dark' ? 'bg-slate-700 text-white shadow' : 'bg-slate-800 text-white shadow') : (theme === 'dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')"
                             class="flex-1 py-1.5 px-1.5 rounded-xl whitespace-nowrap transition active:scale-95 text-center flex items-center justify-center space-x-1">
@@ -475,8 +481,25 @@
                             </span>
                         </div>
 
-                        <!-- 右側：[💎 生成戰報]/[🔄 更新戰報] (對齊個股 Gem 漸層按鈕) ＋ [📋 複製] -->
+                        <!-- 右側：[⚡ 一鍵派工] ＋ [☁️ 同步雲端] ＋ [💎 生成戰報] ＋ [📋 複製] -->
                         <div class="flex items-center space-x-1.5 shrink-0">
+                            <!-- ⚡ 一鍵全域派工按鈕 (多選批次排隊) -->
+                            <button @click="openBatchTopicModal"
+                                    class="px-2 py-1 rounded-lg text-xs font-bold border border-amber-400/30 transition flex items-center justify-center shadow-sm active:scale-95 shrink-0 bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white"
+                                    title="一鍵勾選美股/台股/ETF/總經四大戰報，交由雲端背景排隊推導">
+                                <span class="text-xs leading-none">⚡</span>
+                                <span class="hidden sm:inline ml-1 font-semibold">一鍵派工</span>
+                            </button>
+
+                            <!-- ☁️ 雲端戰報同步按鈕 -->
+                            <button @click="fetchCloudTopicReports(false)"
+                                    :disabled="isFetchingCloudTopics"
+                                    class="px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center justify-center active:scale-95 shrink-0"
+                                    :class="theme === 'dark' ? 'bg-slate-800 text-sky-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 text-sky-700 border-slate-200 hover:bg-slate-200'"
+                                    :title="cloudTopicsLastSync ? `上次雲端同步: ${cloudTopicsLastSync}，點擊重新檢查` : '檢查並同步雲端最新全域戰報'">
+                                <i :class="isFetchingCloudTopics ? 'fa-solid fa-arrows-rotate fa-spin' : 'fa-solid fa-cloud-arrow-down'" class="text-[11px]"></i>
+                                <span class="hidden md:inline ml-1 text-[11px]">同步雲端</span>
+                            </button>
                             <!-- Gem 按鈕 (靜態 [💎 生成戰報] / 呼叫中旋轉 [🔄 更新戰報]，窄螢幕只顯示純圖示 [💎]/[🔄]) -->
                             <button @click="openTopicReportPicker(macroSubTab)" 
                                     :disabled="isGeneratingTopic(macroSubTab)"
@@ -2390,6 +2413,160 @@
                     <button @click="confirmGenerateTopicReport" 
                             class="flex-1 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition active:scale-95 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500">
                         🚀 立即生成專題戰報
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ⚡ 全域四大戰報一鍵批次派工 Modal 彈窗 -->
+        <!-- ========================================== -->
+        <div v-if="showBatchTopicModal" 
+             :class="theme === 'dark' ? 'bg-slate-950/80' : 'bg-slate-900/50'"
+             class="fixed inset-0 z-50 backdrop-blur-sm flex justify-center items-center p-3 sm:p-4 overflow-hidden w-full"
+             @click.self="showBatchTopicModal = false">
+            <div :class="theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'"
+                 class="w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
+                <!-- 標題 -->
+                <div class="p-3.5 border-b flex items-center justify-between"
+                     :class="theme === 'dark' ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50'">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-lg">⚡</span>
+                        <div>
+                            <h3 class="text-sm font-bold flex items-center gap-1.5">
+                                全域 AI 戰報一鍵派工
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">雲端佇列</span>
+                            </h3>
+                            <div class="text-[11px] text-slate-400">勾選專題後秒送，由 GAS 在雲端背景排隊推導並自動存入 Drive</div>
+                        </div>
+                    </div>
+                    <button @click="showBatchTopicModal = false" class="text-slate-400 hover:text-slate-200 p-1">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+
+                <!-- 內容區 -->
+                <div class="p-3 sm:p-4 overflow-y-auto space-y-3 text-xs">
+                    <!-- 快速勾選控制列 -->
+                    <div class="flex items-center justify-between pb-1 border-b"
+                         :class="theme === 'dark' ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-600'">
+                        <span class="font-bold">欲推導的市場專題 (已選 {{ selectedBatchTopics.length }}/4 項)</span>
+                        <div class="space-x-1.5">
+                            <button @click="selectAllBatchTopics" class="text-[11px] px-2 py-0.5 rounded bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 font-semibold">全選</button>
+                            <button @click="clearAllBatchTopics" class="text-[11px] px-2 py-0.5 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 font-semibold">清除</button>
+                        </div>
+                    </div>
+
+                    <!-- 四大專題勾選卡片 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <!-- 美股 -->
+                        <div @click="toggleBatchTopic('global')"
+                             :class="isBatchTopicSelected('global') 
+                                 ? (theme === 'dark' ? 'border-indigo-500 bg-indigo-950/40 text-indigo-200' : 'border-indigo-500 bg-indigo-50 text-indigo-900') 
+                                 : (theme === 'dark' ? 'border-slate-800 bg-slate-950/30 text-slate-400 opacity-60' : 'border-slate-200 bg-slate-50 text-slate-500 opacity-60')"
+                             class="p-2.5 rounded-xl border cursor-pointer transition select-none flex items-start space-x-2">
+                            <input type="checkbox" :checked="isBatchTopicSelected('global')" class="mt-0.5 rounded text-indigo-600 pointer-events-none">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xs flex items-center justify-between">
+                                    <span>🌐 全球美股大勢</span>
+                                </div>
+                                <div class="text-[10px] mt-0.5 opacity-80 truncate">四大指數、科技巨頭 M7、AI 與財報</div>
+                            </div>
+                        </div>
+
+                        <!-- 台股 -->
+                        <div @click="toggleBatchTopic('tw')"
+                             :class="isBatchTopicSelected('tw') 
+                                 ? (theme === 'dark' ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200' : 'border-emerald-500 bg-emerald-50 text-emerald-900') 
+                                 : (theme === 'dark' ? 'border-slate-800 bg-slate-950/30 text-slate-400 opacity-60' : 'border-slate-200 bg-slate-50 text-slate-500 opacity-60')"
+                             class="p-2.5 rounded-xl border cursor-pointer transition select-none flex items-start space-x-2">
+                            <input type="checkbox" :checked="isBatchTopicSelected('tw')" class="mt-0.5 rounded text-emerald-600 pointer-events-none">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xs flex items-center justify-between">
+                                    <span>🇹🇼 台股籌碼與主力</span>
+                                </div>
+                                <div class="text-[10px] mt-0.5 opacity-80 truncate">外資期現貨、投信作帳、散戶維持率</div>
+                            </div>
+                        </div>
+
+                        <!-- ETF -->
+                        <div @click="toggleBatchTopic('etf')"
+                             :class="isBatchTopicSelected('etf') 
+                                 ? (theme === 'dark' ? 'border-sky-500 bg-sky-950/40 text-sky-200' : 'border-sky-500 bg-sky-50 text-sky-900') 
+                                 : (theme === 'dark' ? 'border-slate-800 bg-slate-950/30 text-slate-400 opacity-60' : 'border-slate-200 bg-slate-50 text-slate-500 opacity-60')"
+                             class="p-2.5 rounded-xl border cursor-pointer transition select-none flex items-start space-x-2">
+                            <input type="checkbox" :checked="isBatchTopicSelected('etf')" class="mt-0.5 rounded text-sky-600 pointer-events-none">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xs flex items-center justify-between">
+                                    <span>📈 ETF 焦點與動能</span>
+                                </div>
+                                <div class="text-[10px] mt-0.5 opacity-80 truncate">高股息除息、市值型、折溢價警訊</div>
+                            </div>
+                        </div>
+
+                        <!-- 總經 (🔥全新) -->
+                        <div @click="toggleBatchTopic('macro')"
+                             :class="isBatchTopicSelected('macro') 
+                                 ? (theme === 'dark' ? 'border-amber-500 bg-amber-950/40 text-amber-200' : 'border-amber-500 bg-amber-50 text-amber-900') 
+                                 : (theme === 'dark' ? 'border-slate-800 bg-slate-950/30 text-slate-400 opacity-60' : 'border-slate-200 bg-slate-50 text-slate-500 opacity-60')"
+                             class="p-2.5 rounded-xl border cursor-pointer transition select-none flex items-start space-x-2">
+                            <input type="checkbox" :checked="isBatchTopicSelected('macro')" class="mt-0.5 rounded text-amber-600 pointer-events-none">
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-xs flex items-center justify-between">
+                                    <span>🏦 總經與利率週期</span>
+                                    <span class="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-bold">全新</span>
+                                </div>
+                                <div class="text-[10px] mt-0.5 opacity-80 truncate">Fed降息機率、美債殖利率、美元指數</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模型選擇 -->
+                    <div class="pt-2 border-t space-y-1.5"
+                         :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-100'">
+                        <div class="font-bold text-[11px] text-slate-400">推導模型選擇 (建議使用高配額之極速主力)</div>
+                        <div class="space-y-1.5">
+                            <label v-for="opt in singleReportOptions" :key="opt.id"
+                                   :class="selectedBatchTopicModel === opt.id 
+                                       ? (theme === 'dark' ? 'border-indigo-500 bg-indigo-950/30 text-indigo-200' : 'border-indigo-500 bg-indigo-50/70 text-indigo-900') 
+                                       : (theme === 'dark' ? 'border-slate-800 bg-slate-950/30' : 'border-slate-200 bg-white')"
+                                   class="flex items-center p-2 rounded-xl border cursor-pointer transition select-none">
+                                <input type="radio" v-model="selectedBatchTopicModel" :value="opt.id" class="mr-2 text-indigo-600 focus:ring-0">
+                                <div class="flex-1 min-w-0 flex items-center justify-between text-xs">
+                                    <div class="flex items-center space-x-1.5 truncate">
+                                        <span class="font-bold">{{ opt.name }}</span>
+                                        <span v-if="opt.tag" class="text-[9px] px-1 py-0.2 rounded-full font-semibold bg-emerald-500/20 text-emerald-400">
+                                            {{ opt.tag }}
+                                        </span>
+                                    </div>
+                                    <span class="font-mono text-[10px] ml-2 shrink-0 text-slate-400">
+                                        今日: {{ opt.usage }}/{{ opt.limit }}
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 提示小卡 -->
+                    <div class="p-2.5 rounded-xl text-[11px] leading-relaxed border"
+                         :class="theme === 'dark' ? 'bg-indigo-950/30 border-indigo-900/40 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-800'">
+                        💡 <b>手機零等待架構</b>：點擊送出後約 1 秒內即完成雲端派工。GAS 會在雲端背景依序抓取最新 Google News 並推導戰報，完工後自動存入 Google Drive。您送出後即可關閉瀏覽器或鎖屏，隨時回來看！
+                    </div>
+                </div>
+
+                <!-- 底部操作列 -->
+                <div class="p-3 border-t flex space-x-2"
+                     :class="theme === 'dark' ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/50'">
+                    <button @click="showBatchTopicModal = false" 
+                            class="flex-1 py-2 rounded-xl text-xs font-semibold border transition"
+                            :class="theme === 'dark' ? 'border-slate-700 hover:bg-slate-800 text-slate-300' : 'border-slate-300 hover:bg-slate-100 text-slate-700'">
+                        取消
+                    </button>
+                    <button @click="dispatchBatchTopicsToGas"
+                            :disabled="selectedBatchTopics.length === 0 || isDispatchingBatchTopics"
+                            class="flex-1 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition active:scale-95 bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 disabled:opacity-50">
+                        <i v-if="isDispatchingBatchTopics" class="fa-solid fa-arrows-rotate fa-spin mr-1"></i>
+                        🚀 立即送出雲端排隊 ({{ selectedBatchTopics.length }} 項)
                     </button>
                 </div>
             </div>
