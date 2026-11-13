@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261113.04');
+        const appVersion = ref('v2.20261113.05');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -7237,6 +7237,209 @@ createApp({
             } catch (e) {}
             showTopicReportModal.value = false;
             triggerGenerateTopic(tk, modelToUse);
+        };
+
+        // ==========================================
+        // ⚡ 全域四大戰報一鍵勾選批次派工 (GAS 雲端佇列 + Drive 存檔)
+        // ==========================================
+        const showBatchTopicModal = ref(false);
+        const selectedBatchTopics = ref(['global', 'tw', 'etf', 'macro']);
+        const selectedBatchTopicModel = ref(localStorage.getItem('sentinel_last_topic_model') || 'gemini-3.5-flash-lite');
+        const isDispatchingBatchTopics = ref(false);
+        const isFetchingCloudTopics = ref(false);
+        const cloudTopicsLastSync = ref(localStorage.getItem('sentinel_cloud_topics_last_sync') || '');
+
+        const openBatchTopicModal = () => {
+            if (!selectedBatchTopics.value || selectedBatchTopics.value.length === 0) {
+                selectedBatchTopics.value = ['global', 'tw', 'etf', 'macro'];
+            }
+            showBatchTopicModal.value = true;
+        };
+
+        const toggleBatchTopic = (topicKey) => {
+            const idx = selectedBatchTopics.value.indexOf(topicKey);
+            if (idx >= 0) {
+                selectedBatchTopics.value.splice(idx, 1);
+            } else {
+                selectedBatchTopics.value.push(topicKey);
+            }
+        };
+
+        const selectAllBatchTopics = () => {
+            selectedBatchTopics.value = ['global', 'tw', 'etf', 'macro'];
+        };
+
+        const clearAllBatchTopics = () => {
+            selectedBatchTopics.value = [];
+        };
+
+        const isBatchTopicSelected = (topicKey) => {
+            return (selectedBatchTopics.value || []).includes(topicKey);
+        };
+
+        const dispatchBatchTopicsToGas = async () => {
+            if (!selectedBatchTopics.value || selectedBatchTopics.value.length === 0) {
+                alert("⚠️ 請至少勾選一項專題戰報進行派工！");
+                return;
+            }
+
+            let gasUrl = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+            if (!gasUrl || !gasUrl.startsWith('https://script.google.com/macros/s/')) {
+                const inputUrl = prompt(
+                    "☁️ 請設定您的個人戰報 Google Apps Script (GAS) 網址：\n\n" +
+                    "請貼上您部署好的 Web 應用程式網址 (https://script.google.com/.../exec)：\n" +
+                    "(此設定僅儲存在您的設備與雲端資料庫，不會公開分享)"
+                );
+                if (inputUrl && inputUrl.trim()) {
+                    gasUrl = sanitizeGasUrl(inputUrl.trim());
+                    if (!gasUrl.startsWith('https://script.google.com/macros/s/')) {
+                        alert("❌ 錯誤的 GAS 網址格式！請確認複製的是以 https://script.google.com/macros/s/.../exec 結尾的 Web 應用程式網址。");
+                        return;
+                    }
+                    geminiGasUrl.value = gasUrl;
+                    localStorage.setItem('sentinel_gemini_gas_url', gasUrl);
+                } else {
+                    return;
+                }
+            }
+
+            let apiKey = (geminiApiKey.value || localStorage.getItem('sentinel_gemini_api_key') || '').trim();
+            if (!apiKey) {
+                const inputKey = prompt(
+                    "💎 請設定您的個人 Google Gemini API Key：\n\n" +
+                    "請貼上您的 AI Studio API Key (AIzaSy...)：\n" +
+                    "(金鑰僅傳送給您個人的 GAS，100% 消耗個人免費額度)"
+                );
+                if (inputKey && inputKey.trim()) {
+                    apiKey = inputKey.trim();
+                    geminiApiKey.value = apiKey;
+                    localStorage.setItem('sentinel_gemini_api_key', apiKey);
+                } else {
+                    return;
+                }
+            }
+
+            const modelToUse = selectedBatchTopicModel.value || 'gemini-3.5-flash-lite';
+            localStorage.setItem('sentinel_last_topic_model', modelToUse);
+
+            isDispatchingBatchTopics.value = true;
+            showToast(`🚀 正在將 ${selectedBatchTopics.value.length} 項全域戰報派工至 Google 雲端佇列...`, 3500);
+
+            try {
+                const payloadTopics = selectedBatchTopics.value.map(k => {
+                    const cfg = MACRO_TOPIC_CONFIGS[k] || {};
+                    const promptCfg = INLINED_TOPIC_PROMPTS[k] || {};
+                    return {
+                        topic: k,
+                        name: cfg.name || k,
+                        query: promptCfg.query || '',
+                        systemPrompt: promptCfg.systemPrompt || ''
+                    };
+                });
+
+                const payload = {
+                    action: "batch_topic_reports",
+                    apiKey: apiKey,
+                    model: modelToUse,
+                    topics: payloadTopics
+                };
+
+                // 非同步秒發模式 (Fire-and-Forget)
+                fetch(gasUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                }).catch(e => console.warn("全域戰報背景派工傳輸例外:", e));
+
+                await new Promise(r => setTimeout(r, 600));
+
+                isDispatchingBatchTopics.value = false;
+                showBatchTopicModal.value = false;
+
+                const topicNames = payloadTopics.map(t => t.name).join('、');
+                alert(
+                    `🎉【全域戰報派工成功！】\n\n` +
+                    `• 派工專題：共 ${payloadTopics.length} 項（${topicNames}）\n` +
+                    `• 推導模型：【${modelToUse}】\n` +
+                    `• 雲端運作：Google 雲端已在背景循序推導，並會自動存入 Google Drive。\n\n` +
+                    `您現在可以安心切換分頁、關閉網頁或鎖定螢幕！稍後進入專題戰報分頁即可秒看最新產出成果。`
+                );
+
+                setTimeout(() => fetchCloudTopicReports(true), 2500);
+
+            } catch (err) {
+                console.error("全域戰報派工失敗:", err);
+                isDispatchingBatchTopics.value = false;
+                alert("❌ 派工發生例外: " + err.message);
+            }
+        };
+
+        const fetchCloudTopicReports = async (silent = false) => {
+            if (isFetchingCloudTopics.value) return;
+            isFetchingCloudTopics.value = true;
+            if (!silent) showToast("☁️ 正在檢查雲端最新全域專題戰報...", 2000);
+
+            try {
+                let data = null;
+                // 1. 若有 Google 登入 token，優先直讀 Drive API
+                if (googleAccessToken.value) {
+                    try {
+                        const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_topic_reports.json' and trashed=false&fields=files(id,name,modifiedTime)`;
+                        const sRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${googleAccessToken.value}` } });
+                        if (sRes.ok) {
+                            const sData = await sRes.json();
+                            if (sData.files && sData.files.length > 0) {
+                                const fileId = sData.files[0].id;
+                                const dRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                                    headers: { Authorization: `Bearer ${googleAccessToken.value}` }
+                                });
+                                if (dRes.ok) data = await dRes.json();
+                            }
+                        }
+                    } catch (eDrive) {
+                        console.warn("Drive API 直讀戰報例外，改走 GAS:", eDrive);
+                    }
+                }
+
+                // 2. 若未取得，走 GAS doGet action=get_topic_reports
+                if (!data) {
+                    const gas = sanitizeGasUrl(geminiGasUrl.value || localStorage.getItem('sentinel_gemini_gas_url') || '');
+                    if (gas && gas.startsWith('https://script.google.com/macros/s/')) {
+                        const sep = gas.includes('?') ? '&' : '?';
+                        const gRes = await fetch(`${gas}${sep}action=get_topic_reports`);
+                        if (gRes.ok) data = await gRes.json();
+                    }
+                }
+
+                if (data && data.reports) {
+                    let mergedCount = 0;
+                    for (const [k, r] of Object.entries(data.reports)) {
+                        if (r && r.content) {
+                            topicReports.value[k] = {
+                                content: r.content,
+                                time: r.updatedAt || data.updatedAt || '',
+                                ts: new Date(r.updatedAt || data.updatedAt).getTime() || new Date().getTime()
+                            };
+                            localStorage.setItem(`sentinel_topic_${k}_content`, r.content);
+                            localStorage.setItem(`sentinel_topic_${k}_time`, r.updatedAt || data.updatedAt || '');
+                            localStorage.setItem(`sentinel_topic_${k}_ts`, String(topicReports.value[k].ts));
+                            mergedCount++;
+                        }
+                    }
+                    const syncTimeStr = data.updatedAt || new Date().toLocaleTimeString();
+                    cloudTopicsLastSync.value = syncTimeStr;
+                    localStorage.setItem('sentinel_cloud_topics_last_sync', syncTimeStr);
+                    if (!silent) showToast(`🟢 已同步最新雲端全域戰報 (${mergedCount} 項，更新於 ${syncTimeStr})！`, 3000);
+                } else if (!silent) {
+                    showToast("ℹ️ 雲端尚未產出全域戰報，可點擊「一鍵派工」生成！", 2500);
+                }
+            } catch (err) {
+                console.error("fetchCloudTopicReports 例外:", err);
+                if (!silent) showToast("⚠️ 同步雲端戰報失敗，請確認網路連線", 2500);
+            } finally {
+                isFetchingCloudTopics.value = false;
+            }
         };
 
         // 單檔彈窗 3 選 1 動態選項 (響應式包含即時配額，100% 對齊後台)
