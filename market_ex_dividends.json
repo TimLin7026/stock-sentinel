@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-16 08:30:30",
-  "count": 103,
+  "updatedAt": "2026-11-16 13:14:34",
+  "count": 104,
   "items": [
     {
       "code": "8390",
@@ -730,6 +730,16 @@
       "daysLeft": 2,
       "exType": "息",
       "cashDividend": 3.02,
+      "dividendYield": ""
+    },
+    {
+      "code": "00991B",
+      "name": "貝萊德A級公司債",
+      "market": "上市",
+      "exDate": "2026-11-18",
+      "daysLeft": 2,
+      "exType": "息",
+      "cashDividend": 0.073,
       "dividendYield": ""
     },
     {
