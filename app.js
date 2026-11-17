@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261113.05');
+        const appVersion = ref('v2.20261117.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -75,9 +75,14 @@ createApp({
             localStorage.setItem('sentinel_chart_orientation', chartOrientation.value);
             localStorage.setItem('sentinel_chart_days', chartDaysCount.value);
 
-            // 3. 自動同步批次派工彈窗版面 (直/橫自適應)
-            batchModalOrientation.value = isLandscape ? 'landscape' : 'portrait';
-            localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
+            // 3. 自動同步批次派工彈窗版面 (直/橫自適應，手機直立優先保護)
+            if (typeof batchModalOrientation !== 'undefined' && batchModalOrientation && batchModalOrientation.value !== undefined) {
+                const isNarrow = (typeof window !== 'undefined') && (window.innerWidth < 768 || window.innerHeight >= window.innerWidth);
+                batchModalOrientation.value = (!isNarrow && isLandscape) ? 'landscape' : 'portrait';
+                try {
+                    localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
+                } catch (e) {}
+            }
 
             // 3. 雙重延遲平滑重繪 (等待手機旋轉與 CSS transition 動畫完成)
             Vue.nextTick(() => {
@@ -6907,7 +6912,15 @@ createApp({
         const isTestingGemini = ref(false);
         const geminiGasUrl = ref(sanitizeGasUrl(localStorage.getItem('sentinel_gemini_gas_url') || ''));
         const showBatchDispatchModal = ref(false);
-        const batchModalOrientation = ref(checkDeviceLandscape() ? 'landscape' : (localStorage.getItem('sentinel_batch_modal_orientation') || 'portrait'));
+        const getInitialBatchModalOrientation = () => {
+            if (typeof window !== 'undefined') {
+                if (window.innerWidth < 768 || window.innerHeight >= window.innerWidth) {
+                    return 'portrait';
+                }
+            }
+            return checkDeviceLandscape() ? 'landscape' : (localStorage.getItem('sentinel_batch_modal_orientation') || 'portrait');
+        };
+        const batchModalOrientation = ref(getInitialBatchModalOrientation());
         const toggleBatchModalOrientation = () => {
             batchModalOrientation.value = batchModalOrientation.value === 'portrait' ? 'landscape' : 'portrait';
             localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
@@ -8591,11 +8604,19 @@ createApp({
             }
         };
 
-        // 開啟批次派工 Modal
+        // 開啟批次派工 Modal (📱 嚴格自適應感應：手機直向 100% 強制使用單欄窄版 portrait)
         const openBatchDispatchModal = () => {
-            if (checkDeviceLandscape()) {
+            const isLandscape = checkDeviceLandscape();
+            const isNarrow = (typeof window !== 'undefined') && (window.innerWidth < 768 || window.innerHeight >= window.innerWidth);
+            if (isNarrow || !isLandscape) {
+                batchModalOrientation.value = 'portrait';
+            } else {
                 batchModalOrientation.value = 'landscape';
             }
+            try {
+                localStorage.setItem('sentinel_batch_modal_orientation', batchModalOrientation.value);
+            } catch (e) {}
+
             batchFilterBroker.value = '全部';
             batchFilterCategory.value = '全部';
 
