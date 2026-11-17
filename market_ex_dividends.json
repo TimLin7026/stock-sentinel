@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-17 08:30:34",
-  "count": 107,
+  "updatedAt": "2026-11-17 13:15:22",
+  "count": 106,
   "items": [
     {
       "code": "8390",
@@ -20,16 +20,6 @@
       "daysLeft": -5,
       "exType": "除息",
       "cashDividend": 9.9147456,
-      "dividendYield": ""
-    },
-    {
-      "code": "00401A",
-      "name": "主動摩根台灣鑫收",
-      "market": "上市",
-      "exDate": "2026-11-13",
-      "daysLeft": -4,
-      "exType": "息",
-      "cashDividend": 0.138,
       "dividendYield": ""
     },
     {
