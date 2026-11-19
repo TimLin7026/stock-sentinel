@@ -1,13 +1,13 @@
 {
-  "updatedAt": "2026-11-18 13:15:09",
-  "count": 105,
+  "updatedAt": "2026-11-19 06:51:05",
+  "count": 88,
   "items": [
     {
       "code": "8390",
       "name": "金益鼎",
       "market": "上櫃",
       "exDate": "2026-11-11",
-      "daysLeft": -7,
+      "daysLeft": -8,
       "exType": "除權",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -17,7 +17,7 @@
       "name": "家登",
       "market": "上櫃",
       "exDate": "2026-11-12",
-      "daysLeft": -6,
+      "daysLeft": -7,
       "exType": "除息",
       "cashDividend": 9.9147456,
       "dividendYield": ""
@@ -27,7 +27,7 @@
       "name": "台新15年IG金融債",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.41,
       "dividendYield": ""
@@ -37,7 +37,7 @@
       "name": "台新A-BBB電信債",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.41,
       "dividendYield": ""
@@ -47,7 +47,7 @@
       "name": "台新美A公司債20+",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.062,
       "dividendYield": ""
@@ -57,7 +57,7 @@
       "name": "台新BBB投等債20+",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.05,
       "dividendYield": ""
@@ -67,7 +67,7 @@
       "name": "台新標普500",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.4,
       "dividendYield": ""
@@ -77,7 +77,7 @@
       "name": "台新標普科技精選",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.6,
       "dividendYield": ""
@@ -87,7 +87,7 @@
       "name": "台新特選IG債10+",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.047,
       "dividendYield": ""
@@ -97,7 +97,7 @@
       "name": "玉山嚴選非投債",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.148,
       "dividendYield": ""
@@ -107,7 +107,7 @@
       "name": "台新美國非投等債",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除息",
       "cashDividend": 0.066,
       "dividendYield": ""
@@ -117,259 +117,9 @@
       "name": "德宏",
       "market": "上櫃",
       "exDate": "2026-11-16",
-      "daysLeft": -2,
+      "daysLeft": -3,
       "exType": "除權",
       "cashDividend": 0.0,
-      "dividendYield": ""
-    },
-    {
-      "code": "006208",
-      "name": "富邦台50",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 3.88,
-      "dividendYield": ""
-    },
-    {
-      "code": "00690",
-      "name": "兆豐藍籌30",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 2.0,
-      "dividendYield": ""
-    },
-    {
-      "code": "00692",
-      "name": "富邦公司治理",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 1.721,
-      "dividendYield": ""
-    },
-    {
-      "code": "00730",
-      "name": "富邦臺灣優質高息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.11,
-      "dividendYield": ""
-    },
-    {
-      "code": "00878",
-      "name": "國泰永續高股息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 1.25,
-      "dividendYield": ""
-    },
-    {
-      "code": "00891",
-      "name": "中信關鍵半導體",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 1.55,
-      "dividendYield": ""
-    },
-    {
-      "code": "00892",
-      "name": "富邦台灣半導體",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 4.0,
-      "dividendYield": ""
-    },
-    {
-      "code": "00894",
-      "name": "中信小資高價30",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 1.0,
-      "dividendYield": ""
-    },
-    {
-      "code": "00900",
-      "name": "富邦特選高股息30",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.075,
-      "dividendYield": ""
-    },
-    {
-      "code": "00932",
-      "name": "兆豐永續高息等權",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.23,
-      "dividendYield": ""
-    },
-    {
-      "code": "00934",
-      "name": "中信成長高股息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.5,
-      "dividendYield": ""
-    },
-    {
-      "code": "00938",
-      "name": "凱基優選30",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.35,
-      "dividendYield": ""
-    },
-    {
-      "code": "00943",
-      "name": "兆豐電子高息等權",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.35,
-      "dividendYield": ""
-    },
-    {
-      "code": "00944",
-      "name": "野村趨勢動能高息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.109,
-      "dividendYield": ""
-    },
-    {
-      "code": "00945B",
-      "name": "凱基美國非投等債",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.097,
-      "dividendYield": ""
-    },
-    {
-      "code": "00952",
-      "name": "凱基台灣AI50",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.12,
-      "dividendYield": ""
-    },
-    {
-      "code": "00961",
-      "name": "FT臺灣永續高息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.09,
-      "dividendYield": ""
-    },
-    {
-      "code": "00963",
-      "name": "中信全球高股息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.1,
-      "dividendYield": ""
-    },
-    {
-      "code": "00964",
-      "name": "中信亞太高股息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.2,
-      "dividendYield": ""
-    },
-    {
-      "code": "009808",
-      "name": "華南永昌優選50",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.76,
-      "dividendYield": ""
-    },
-    {
-      "code": "00980A",
-      "name": "主動野村臺灣優選",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.688,
-      "dividendYield": ""
-    },
-    {
-      "code": "00981T",
-      "name": "平衡凱基雙核收息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.082,
-      "dividendYield": ""
-    },
-    {
-      "code": "00982A",
-      "name": "主動群益台灣強棒",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.78,
-      "dividendYield": ""
-    },
-    {
-      "code": "00982D",
-      "name": "主動富邦動態入息",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.052,
-      "dividendYield": ""
-    },
-    {
-      "code": "00983D",
-      "name": "主動富邦複合收益",
-      "market": "上市",
-      "exDate": "2026-11-17",
-      "daysLeft": -1,
-      "exType": "息",
-      "cashDividend": 0.061,
       "dividendYield": ""
     },
     {
@@ -377,7 +127,7 @@
       "name": "富邦全球投等債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.185,
       "dividendYield": ""
@@ -387,7 +137,7 @@
       "name": "富邦全球非投等債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.199,
       "dividendYield": ""
@@ -397,7 +147,7 @@
       "name": "群益AAA-AA公司債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.475,
       "dividendYield": ""
@@ -407,7 +157,7 @@
       "name": "群益投資級公用債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.45,
       "dividendYield": ""
@@ -417,7 +167,7 @@
       "name": "群益投等新興公債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.514,
       "dividendYield": ""
@@ -427,7 +177,7 @@
       "name": "國泰A級公司債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.47,
       "dividendYield": ""
@@ -437,7 +187,7 @@
       "name": "中信高評級公司債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.14,
       "dividendYield": ""
@@ -447,7 +197,7 @@
       "name": "中信優先金融債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.145,
       "dividendYield": ""
@@ -457,7 +207,7 @@
       "name": "凱基AAA至A公司債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.14,
       "dividendYield": ""
@@ -467,7 +217,7 @@
       "name": "凱基金融債20+",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.145,
       "dividendYield": ""
@@ -477,7 +227,7 @@
       "name": "國泰A級金融債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.5,
       "dividendYield": ""
@@ -487,7 +237,7 @@
       "name": "中信美國公債20年",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.315,
       "dividendYield": ""
@@ -497,7 +247,7 @@
       "name": "國泰A級醫療債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.4,
       "dividendYield": ""
@@ -507,7 +257,7 @@
       "name": "凱基IG精選15+",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.125,
       "dividendYield": ""
@@ -517,7 +267,7 @@
       "name": "凱基AAA-AA公司債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.35,
       "dividendYield": ""
@@ -527,7 +277,7 @@
       "name": "富邦新興投等債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.417,
       "dividendYield": ""
@@ -537,7 +287,7 @@
       "name": "富邦歐洲銀行債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.465,
       "dividendYield": ""
@@ -547,7 +297,7 @@
       "name": "群益1-5Y投資級債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.42,
       "dividendYield": ""
@@ -557,7 +307,7 @@
       "name": "中信美國公債0-1",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.56,
       "dividendYield": ""
@@ -567,7 +317,7 @@
       "name": "凱基ESG BBB債15+",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.15,
       "dividendYield": ""
@@ -577,7 +327,7 @@
       "name": "國泰10Y+金融債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.073,
       "dividendYield": ""
@@ -587,7 +337,7 @@
       "name": "群益ESG投等債20+",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.072,
       "dividendYield": ""
@@ -597,7 +347,7 @@
       "name": "中信優息投資級債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.045,
       "dividendYield": ""
@@ -607,7 +357,7 @@
       "name": "兆豐US優選投等債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.065,
       "dividendYield": ""
@@ -617,7 +367,7 @@
       "name": "主動聯博投等入息",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.114,
       "dividendYield": ""
@@ -627,7 +377,7 @@
       "name": "主動中信非投等債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.07,
       "dividendYield": ""
@@ -637,7 +387,7 @@
       "name": "FT投資級債20+",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.045,
       "dividendYield": ""
@@ -647,7 +397,7 @@
       "name": "野村10+澳洲公債",
       "market": "上櫃",
       "exDate": "2026-11-17",
-      "daysLeft": -1,
+      "daysLeft": -2,
       "exType": "除息",
       "cashDividend": 0.202,
       "dividendYield": ""
@@ -657,7 +407,7 @@
       "name": "復華富時高息低波",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "息",
       "cashDividend": 1.828,
       "dividendYield": ""
@@ -667,7 +417,7 @@
       "name": "復華台灣科技優息",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "息",
       "cashDividend": 0.38,
       "dividendYield": ""
@@ -677,7 +427,7 @@
       "name": "復華日本龍頭",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "息",
       "cashDividend": 3.02,
       "dividendYield": ""
@@ -687,7 +437,7 @@
       "name": "貝萊德A級公司債",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "息",
       "cashDividend": 0.073,
       "dividendYield": ""
@@ -697,27 +447,27 @@
       "name": "華邦電",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "息",
       "cashDividend": 2.0,
-      "dividendYield": "0.45%"
+      "dividendYield": "0.46%"
     },
     {
       "code": "5434",
       "name": "崇越",
       "market": "上市",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "權",
       "cashDividend": 0.0,
-      "dividendYield": "2.81%"
+      "dividendYield": "2.83%"
     },
     {
       "code": "00758B",
       "name": "復華能源債",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.62,
       "dividendYield": ""
@@ -727,7 +477,7 @@
       "name": "復華製藥債",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.65,
       "dividendYield": ""
@@ -737,7 +487,7 @@
       "name": "復華新興企業債",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.71,
       "dividendYield": ""
@@ -747,7 +497,7 @@
       "name": "復華20年美債",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.85,
       "dividendYield": ""
@@ -757,7 +507,7 @@
       "name": "主動貝萊德優投等",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.061,
       "dividendYield": ""
@@ -767,7 +517,7 @@
       "name": "主動復華金融債息",
       "market": "上櫃",
       "exDate": "2026-11-18",
-      "daysLeft": 0,
+      "daysLeft": -1,
       "exType": "除息",
       "cashDividend": 0.09,
       "dividendYield": ""
@@ -777,7 +527,7 @@
       "name": "兆豐國泰R2",
       "market": "上市",
       "exDate": "2026-11-19",
-      "daysLeft": 1,
+      "daysLeft": 0,
       "exType": "息",
       "cashDividend": 0.215313,
       "dividendYield": ""
@@ -787,17 +537,17 @@
       "name": "榮惠-KY創",
       "market": "上市",
       "exDate": "2026-11-19",
-      "daysLeft": 1,
+      "daysLeft": 0,
       "exType": "權",
       "cashDividend": 0.0,
-      "dividendYield": "3.76%"
+      "dividendYield": "3.72%"
     },
     {
       "code": "0051",
       "name": "元大中型100",
       "market": "上市",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "息",
       "cashDividend": 4.5,
       "dividendYield": ""
@@ -807,7 +557,7 @@
       "name": "元大MSCI金融",
       "market": "上市",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "息",
       "cashDividend": 2.7,
       "dividendYield": ""
@@ -817,7 +567,7 @@
       "name": "元大US高息特別股",
       "market": "上市",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "息",
       "cashDividend": 0.21,
       "dividendYield": ""
@@ -827,7 +577,7 @@
       "name": "元大臺灣ESG永續",
       "market": "上市",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "息",
       "cashDividend": 1.0,
       "dividendYield": ""
@@ -837,7 +587,7 @@
       "name": "穎漢",
       "market": "上市",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "權",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -847,9 +597,9 @@
       "name": "元大富櫃50",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.9,
       "dividendYield": ""
     },
     {
@@ -857,9 +607,9 @@
       "name": "元大美債20年",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.28,
       "dividendYield": ""
     },
     {
@@ -867,9 +617,9 @@
       "name": "元大10年IG銀行債",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.38,
       "dividendYield": ""
     },
     {
@@ -877,9 +627,9 @@
       "name": "元大優息美債",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.033,
       "dividendYield": ""
     },
     {
@@ -887,9 +637,9 @@
       "name": "元大優息投等債",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.043,
       "dividendYield": ""
     },
     {
@@ -897,7 +647,7 @@
       "name": "第一金優選非投債",
       "market": "上櫃",
       "exDate": "2026-11-20",
-      "daysLeft": 2,
+      "daysLeft": 1,
       "exType": "除息",
       "cashDividend": 0.064,
       "dividendYield": ""
@@ -907,7 +657,7 @@
       "name": "永豐智能車供應鏈",
       "market": "上市",
       "exDate": "2026-11-24",
-      "daysLeft": 6,
+      "daysLeft": 5,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -917,7 +667,7 @@
       "name": "永豐ESG低碳高息",
       "market": "上市",
       "exDate": "2026-11-24",
-      "daysLeft": 6,
+      "daysLeft": 5,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -927,7 +677,7 @@
       "name": "科定",
       "market": "上市",
       "exDate": "2026-11-24",
-      "daysLeft": 6,
+      "daysLeft": 5,
       "exType": "息",
       "cashDividend": 2.6,
       "dividendYield": "4.33%"
@@ -937,7 +687,7 @@
       "name": "永豐ESG銀行債15+",
       "market": "上櫃",
       "exDate": "2026-11-24",
-      "daysLeft": 6,
+      "daysLeft": 5,
       "exType": "除息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -947,7 +697,7 @@
       "name": "國泰收益非投等債",
       "market": "上櫃",
       "exDate": "2026-11-24",
-      "daysLeft": 6,
+      "daysLeft": 5,
       "exType": "除息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -957,7 +707,7 @@
       "name": "國泰日本不動產",
       "market": "上市",
       "exDate": "2026-11-26",
-      "daysLeft": 8,
+      "daysLeft": 7,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -967,7 +717,7 @@
       "name": "達爾膚",
       "market": "上櫃",
       "exDate": "2026-11-26",
-      "daysLeft": 8,
+      "daysLeft": 7,
       "exType": "除息",
       "cashDividend": 4.0,
       "dividendYield": ""
@@ -977,27 +727,27 @@
       "name": "神達",
       "market": "上市",
       "exDate": "2026-11-27",
-      "daysLeft": 9,
+      "daysLeft": 8,
       "exType": "權",
       "cashDividend": 0.0,
-      "dividendYield": "6.49%"
+      "dividendYield": "6.69%"
     },
     {
       "code": "2543",
       "name": "皇昌",
       "market": "上市",
       "exDate": "2026-11-30",
-      "daysLeft": 12,
+      "daysLeft": 11,
       "exType": "息",
       "cashDividend": 0.5,
-      "dividendYield": "5.60%"
+      "dividendYield": "5.76%"
     },
     {
       "code": "00939",
       "name": "統一台灣高息動能",
       "market": "上市",
       "exDate": "2026-12-01",
-      "daysLeft": 13,
+      "daysLeft": 12,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -1007,7 +757,7 @@
       "name": "主動聯博全球非投",
       "market": "上市",
       "exDate": "2026-12-01",
-      "daysLeft": 13,
+      "daysLeft": 12,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -1017,7 +767,7 @@
       "name": "FT金融債10+",
       "market": "上櫃",
       "exDate": "2026-12-01",
-      "daysLeft": 13,
+      "daysLeft": 12,
       "exType": "除息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -1027,7 +777,7 @@
       "name": "豪展",
       "market": "上櫃",
       "exDate": "2026-12-01",
-      "daysLeft": 13,
+      "daysLeft": 12,
       "exType": "除息",
       "cashDividend": 0.5,
       "dividendYield": ""
@@ -1037,7 +787,7 @@
       "name": "主動中信台灣收益",
       "market": "上市",
       "exDate": "2026-12-02",
-      "daysLeft": 14,
+      "daysLeft": 13,
       "exType": "息",
       "cashDividend": 0.0,
       "dividendYield": ""
@@ -1047,6 +797,86 @@
       "name": "凱基A級公司債",
       "market": "上櫃",
       "exDate": "2026-12-02",
+      "daysLeft": 13,
+      "exType": "除息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "00946",
+      "name": "群益科技高息成長",
+      "market": "上市",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "00953B",
+      "name": "群益優選非投等債",
+      "market": "上市",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "00985B",
+      "name": "群益ESG投等債0-5",
+      "market": "上市",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "020038",
+      "name": "元大ESG配息N",
+      "market": "上市",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "息",
+      "cashDividend": 0.491,
+      "dividendYield": ""
+    },
+    {
+      "code": "1437",
+      "name": "勤益控",
+      "market": "上市",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "息",
+      "cashDividend": 0.624652,
+      "dividendYield": "3.22%"
+    },
+    {
+      "code": "00959B",
+      "name": "大華投等美債15Y+",
+      "market": "上櫃",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "除息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "00983B",
+      "name": "大華優利美公債20",
+      "market": "上櫃",
+      "exDate": "2026-12-03",
+      "daysLeft": 14,
+      "exType": "除息",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
+      "code": "00984B",
+      "name": "大華優利美A債15",
+      "market": "上櫃",
+      "exDate": "2026-12-03",
       "daysLeft": 14,
       "exType": "除息",
       "cashDividend": 0.0,
