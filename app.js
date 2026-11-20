@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261120.02');
+        const appVersion = ref('v2.20261120.03');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -852,7 +852,8 @@ createApp({
 
         const syncStatus = ref({
             loading: false,
-            message: ''
+            message: '',
+            percent: 0
         });
 
         // ─── 權限閘門：必須綁定 Google 帳號才可完整解鎖戰情中樞 ───
@@ -1958,54 +1959,64 @@ createApp({
 
             if (syncStatus.value.loading) return;
 
-            // 🌟 核心流程：先檢查並更新網頁，若有新版會先重整，重整後自動接續同步 DB
+            // 🌟 單一平滑原子進度啟動 (0% ➔ 100%)
             syncStatus.value.loading = true;
-            syncStatus.value.message = '正在檢查系統版本...';
+            syncStatus.value.percent = 5;
+            syncStatus.value.message = '正在初始化同步通道...';
+
             try {
                 const hasNewVersion = await checkRemoteVersionUpdate(true);
                 if (hasNewVersion) {
+                    syncStatus.value.percent = 15;
                     syncStatus.value.message = '已發現新版本，即將載入...';
                     return; // 終止本次同步，等待重載後以最新代碼自動接續執行
                 }
             } catch (eVer) {}
 
-            syncStatus.value.message = '正在同步全市場行情...';
+            syncStatus.value.percent = 15;
+            syncStatus.value.message = '檢查大盤最新行情...';
 
             let snapInfo = null;
-
             try {
                 // 1. 同步全台股行情快照 (內部自動判斷本機下載時間 >= 大腦產出時間時智慧略過)
                 snapInfo = await syncMarketSnapshot();
             } catch (err) {
-                console.error("行情快照同步失敗:", err);
-                showToast(`⚠️ 行情同步提醒: ${err.message}`, 4000);
+                console.error("行情快照同步提醒:", err);
             }
 
             if (snapInfo && snapInfo.skipped) {
-                // ⚡ 本機快照已是最新：略過 60D 歷史包下載，直接執行個人帳本雙向同步 (無感秒殺)
-                showToast("⚡ 本機行情已是最新，略過重複下載，同步資料庫", 2200);
+                // ⚡ 本機快照已是最新：進度條於 150ms 內平滑滑向 40%，無縫過渡至個人帳本同步
+                syncStatus.value.percent = 40;
+                syncStatus.value.message = '大盤行情已就緒，連接個人帳本...';
+                await new Promise(r => setTimeout(r, 150));
             } else {
                 try {
-                    // 1.1 大腦有新產出，同步最新 60D 歷史技術指標時序包 (確保一鍵複製與走勢圖同步推移至最新開市日)
-                    syncStatus.value.message = '正在同步歷史技術指標時序...';
+                    syncStatus.value.percent = 25;
+                    syncStatus.value.message = '大盤行情更新中...';
                     await loadAllStockHistory(true);
                 } catch (errHist) {
                     console.warn("歷史時序同步提醒:", errHist);
                 }
+                syncStatus.value.percent = 40;
+                syncStatus.value.message = '市場數據快取完成，連接個人帳本...';
+                await new Promise(r => setTimeout(r, 100));
             }
 
-            // 2. 若有 Google 登入，同時執行個人帳本雙向同步
+            // 2. 若有 Google 登入，同時執行個人帳本雙向同步 (40% ➔ 100%)
             if (googleUser.value.isLoggedIn && googleAccessToken.value) {
                 try {
-                    syncStatus.value.message = '正在同步個人雲端帳本...';
                     await executeTwoWaySync(isManual);
                 } catch (err) {
                     console.error("雲端帳本同步失敗:", err);
                 }
+            } else {
+                syncStatus.value.percent = 100;
+                syncStatus.value.message = '同步完成！';
+                await new Promise(r => setTimeout(r, 300));
+                syncStatus.value.loading = false;
+                syncStatus.value.percent = 0;
+                syncStatus.value.message = '';
             }
-
-            syncStatus.value.loading = false;
-            syncStatus.value.message = '';
 
             // 3. 自動標記當天當前時段為已同步/已通知，並關閉橫條
             try {
@@ -11195,7 +11206,8 @@ createApp({
             }
 
             syncStatus.value.loading = true;
-            syncStatus.value.message = '正在取得雲端最新 sentinel_vault.db (全量鏡像基底)...';
+            syncStatus.value.percent = 48;
+            syncStatus.value.message = '正在連線 Google 雲端中樞...';
 
             try {
                 const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='sentinel_vault.db' and trashed=false&fields=files(id,name,modifiedTime,size,description)`;
@@ -11226,6 +11238,7 @@ createApp({
 
                 const targetFile = searchData.files[0];
                 cloudDbStats.value.fileId = targetFile.id;
+                syncStatus.value.percent = 62;
                 syncStatus.value.message = '正在下載雲端完整資料庫主檔...';
 
                 const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${targetFile.id}?alt=media`, {
@@ -11267,7 +11280,8 @@ createApp({
                 }
 
                 // 🎯【核心升級：全量二進位鏡像合流 (以雲端完整 DB 為基底，全量保留現價/指標/字典)】
-                syncStatus.value.message = '正在執行雙向合流 (保留全量現價報價與指標)...';
+                syncStatus.value.percent = 76;
+                syncStatus.value.message = '正在比對雲端帳本與雙向合流...';
 
                 // 🛡️ 合流前再次確認本機 dbInstance 擁有者簽章與當前帳號相符，若不符則不將舊快取混入雲端
                 const activeOwner = (googleUser.value.email || '').trim().toLowerCase();
@@ -11930,6 +11944,13 @@ createApp({
                 const uncompletedNote = uncompletedCodes.length > 0 
                     ? `\n⚡【未完待續】上次尚餘 ${uncompletedCodes.length} 檔 (${uncompletedStr})，已自動打勾！` 
                     : '';
+                syncStatus.value.percent = 100;
+                syncStatus.value.message = '同步完成！';
+                await new Promise(r => setTimeout(r, 250));
+                syncStatus.value.loading = false;
+                syncStatus.value.percent = 0;
+                syncStatus.value.message = '';
+
                 const syncTitle = isManual 
                     ? '🤝【全量鏡像同步成功】' 
                     : '🔔【雲端自動對齊完成】';
@@ -11945,6 +11966,8 @@ createApp({
                 alert("❌ 雙向同步失敗：" + err.message);
             } finally {
                 syncStatus.value.loading = false;
+                syncStatus.value.percent = 0;
+                syncStatus.value.message = '';
             }
         };
 
