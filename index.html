@@ -492,26 +492,9 @@
                             </span>
                         </div>
 
-                        <!-- 底部/右側：[⚡ 一鍵派工] ＋ [☁️ 同步雲端] ＋ [💎 生成戰報] ＋ [📋 複製] -->
+                        <!-- 底部/右側：[💎 生成戰報] ＋ [📋 複製] -->
                         <div class="flex items-center justify-end space-x-1.5 shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0"
                              :class="theme === 'dark' ? 'border-slate-800/80' : 'border-slate-100'">
-                            <!-- ⚡ 一鍵全域派工按鈕 (多選批次排隊) -->
-                            <button @click="openBatchDispatchModal"
-                                    class="px-2.5 py-1 rounded-lg text-xs font-bold border border-amber-400/30 transition flex items-center justify-center shadow-sm active:scale-95 shrink-0 bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 text-white"
-                                    title="一鍵勾選美股/台股/ETF/總經四大戰報，交由雲端背景排隊推導">
-                                <span class="text-xs leading-none">⚡</span>
-                                <span class="ml-1 font-semibold">一鍵派工</span>
-                            </button>
-
-                            <!-- ☁️ 雲端戰報同步按鈕 -->
-                            <button @click="fetchCloudTopicReports(false)"
-                                    :disabled="isFetchingCloudTopics"
-                                    class="px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center justify-center active:scale-95 shrink-0"
-                                    :class="theme === 'dark' ? 'bg-slate-800 text-sky-300 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 text-sky-700 border-slate-200 hover:bg-slate-200'"
-                                    :title="cloudTopicsLastSync ? `上次雲端同步: ${cloudTopicsLastSync}，點擊重新檢查` : '檢查並同步雲端最新全域戰報'">
-                                <i :class="isFetchingCloudTopics ? 'fa-solid fa-arrows-rotate fa-spin' : 'fa-solid fa-cloud-arrow-down'" class="text-[11px]"></i>
-                                <span class="ml-1 text-[11px] font-medium">同步</span>
-                            </button>
 
                             <!-- Gem 按鈕 (靜態 [💎 生成戰報] / 呼叫中旋轉 [🔄 更新戰報]) -->
                             <button @click="openTopicReportPicker(macroSubTab)" 
@@ -4000,6 +3983,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261120.01"></script>
+    <script src="app.js?v=2.20261120.02"></script>
 </body>
 </html>
