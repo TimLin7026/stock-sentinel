@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-20 06:49:50",
-  "count": 93,
+  "updatedAt": "2026-11-20 08:30:10",
+  "count": 87,
   "items": [
     {
       "code": "8390",
@@ -403,66 +403,6 @@
       "dividendYield": ""
     },
     {
-      "code": "00731",
-      "name": "復華富時高息低波",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "息",
-      "cashDividend": 1.828,
-      "dividendYield": ""
-    },
-    {
-      "code": "00929",
-      "name": "復華台灣科技優息",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "息",
-      "cashDividend": 0.38,
-      "dividendYield": ""
-    },
-    {
-      "code": "00949",
-      "name": "復華日本龍頭",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "息",
-      "cashDividend": 3.02,
-      "dividendYield": ""
-    },
-    {
-      "code": "00991B",
-      "name": "貝萊德A級公司債",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "息",
-      "cashDividend": 0.073,
-      "dividendYield": ""
-    },
-    {
-      "code": "2344",
-      "name": "華邦電",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "息",
-      "cashDividend": 2.0,
-      "dividendYield": "0.51%"
-    },
-    {
-      "code": "5434",
-      "name": "崇越",
-      "market": "上市",
-      "exDate": "2026-11-18",
-      "daysLeft": -2,
-      "exType": "權",
-      "cashDividend": 0.0,
-      "dividendYield": "3.10%"
-    },
-    {
       "code": "00758B",
       "name": "復華能源債",
       "market": "上櫃",
@@ -659,7 +599,7 @@
       "exDate": "2026-11-24",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 7.0,
       "dividendYield": ""
     },
     {
@@ -669,7 +609,7 @@
       "exDate": "2026-11-24",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.75,
       "dividendYield": ""
     },
     {

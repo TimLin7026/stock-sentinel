@@ -1,5 +1,5 @@
 {
-  "run_time": "2026-11-20 14:47:40",
+  "run_time": "2026-11-20 16:28:38",
   "status": "READY",
   "progress": "全流程清洗審計合格，最新 [20261120] 快照已就緒提供更新！",
   "missing_dates": [
@@ -15,8 +15,7 @@
       "status": "OK"
     },
     "chip": {
-      "count": 2380,
-      "elapsed": 0.0,
+      "count": 924,
       "status": "OK"
     },
     "margin": {
@@ -26,7 +25,7 @@
     },
     "indicators": {
       "count": 2390,
-      "elapsed": 68.56,
+      "elapsed": 52.3,
       "status": "OK"
     }
   },
@@ -181,10 +180,6 @@
         "name": "主動永豐科技趨勢"
       },
       {
-        "code": "00411A",
-        "name": "主動統一前沿科技"
-      },
-      {
         "code": "00412A",
         "name": "主動安聯亞半導體"
       },
@@ -215,14 +210,18 @@
       {
         "code": "0051",
         "name": "元大中型100"
+      },
+      {
+        "code": "0052",
+        "name": "富邦科技"
       }
     ]
   },
   "target_date": "20261120",
-  "total_elapsed": 107.73,
-  "snapshot_size_kb": 503.2,
-  "next_scheduled_run": "2026/11/20 (週五) 16:30",
-  "next_scheduled_iso": "2026-11-20T16:30:00",
+  "total_elapsed": 75.76,
+  "snapshot_size_kb": 514.5,
+  "next_scheduled_run": "2026/11/20 (週五) 21:10",
+  "next_scheduled_iso": "2026-11-20T21:10:00",
   "schedule_times": [
     "14:40",
     "16:30",
