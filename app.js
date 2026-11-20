@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261118.01');
+        const appVersion = ref('v2.20261120.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -7262,6 +7262,13 @@ createApp({
         const isFetchingCloudTopics = ref(false);
         const cloudTopicsLastSync = ref(localStorage.getItem('sentinel_cloud_topics_last_sync') || '');
 
+        const batchTopicOptions = [
+            { key: 'global', name: '美股大勢', icon: '🌐' },
+            { key: 'tw', name: '台股籌碼', icon: '🇹🇼' },
+            { key: 'etf', name: 'ETF焦點', icon: '📈' },
+            { key: 'macro', name: '全球總經', icon: '🏦' }
+        ];
+
         const openBatchTopicModal = () => {
             if (!selectedBatchTopics.value || selectedBatchTopics.value.length === 0) {
                 selectedBatchTopics.value = ['global', 'tw', 'etf', 'macro'];
@@ -8435,23 +8442,46 @@ createApp({
             });
         });
 
-        // 僅勾選過期 (預設)
+        // 僅勾選過期 (預設：個股 ＋ 全域專題雙重連動)
         const selectBatchOnlyExpired = () => {
             const expiredUids = filteredBatchCandidateStocks.value
                 .filter(s => s.isReportExpired)
                 .map(s => s.uid);
             selectedBatchStocks.value = [...expiredUids];
+
+            // 🌐 全域四大專題同步勾選過期項
+            const expiredTopics = batchTopicOptions
+                .filter(t => !isTopicReportFresh(t.key))
+                .map(t => t.key);
+            selectedBatchTopics.value = [...expiredTopics];
         };
 
-        // 全選
+        // 全選 (個股 ＋ 全域專題)
         const selectAllBatchStocks = () => {
             selectedBatchStocks.value = filteredBatchCandidateStocks.value.map(s => s.uid);
+            selectedBatchTopics.value = batchTopicOptions.map(t => t.key);
         };
 
-        // 全取消
+        // 全取消 (個股 ＋ 全域專題)
         const clearAllBatchStocks = () => {
             selectedBatchStocks.value = [];
+            selectedBatchTopics.value = [];
         };
+
+        // 🎯 批次派工底部按鈕動態文字
+        const batchDispatchButtonText = computed(() => {
+            const topicCount = (selectedBatchTopics.value || []).length;
+            const stockCount = (selectedBatchStocks.value || []).length;
+            if (topicCount > 0 && stockCount > 0) {
+                return `派工至 Google 雲端背景 (全域 ${topicCount} 項 ＋ 個股 ${stockCount} 檔)`;
+            } else if (topicCount > 0) {
+                return `派工至 Google 雲端背景 (全域 ${topicCount} 項)`;
+            } else if (stockCount > 0) {
+                return `派工至 Google 雲端背景 (個股 ${stockCount} 檔)`;
+            } else {
+                return '請至少勾選一項標的';
+            }
+        });
 
         // 🎯 雙向強韌相容判定：判斷個股是否在已勾選清單中
         const isBatchStockSelected = (stk) => {
@@ -8663,7 +8693,7 @@ createApp({
             showBatchDispatchModal.value = true;
         };
 
-        // 派工至 Google 雲端背景 (GAS)
+        // 派工至 Google 雲端背景 (GAS) — 🚀 支援專題與個股大合流一體化派工
         const dispatchBatchToCloudGas = async () => {
             // 🛑 互斥防呆：若雲端已有任務執行中，拒絕新派工
             if (isCloudBatchRunning.value) {
@@ -8673,8 +8703,8 @@ createApp({
                 return;
             }
 
-            if (selectedBatchStocks.value.length === 0) {
-                alert("⚠️ 請至少勾選一檔股票進行派工！");
+            if (selectedBatchStocks.value.length === 0 && selectedBatchTopics.value.length === 0) {
+                alert("⚠️ 請至少勾選一項全域專題或一檔個股進行派工！");
                 return;
             }
 
@@ -8731,57 +8761,83 @@ createApp({
                 }
             }
 
+            const topicCount = (selectedBatchTopics.value || []).length;
+            const stockCount = (selectedBatchStocks.value || []).length;
+            let dispatchSummary = "";
+            if (topicCount > 0 && stockCount > 0) {
+                dispatchSummary = `全域專題 ${topicCount} 項 ＋ 個股 ${stockCount} 檔`;
+            } else if (topicCount > 0) {
+                dispatchSummary = `全域專題 ${topicCount} 項`;
+            } else {
+                dispatchSummary = `個股 ${stockCount} 檔`;
+            }
+
             isDispatchingBatch.value = true;
-            showToast(`🚀 正在組裝 ${selectedBatchStocks.value.length} 檔技術指標並派工至 Google 雲端...`, 4000);
+            showToast(`🚀 正在組裝 ${dispatchSummary} 並派工至 Google 雲端背景...`, 4000);
 
             try {
-                // 1. 取得系統提示詞
-                const systemPrompt = await fetchGeminiPrompt();
-
-                // 2. 逐檔組裝指標報告 (精準對齊 券商帳戶成本與股數)
-                const payloadStocks = [];
-                for (const itemKey of selectedBatchStocks.value) {
-                    let targetCode = itemKey;
-                    let targetBroker = '關注';
-                    if (itemKey.includes('_')) {
-                        const parts = itemKey.split('_');
-                        targetCode = parts[0];
-                        targetBroker = parts.slice(1).join('_') || '關注';
-                    }
-                    const padCode = String(targetCode).padStart(4, '0');
-                    const matchedStock = (stockList.value || []).find(s => 
-                        String(s.code).padStart(4, '0') === padCode && (s.broker || '關注') === targetBroker
-                    ) || (stockList.value || []).find(s => String(s.code).padStart(4, '0') === padCode);
-                    
-                    const stockObj = matchedStock ? { ...matchedStock, broker: targetBroker } : {
-                        code: padCode,
-                        name: stockDictMap.value[padCode] || padCode,
-                        broker: targetBroker,
-                        shares: 0,
-                        costPrice: 0
+                // 1. 組裝全域專題 (若有勾選)
+                const payloadTopics = (selectedBatchTopics.value || []).map(k => {
+                    const cfg = MACRO_TOPIC_CONFIGS[k] || {};
+                    const promptCfg = (typeof INLINED_TOPIC_PROMPTS !== 'undefined' && INLINED_TOPIC_PROMPTS[k]) ? INLINED_TOPIC_PROMPTS[k] : {};
+                    return {
+                        topic: k,
+                        name: cfg.name || k,
+                        query: promptCfg.query || '',
+                        systemPrompt: promptCfg.systemPrompt || ''
                     };
-                    const reportText = await buildStock10DayReport(stockObj);
-                    if (reportText) {
-                        payloadStocks.push({
-                            uid: `${padCode}_${targetBroker}`,
+                });
+
+                // 2. 組裝個股技術指標 (若有勾選)
+                let systemPrompt = "";
+                const payloadStocks = [];
+                if (stockCount > 0) {
+                    systemPrompt = await fetchGeminiPrompt();
+                    for (const itemKey of selectedBatchStocks.value) {
+                        let targetCode = itemKey;
+                        let targetBroker = '關注';
+                        if (itemKey.includes('_')) {
+                            const parts = itemKey.split('_');
+                            targetCode = parts[0];
+                            targetBroker = parts.slice(1).join('_') || '關注';
+                        }
+                        const padCode = String(targetCode).padStart(4, '0');
+                        const matchedStock = (stockList.value || []).find(s => 
+                            String(s.code).padStart(4, '0') === padCode && (s.broker || '關注') === targetBroker
+                        ) || (stockList.value || []).find(s => String(s.code).padStart(4, '0') === padCode);
+                        
+                        const stockObj = matchedStock ? { ...matchedStock, broker: targetBroker } : {
                             code: padCode,
-                            name: stockObj.name || padCode,
+                            name: stockDictMap.value[padCode] || padCode,
                             broker: targetBroker,
-                            reportText: reportText,
-                            systemPrompt: systemPrompt
-                        });
+                            shares: 0,
+                            costPrice: 0
+                        };
+                        const reportText = await buildStock10DayReport(stockObj);
+                        if (reportText) {
+                            payloadStocks.push({
+                                uid: `${padCode}_${targetBroker}`,
+                                code: padCode,
+                                name: stockObj.name || padCode,
+                                broker: targetBroker,
+                                reportText: reportText,
+                                systemPrompt: systemPrompt
+                            });
+                        }
                     }
                 }
 
-                if (payloadStocks.length === 0) {
-                    throw new Error("無法重組所選個股的技術指標文本，請確認歷史行情已載入！");
+                if (payloadTopics.length === 0 && payloadStocks.length === 0) {
+                    throw new Error("無法重組所選之專題或個股指標文本，請確認歷史行情已載入！");
                 }
 
                 // 3. 發送至 GAS Web App (採用非同步秒派工 Fire-and-Forget，不阻斷手機端)
                 const payload = {
+                    action: "batch_dispatch",
                     apiKey: apiKey,
                     model: 'gemini-3.5-flash-lite', // 🛡️ 批次派工鎖定 3.5-Lite 每日 500 次高額度主力模型，絕不耗損 3.8 珍貴限額
                     gasUrl: gasUrl,
+                    topics: payloadTopics,
                     stocks: payloadStocks
                 };
 
@@ -8796,25 +8852,36 @@ createApp({
                 // ⏳ 短暫等待 800ms 確保 HTTP 請求已抵達 Google 伺服器
                 await new Promise(r => setTimeout(r, 800));
 
-                // 💾 核心防呆記錄：將本次派工的股票 UID (股票_券商) 存入 localStorage，便於精準比對各帳戶未完成股票
-                const dispatchedCodes = payloadStocks.map(s => s.uid || (s.code + '_' + (s.broker || '關注')));
-                try {
-                    localStorage.setItem('sentinel_last_dispatched_codes', JSON.stringify(dispatchedCodes));
-                } catch (eStoreCodes) {}
+                // 💾 核心防呆記錄：將本次派工的股票 UID (股票_券商) 存入 localStorage
+                if (payloadStocks.length > 0) {
+                    const dispatchedCodes = payloadStocks.map(s => s.uid || (s.code + '_' + (s.broker || '關注')));
+                    try {
+                        localStorage.setItem('sentinel_last_dispatched_codes', JSON.stringify(dispatchedCodes));
+                    } catch (eStoreCodes) {}
+                }
 
                 fetchCloudBatchStatus();
                 showBatchDispatchModal.value = false;
-                const cleanCodes = payloadStocks.map(s => s.code);
-                const codeSummary = cleanCodes.length > 5
-                    ? `${cleanCodes.slice(0, 5).join(', ')}... 等共 ${cleanCodes.length} 檔`
-                    : cleanCodes.join(', ');
+
+                const alertDetail = [];
+                if (payloadTopics.length > 0) {
+                    alertDetail.push(`• 全域專題：共 ${payloadTopics.length} 項 (${payloadTopics.map(t => t.name).join(', ')})`);
+                }
+                if (payloadStocks.length > 0) {
+                    const cleanCodes = payloadStocks.map(s => s.code);
+                    const codeSummary = cleanCodes.length > 5
+                        ? `${cleanCodes.slice(0, 5).join(', ')}... 等共 ${cleanCodes.length} 檔`
+                        : cleanCodes.join(', ');
+                    alertDetail.push(`• 個股名單：共 ${cleanCodes.length} 檔 (${codeSummary})`);
+                }
+
                 alert(
-                    `🎉【派工成功！已交由雲端背景推導】\n` +
-                    `• 派工名單：共 ${cleanCodes.length} 檔 (${codeSummary})\n` +
-                    `• 背景執行：您可安心關閉網頁或鎖屏，雲端將自動逐檔存檔。\n` +
+                    `🎉【大合流派工成功！已交由雲端背景循序推導】\n` +
+                    alertDetail.join('\n') + '\n' +
+                    `• 背景執行：您可安心關閉網頁或鎖屏，雲端將依序推導並自動落地存檔。\n` +
                     `• 進度追蹤：隨時點擊「⚡ 批次戰報」可查進度與合流戰報！`
                 );
-            } catch (err) {
+
                 console.error("批次派工失敗:", err);
                 alert("❌ 批次派工失敗：" + err.message);
             } finally {
@@ -12103,6 +12170,8 @@ createApp({
         });
 
         return {
+            batchTopicOptions,
+            batchDispatchButtonText,
             appVersion,
             appLayout,
             toggleAppLayout,

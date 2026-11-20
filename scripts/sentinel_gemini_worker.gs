@@ -142,16 +142,21 @@ function doPost(e) {
     }
 
     const apiKey = (payload.apiKey || "").trim();
-    const model = (payload.model || "gemini-3.8-flash").trim();
-    const stocks = payload.stocks || [];
+    const model = (payload.model || "gemini-3.5-flash-lite").trim();
+    const stocks = Array.isArray(payload.stocks) ? payload.stocks : [];
+    const topics = Array.isArray(payload.topics) ? payload.topics : [];
 
     if (!apiKey) {
       return createJsonResponse({ ok: false, error: "未提供有效的 Gemini API Key" }, 400);
     }
 
-    if (!Array.isArray(stocks) || stocks.length === 0) {
-      return createJsonResponse({ ok: false, error: "待推導股票清單為空" }, 400);
+    if (stocks.length === 0 && topics.length === 0) {
+      return createJsonResponse({ ok: false, error: "待推導專題與股票清單皆為空" }, 400);
     }
+
+    const totalCount = topics.length + stocks.length;
+    const batchId = "batch_" + new Date().getTime();
+    const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
 
     // 🛑 併發互斥防呆檢查：若有執行中的任務且心跳在 4 分鐘內，拒絕新派工
     const currentLock = getBatchLockStatus();
@@ -166,18 +171,17 @@ function doPost(e) {
     }
 
     // 🧹 核心設計 1：每次收到新派工，徹底清空除錯日誌，從乾淨第 1 行開始！
-    logToDrive("🚀 [新派工抵達] 收到全新派工，總計 " + stocks.length + " 檔！徹底清空舊日誌與舊清單...", true);
+    logToDrive("🚀 [大合流派工抵達] 收到全新派工，專題 " + topics.length + " 項 ＋ 個股 " + stocks.length + " 檔 (共 " + totalCount + " 項)！徹底清空舊日誌與舊清單...", true);
 
     // 🧹 同步初始化舊的 gem_strategy_batch.json，確保本次全新派工戰報乾淨累積
-    try {
-      const oldBatchFile = getValidDriveFile(BATCH_FILE_NAME);
-      if (oldBatchFile) {
-        oldBatchFile.setContent("[]");
-      }
-    } catch (eCleanBatch) {}
-
-    const batchId = "batch_" + new Date().getTime();
-    const startTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+    if (stocks.length > 0) {
+      try {
+        const oldBatchFile = getValidDriveFile(BATCH_FILE_NAME);
+        if (oldBatchFile) {
+          oldBatchFile.setContent("[]");
+        }
+      } catch (eCleanBatch) {}
+    }
 
     // 📋 核心設計 2：每次上傳清空並寫入全新的實體清單檔案 (gem_batch_manifest.json)
     const manifestData = {
@@ -208,16 +212,19 @@ function doPost(e) {
     logToDrive("💾 [實體清單建立] " + MANIFEST_FILE_NAME + " 建立完成，共計 " + stocks.length + " 檔待執行！");
 
     // 🔒 任務啟動：初始化狀態日誌
+    const firstDisplayName = topics.length > 0 ? ("🌐 " + (topics[0].name || topics[0].topic)) : (manifestData.stocks[0]?.name || "");
+    const firstDisplayCode = topics.length > 0 ? topics[0].topic : (manifestData.stocks[0]?.code || "");
+
     saveStatusReportToCloudDrive({
       status: "running",
       batchId: batchId,
       startTime: startTimeStr,
       lastHeartbeat: new Date().getTime(),
-      totalRequested: stocks.length,
+      totalRequested: totalCount,
       completedCount: 0,
       failedCount: 0,
-      currentStock: manifestData.stocks[0]?.name || "",
-      currentCode: manifestData.stocks[0]?.code || "",
+      currentStock: firstDisplayName,
+      currentCode: firstDisplayCode,
       progressPercent: 0,
       completedCodes: [],
       failedList: [],
@@ -225,15 +232,116 @@ function doPost(e) {
       breakReason: ""
     });
 
-    logToDrive("🏃‍♂️ [啟動事務循環] 正式進入 processManifestLoop，逐筆推導並逐筆註記 done 直到全數完成！");
+    let completedTopicsCount = 0;
+    const completedTopicCodes = [];
 
-    // 🚀 核心設計 3：啟動推導 Loop，直接傳入記憶體物件，徹底杜絕 Google Drive 剛建檔時的查詢延遲！
-    processManifestLoop(apiKey, model, manifestData);
+    // 🌐 第一階段：循序推導全域專題戰報 (若有)
+    if (topics.length > 0) {
+      let topicData = { updatedAt: "", reports: {} };
+      const topicFile = getValidDriveFile(TOPIC_REPORTS_FILE_NAME);
+      if (topicFile) {
+        try {
+          const rawContent = topicFile.getBlob().getDataAsString("UTF-8");
+          if (rawContent && rawContent.trim().startsWith("{")) {
+            topicData = JSON.parse(rawContent);
+            if (!topicData.reports) topicData.reports = {};
+          }
+        } catch (eParse) {}
+      }
+
+      for (let i = 0; i < topics.length; i++) {
+        const item = topics[i];
+        const tKey = (item.topic || "").toLowerCase();
+        const tName = item.name || tKey;
+
+        saveStatusReportToCloudDrive({
+          status: "running",
+          batchId: batchId,
+          startTime: startTimeStr,
+          lastHeartbeat: new Date().getTime(),
+          totalRequested: totalCount,
+          completedCount: completedTopicsCount,
+          failedCount: 0,
+          currentStock: "🌐 " + tName,
+          currentCode: tKey,
+          progressPercent: Math.round((completedTopicsCount / totalCount) * 100),
+          completedCodes: completedTopicCodes,
+          failedList: [],
+          isCircuitBroken: false,
+          breakReason: ""
+        });
+
+        try {
+          const singleResult = handleTopicReportRequest({
+            topic: tKey,
+            name: tName,
+            apiKey: apiKey,
+            model: model,
+            query: item.query || "",
+            systemPrompt: item.systemPrompt || ""
+          });
+
+          if (singleResult && singleResult.ok && singleResult.content) {
+            const itemDoneTime = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+            topicData.reports[tKey] = {
+              topic: tKey,
+              name: tName,
+              content: singleResult.content,
+              updatedAt: itemDoneTime,
+              model: model
+            };
+            topicData.updatedAt = itemDoneTime;
+            completedTopicsCount++;
+            completedTopicCodes.push(tKey);
+            saveTopicReportsToCloudDrive(topicData);
+            logToDrive("✅ [專題 " + (i + 1) + "/" + topics.length + "] 「" + tName + "」推導完畢並存入 Drive！");
+          }
+        } catch (eTopic) {
+          logToDrive("❌ 專題「" + tName + "」推導例外: " + eTopic.toString());
+        }
+
+        if (i < topics.length - 1) {
+          Utilities.sleep(1200);
+        }
+      }
+    }
+
+    // 📈 第二階段：推導個股技術戰報 (若有)
+    if (stocks.length > 0) {
+      logToDrive("🏃‍♂️ [接續個股事務循環] 正式進入 processManifestLoop，共 " + stocks.length + " 檔待執行！");
+      processManifestLoop(apiKey, model, manifestData, {
+        totalRequestedOverride: totalCount,
+        completedCountOffset: completedTopicsCount,
+        completedCodesPrefix: completedTopicCodes
+      });
+    } else {
+      const finishTimeStr = Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss");
+      saveStatusReportToCloudDrive({
+        status: "completed",
+        batchId: batchId,
+        startTime: startTimeStr,
+        endTime: finishTimeStr,
+        lastHeartbeat: new Date().getTime(),
+        totalRequested: totalCount,
+        completedCount: completedTopicsCount,
+        failedCount: 0,
+        currentStock: "全部專題推導完成",
+        currentCode: "",
+        progressPercent: 100,
+        completedCodes: completedTopicCodes,
+        failedList: [],
+        isCircuitBroken: false,
+        breakReason: ""
+      });
+      logToDrive("🎉 [大合流任務完工] 所有全域專題已推導並存檔完成！");
+    }
 
     return createJsonResponse({
       ok: true,
-      message: "批次推導已成功啟動並處理完畢！",
-      totalRequested: stocks.length
+      message: "大合流批次推導已成功啟動並處理完畢！",
+      totalRequested: totalCount,
+      topicsCount: topics.length,
+      stocksCount: stocks.length
     }, 200);
 
   } catch (err) {
@@ -248,7 +356,7 @@ function doPost(e) {
  * @param {string} model - 模型名稱
  * @param {Object} [initialManifest] - 可選。由呼叫端直接直通傳入之清單物件，避免立即讀取 Drive 的延遲
  */
-function processManifestLoop(apiKey, model, initialManifest) {
+function processManifestLoop(apiKey, model, initialManifest, metaOffset) {
   const loopStartTs = new Date().getTime();
   let consecutiveFailures = 0;
   let isCircuitBroken = false;
@@ -264,6 +372,10 @@ function processManifestLoop(apiKey, model, initialManifest) {
     logToDrive("❌ [循環中止] 無法讀取實體清單檔案或清單格式錯誤！");
     return;
   }
+
+  const effectiveTotalRequested = (metaOffset && metaOffset.totalRequestedOverride) ? metaOffset.totalRequestedOverride : manifest.stocks.length;
+  const completedOffset = (metaOffset && metaOffset.completedCountOffset) ? metaOffset.completedCountOffset : 0;
+  const codesPrefix = (metaOffset && metaOffset.completedCodesPrefix) ? metaOffset.completedCodesPrefix : [];
 
   // 💾 核心戰報記憶體累積器：杜絕每檔讀取 Google Drive 導致的覆寫與延遲漏洞！
   let accumulatedReports = [];
@@ -335,18 +447,19 @@ function processManifestLoop(apiKey, model, initialManifest) {
     const batchCodes = pendingBatch.map(s => s.code).join(", ");
 
     // 💓 心跳與狀態即時更新 (通知手機端目前推導哪幾檔)
+    const overallCompleted = completedOffset + currentCompleted;
     saveStatusReportToCloudDrive({
       status: "running",
       batchId: manifest.batchId,
       startTime: manifest.createdAt,
       lastHeartbeat: new Date().getTime(),
-      totalRequested: manifest.stocks.length,
-      completedCount: currentCompleted,
+      totalRequested: effectiveTotalRequested,
+      completedCount: overallCompleted,
       failedCount: manifest.stocks.filter(s => s.status === "failed").length,
       currentStock: batchNames,
       currentCode: batchCodes,
-      progressPercent: Math.round((currentCompleted / manifest.stocks.length) * 100),
-      completedCodes: manifest.stocks.filter(s => s.status === "done").map(s => s.uid || (s.code + "_" + (s.broker || "關注"))),
+      progressPercent: Math.round((overallCompleted / effectiveTotalRequested) * 100),
+      completedCodes: [...codesPrefix, ...manifest.stocks.filter(s => s.status === "done").map(s => s.uid || (s.code + "_" + (s.broker || "關注")))],
       failedList: manifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, broker: s.broker || "關注", uid: s.uid || (s.code + "_" + (s.broker || "關注")), error: s.error })),
       isCircuitBroken: false,
       breakReason: ""
@@ -560,21 +673,25 @@ function processManifestLoop(apiKey, model, initialManifest) {
     const finalManifest = readManifestFromCloudDrive();
     if (finalManifest) {
       const doneCount = finalManifest.stocks.filter(s => s.status === "done").length;
+      const overallDoneCount = completedOffset + doneCount;
+      const overallProgress = Math.round((overallDoneCount / effectiveTotalRequested) * 100);
+      const isActuallyAllDone = (overallDoneCount >= effectiveTotalRequested);
       saveStatusReportToCloudDrive({
-        status: "paused",
+        status: isActuallyAllDone ? "completed" : "paused",
         batchId: finalManifest.batchId,
         batchTime: Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss"),
         startTime: finalManifest.createdAt,
+        endTime: isActuallyAllDone ? Utilities.formatDate(new Date(), "Asia/Taipei", "yyyy-MM-dd HH:mm:ss") : null,
         lastHeartbeat: new Date().getTime(),
-        totalRequested: finalManifest.stocks.length,
-        completedCount: doneCount,
+        totalRequested: effectiveTotalRequested,
+        completedCount: overallDoneCount,
         failedCount: finalManifest.stocks.filter(s => s.status === "failed").length,
-        currentStock: "",
+        currentStock: isActuallyAllDone ? "全部推導完成" : "",
         currentCode: "",
-        progressPercent: Math.round((doneCount / finalManifest.stocks.length) * 100),
-        completedCodes: finalManifest.stocks.filter(s => s.status === "done").map(s => s.code),
+        progressPercent: isActuallyAllDone ? 100 : overallProgress,
+        completedCodes: [...codesPrefix, ...finalManifest.stocks.filter(s => s.status === "done").map(s => s.code)],
         failedList: finalManifest.stocks.filter(s => s.status === "failed").map(s => ({ code: s.code, name: s.name, error: s.error })),
-        isCircuitBroken: true,
+        isCircuitBroken: isCircuitBroken,
         breakReason: breakReason
       });
     }
