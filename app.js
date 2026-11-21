@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261121.01');
+        const appVersion = ref('v2.20261121.02');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -8554,6 +8554,11 @@ createApp({
                                 }
                             }
                             cloudBatchStatus.value = sData;
+                            if (sData.status === 'completed') {
+                                if (typeof fetchCloudTopicReports === 'function') {
+                                    fetchCloudTopicReports(true);
+                                }
+                            }
                             if (userTriggered) {
                                 if (sData.status === 'running') {
                                     showToast(`⏳ 雲端推導中 (${sData.completedCount || 0}/${sData.totalRequested || 0} 檔)`, 2000);
@@ -8698,6 +8703,15 @@ createApp({
 
             if (!restoredUncompleted) {
                 selectBatchOnlyExpired();
+            }
+
+            // 🌐 打開彈窗時即時靜默刷新雲端全域專題戰報，確保時效徽章 100% 同步
+            if (typeof fetchCloudTopicReports === 'function') {
+                fetchCloudTopicReports(true).then(() => {
+                    if (!restoredUncompleted) {
+                        selectBatchOnlyExpired();
+                    }
+                }).catch(() => {});
             }
 
             fetchCloudBatchStatus();
@@ -11873,6 +11887,16 @@ createApp({
                                 console.log(`💎 [雲端戰報合流] 已成功合流 ${batchMergedCount} 筆由 GAS 背景產出之最新戰報並累加用量！`);
                             }
                         }
+                    }
+
+                    // 🌐 5.1 檢查並合流 Google Drive 上由 GAS 產出之全域市場專題戰報 (sentinel_topic_reports.json)
+                    try {
+                        if (typeof fetchCloudTopicReports === 'function') {
+                            await fetchCloudTopicReports(true);
+                            console.log("🌐 [雲端專題合流] 已同步全域專題最新推導戰報至設備端！");
+                        }
+                    } catch (eTopicsSync) {
+                        console.warn("全域專題合流例外:", eTopicsSync);
                     }
 
                     // 🧹 徹底閉環清理：合流完成後，連同狀態檔 gem_batch_status.json 與佇列檔 gem_batch_queue.json 一併刪除，並重置本機狀態為閒置
