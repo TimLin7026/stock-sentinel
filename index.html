@@ -2629,12 +2629,13 @@
         <!-- ========================================== -->
         <div v-if="showBatchDispatchModal" 
              :class="theme === 'dark' ? 'bg-slate-950/90' : 'bg-slate-500/25'"
-             class="fixed inset-0 z-50 backdrop-blur-md flex justify-center items-stretch overflow-hidden w-full max-w-full"
-             style="overscroll-behavior: contain;">
+             class="fixed inset-0 z-50 backdrop-blur-md flex justify-center items-stretch overflow-hidden w-full max-w-full h-[100dvh] max-h-[100dvh]"
+             style="overscroll-behavior: contain; height: 100dvh; max-height: 100dvh;">
             <div :class="[
                 batchModalOrientation === 'portrait' ? 'max-w-md w-full max-w-full' : 'max-w-5xl w-full max-w-full',
                 theme === 'dark' ? 'bg-[#0b0f19] text-slate-100 border-slate-800' : 'bg-slate-50 text-slate-900 border-slate-300'
-            ]" class="flex flex-col h-full shadow-2xl border-x transition-all duration-200 relative overflow-hidden w-full max-w-full">
+            ]" class="flex flex-col h-full shadow-2xl border-x transition-all duration-200 relative overflow-hidden w-full max-w-full"
+               style="height: 100dvh; max-height: 100dvh;">
                 <!-- 頂部標題與關閉按鈕 (含直/橫模式切換，100% 對齊走勢圖吸頂規格) -->
                 <div :class="theme === 'dark' ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'" 
                      class="p-3 border-b flex justify-between items-center flex-shrink-0 select-none">
@@ -2869,8 +2870,8 @@
                     </div>
                 </div>
 
-                <!-- 待選個股清單 (可捲動區) -->
-                <div class="flex-1 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 min-h-[200px] max-h-[360px]">
+                <!-- 待選個股清單 (可捲動區，解除硬編碼高度以自適應手機螢幕) -->
+                <div class="flex-1 overflow-y-auto no-scrollbar space-y-1.5 pr-0.5 min-h-0">
                     <div v-for="stk in filteredBatchCandidateStocks" :key="stk.uid || (stk.code + '_' + (stk.broker || '關注'))"
                          @click="toggleBatchStock(stk)"
                          :class="isBatchStockSelected(stk) 
@@ -2912,8 +2913,10 @@
                     </div>
                 </div>
 
-                <!-- 底部派工與提示 -->
-                <div class="pt-3 border-t flex-shrink-0 space-y-2" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                <!-- 底部派工與提示 (📱 注入 Safe Area 邊距，防範手機底部導航列與 Home Indicator 遮擋) -->
+                <div class="pt-2.5 border-t flex-shrink-0 space-y-2 select-none" 
+                     :class="theme === 'dark' ? 'border-slate-800 bg-[#0b0f19]' : 'border-slate-200 bg-slate-50'"
+                     style="padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom) + 0.85rem));">
                     <div class="text-[10px] text-slate-400 leading-tight flex items-center justify-between">
                         <span>💡 建議單批 3~5 檔，派工後請自由關閉網頁/鎖屏離線。</span>
                         <button v-if="!geminiGasUrl" @click="copyGasScriptAndOpen" type="button" 
@@ -3179,8 +3182,10 @@
                     </div>
                 </div>
 
-                <!-- 底部派工與提示 (橫版固定操作列) -->
-                <div class="pt-2.5 border-t flex-shrink-0 space-y-2" :class="theme === 'dark' ? 'border-slate-800' : 'border-slate-200'">
+                <!-- 底部派工與提示 (橫版固定操作列，注入 Safe Area 邊距) -->
+                <div class="pt-2 border-t flex-shrink-0 space-y-1.5 select-none" 
+                     :class="theme === 'dark' ? 'border-slate-800 bg-[#0b0f19]' : 'border-slate-200 bg-slate-50'"
+                     style="padding-bottom: max(0.85rem, calc(env(safe-area-inset-bottom) + 0.5rem));">
                     <div class="text-[10px] text-slate-400 leading-tight flex items-center justify-between">
                         <span>💡 建議單批 3~5 檔，派工後請自由關閉網頁/鎖屏離線。</span>
                         <button v-if="!geminiGasUrl" @click="copyGasScriptAndOpen" type="button" 
@@ -3991,6 +3996,6 @@
     </div> <!-- 結束 #app -->
 
     <!-- 載入邏輯腳本 -->
-    <script src="app.js?v=2.20261120.03"></script>
+    <script src="app.js?v=2.20261121.01"></script>
 </body>
 </html>

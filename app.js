@@ -41,7 +41,7 @@ createApp({
         };
 
         // ─── 系統版本資訊 ───
-        const appVersion = ref('v2.20261120.03');
+        const appVersion = ref('v2.20261121.01');
 
         // ─── 📱/🖥️ 設備方向智慧感應與自適應切換模組 ───
         let lastDetectedOrientation = null;
@@ -8892,9 +8892,9 @@ createApp({
                     `• 背景執行：您可安心關閉網頁或鎖屏，雲端將依序推導並自動落地存檔。\n` +
                     `• 進度追蹤：隨時點擊「⚡ 批次戰報」可查進度與合流戰報！`
                 );
-
+            } catch (err) {
                 console.error("批次派工失敗:", err);
-                alert("❌ 批次派工失敗：" + err.message);
+                alert("❌ 批次派工失敗：" + (err && err.message ? err.message : err));
             } finally {
                 isDispatchingBatch.value = false;
             }
