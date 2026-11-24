@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-24 06:50:27",
-  "count": 88,
+  "updatedAt": "2026-11-24 08:30:28",
+  "count": 83,
   "items": [
     {
       "code": "00844B",
@@ -443,56 +443,6 @@
       "dividendYield": ""
     },
     {
-      "code": "0051",
-      "name": "元大中型100",
-      "market": "上市",
-      "exDate": "2026-11-20",
-      "daysLeft": -4,
-      "exType": "息",
-      "cashDividend": 4.5,
-      "dividendYield": ""
-    },
-    {
-      "code": "0055",
-      "name": "元大MSCI金融",
-      "market": "上市",
-      "exDate": "2026-11-20",
-      "daysLeft": -4,
-      "exType": "息",
-      "cashDividend": 2.7,
-      "dividendYield": ""
-    },
-    {
-      "code": "00771",
-      "name": "元大US高息特別股",
-      "market": "上市",
-      "exDate": "2026-11-20",
-      "daysLeft": -4,
-      "exType": "息",
-      "cashDividend": 0.21,
-      "dividendYield": ""
-    },
-    {
-      "code": "00850",
-      "name": "元大臺灣ESG永續",
-      "market": "上市",
-      "exDate": "2026-11-20",
-      "daysLeft": -4,
-      "exType": "息",
-      "cashDividend": 1.0,
-      "dividendYield": ""
-    },
-    {
-      "code": "4562",
-      "name": "穎漢",
-      "market": "上市",
-      "exDate": "2026-11-20",
-      "daysLeft": -4,
-      "exType": "權",
-      "cashDividend": 0.0,
-      "dividendYield": ""
-    },
-    {
       "code": "006201",
       "name": "元大富櫃50",
       "market": "上櫃",
@@ -609,7 +559,7 @@
       "exDate": "2026-11-26",
       "daysLeft": 2,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.33,
       "dividendYield": ""
     },
     {
