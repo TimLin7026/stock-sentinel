@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-25 08:31:12",
-  "count": 83,
+  "updatedAt": "2026-11-25 13:15:29",
+  "count": 84,
   "items": [
     {
       "code": "00844B",
@@ -821,6 +821,16 @@
       "exType": "息",
       "cashDividend": 0.00915,
       "dividendYield": "1.63%"
+    },
+    {
+      "code": "4912",
+      "name": "聯德控股-KY",
+      "market": "上市",
+      "exDate": "2026-12-08",
+      "daysLeft": 13,
+      "exType": "息",
+      "cashDividend": 1.0,
+      "dividendYield": "1.19%"
     },
     {
       "code": "6277",
