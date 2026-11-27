@@ -1,6 +1,6 @@
 {
-  "updatedAt": "2026-11-27 06:49:44",
-  "count": 50,
+  "updatedAt": "2026-11-27 08:30:37",
+  "count": 52,
   "items": [
     {
       "code": "00758B",
@@ -189,7 +189,7 @@
       "exDate": "2026-12-01",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.15,
       "dividendYield": ""
     },
     {
@@ -199,7 +199,7 @@
       "exDate": "2026-12-01",
       "daysLeft": 4,
       "exType": "息",
-      "cashDividend": 0.0,
+      "cashDividend": 0.085,
       "dividendYield": ""
     },
     {
@@ -463,6 +463,16 @@
       "dividendYield": "3.72%"
     },
     {
+      "code": "6657",
+      "name": "華安",
+      "market": "上市",
+      "exDate": "2026-12-10",
+      "daysLeft": 13,
+      "exType": "權",
+      "cashDividend": 0.0,
+      "dividendYield": ""
+    },
+    {
       "code": "6596",
       "name": "寬宏藝術",
       "market": "上櫃",
@@ -491,6 +501,16 @@
       "exType": "除息",
       "cashDividend": 1.0,
       "dividendYield": ""
+    },
+    {
+      "code": "2236",
+      "name": "百達-KY",
+      "market": "上市",
+      "exDate": "2026-12-11",
+      "daysLeft": 14,
+      "exType": "權息",
+      "cashDividend": 0.386678,
+      "dividendYield": "0.80%"
     },
     {
       "code": "6994",
